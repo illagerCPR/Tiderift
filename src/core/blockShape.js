@@ -6,6 +6,9 @@
 //       开态 `${base}_${half}_${facing}_open`
 //   活板门 'oak_trapdoor'（关态朝北本名）/ `oak_trapdoor_${facing}` / `oak_trapdoor_${facing}_open`
 //   床  'white_bed'（foot 朝北本名）/ `white_bed_${half}_${facing}`
+// B28 定向面方块（箱子/熔炉/头颅/红石灯…）沿用同一约定：
+//   `${base}` = 朝北态本名（旧存档零迁移）/ `_s` / `_e` / `_w`；点燃/充能等二次状态用派生家族名
+//   （`furnace_lit` = 点燃朝北 / `furnace_lit_e` …），见 facingId()。
 import { BlockRegistry } from './BlockRegistry.js';
 
 export const DOOR_THICK = 3 / 16; // 门板厚度（原版 3 像素）
@@ -65,6 +68,18 @@ export function trapdoorId(facing, open) {
 export function bedId(half, facing) {
   if (half === 'foot' && facing === 'n') return BlockRegistry.getId('white_bed');
   return BlockRegistry.getId(`white_bed_${half}_${facing}`);
+}
+
+// B28 定向面方块状态 id：家族名 family + 朝向（'n' 用家族本名，其余 `${family}_${facing}`）。
+// family 既可是基础名（'chest'）也可是派生家族名（'furnace_lit'）；未注册返回 0。
+export function facingId(family, facing) {
+  if (facing === 'n') return BlockRegistry.getId(family);
+  return BlockRegistry.getId(`${family}_${facing}`);
+}
+
+// B28 熔炉点燃态：同一朝向的未点燃/点燃家族名互转（资源世界写方块时用）
+export function furnaceLitId(facing, lit) {
+  return facingId(lit ? 'furnace_lit' : 'furnace', facing);
 }
 
 // 碰撞盒：带 shape 的 solid 方块 → 世界坐标 AABB；无 shape 返回 null（调用方按满格处理）。

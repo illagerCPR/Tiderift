@@ -88,7 +88,7 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
       ok(src.includes(key), `语言包 ${lang} 缺键/未更新: ${key}`);
     }
   }
-  ok(BUILD === 27, 'BUILD 24（CW-1 修复批次 bump 并 release）');
+  ok(BUILD === 28, 'BUILD 24（CW-1 修复批次 bump 并 release）');
 }
 
 // ── ④ CW-1 区块边界伪影修复绊线（边缘缺失掩码 + 反向标脏 + 在途 dirty 语义）──

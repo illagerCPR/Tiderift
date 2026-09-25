@@ -82,6 +82,6 @@ ok(gameSrc.includes('_finaleParticleTick(seg, p, t, dt)'), '四段粒子发射�
 ok(gameSrc.includes("BlockRegistry.getId('water')"), '逆雨段水下采样在场（雨只在海上）');
 const cpSrc = readFileSync('./src/ui/CommandPanel.js', 'utf8');
 ok(cpSrc.includes('_startFinaleTide()') && cpSrc.includes('_stopFinaleTide()'), '命令面板调试口在场（F3 正式触发链前置）');
-ok(BUILD === 27, 'BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump）');
+ok(BUILD === 28, 'BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump）');
 
 console.log(`endgame-tide: ${passed} assertions passed`);

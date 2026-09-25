@@ -498,7 +498,7 @@ export class NetworkManager {
     if (!world) return;
     // T5：远端挖掉箱子 → 清本地容器缓存，开着的界面一并关闭（内容散落由挖掘方上报）
     const oldDef = BlockRegistry.getById(world.getBlock(x, y, z));
-    const wasChest = oldDef && oldDef.name === 'chest';
+    const wasChest = oldDef && oldDef.baseBlock === 'chest'; // B28：箱子四朝向家族（朝北本名也带 baseBlock）
     this._applyingRemote = true;
     world.setBlock(x, y, z, id, false); // 远端落地：不写入本地 modifiedBlocks
     if (this.game.redstone) this.game.redstone.onBlockChange(x, y, z);

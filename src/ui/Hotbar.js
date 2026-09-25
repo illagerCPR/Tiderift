@@ -110,7 +110,7 @@ export class Hotbar {
     const block = BlockRegistry.getByName(name);
     if (block) {
       // 用方块侧面贴图
-      const texName = block.side || block.top;
+      const texName = block.icon || block.side || block.top; // B28 优先定向面（箱子/熔炉图标看得出正面）
       if (BlockSVGMap[texName]) return BlockSVGMap[texName];
     }
     return null;

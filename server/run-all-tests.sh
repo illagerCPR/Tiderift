@@ -261,6 +261,15 @@ else
     exit 1
 fi
 
+# B28 方块材质（定向面/多面纠偏 + 状态家族）回归（纯 node）
+echo "=== build28-block-textures ==="
+if node tests/build28-block-textures.mjs; then
+    echo "build28-block-textures: OK"
+else
+    echo "build28-block-textures: FAILED"
+    exit 1
+fi
+
 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
 echo "=== end-dragon ==="
 if node tests/end-dragon.mjs; then

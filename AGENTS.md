@@ -87,6 +87,8 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - **缺 `textures` 字段陷阱**：`reg(name, def, svgs)` 不传 `def.textures` 时 `BlockRegistry` 默认用 `name` 作 top/side/bottom（例如 `'piston'`），但 SVG map 里只有带后缀的名字（`piston_top/...`）。`ChunkMeshBuilder` 在 `atlasUV.get(name)` 查不到时 fallback 到整张 atlas UV `{0,0,1,1}`，方块面会**显示所有材质拼图**。修复：所有多面带不同纹理的方块必须显式传 `textures: { top, side, bottom }`。
 - **方块重复注册陷阱**：BlockDefs.js 中同一 `reg(name,...)` 多次调用会互相覆盖 BlockRegistry 实例和 svgMap。例如曾出现两次 `reg('tnt',...)`，旧版只有 top/side 两张 svg 但带 textures，新版有三张 svg 但缺 textures —— 后注册覆盖前者，导致缺 textures 又全部 fallback 到整图集。修复原则：同一只能注册一次，且必须带 textures + 完整 SVG。
 - **SVG 名后缀约定**：多面方块的三张 SVG 名通常用 `<block>_top` / `<block>_side` / `<block>_bottom`，方块名只在 SVG map 里挂带后缀的 key；单面统一方块（如圆石、活塞头 head）直接用 `<block>` 作 SVG key。
+- **定向面（B28）**：需要在"六面不完全相同"之外再区分正面（箱子锁扣、熔炉炉口、头颅五官）时，传 `textures: { top, side, bottom, front }` + `facing: 'n'|'s'|'e'|'w'`。`BlockRegistry` 据此派生 `front` 与 `faceTex`（四水平面 → 纹理键表），`ChunkMesh` 逐面查 `faceTex`（`FACES[].key`）。**`icon` 默认取 `front || side`**（物品栏/快捷栏图标要看得出正面），side 不具代表性时（如耕地 side=dirt）显式传 `icon`。可放置朝向的方块（箱子/熔炉/头颅）用 `facingBase` + `baseBlock` + 尾部追加的 `${base}_${facing}` 变体，放置路径按玩家方位换态（`blockShape.facingId`）。
+- **新增方块/状态变体一律追加在 `BlockDefs.js` 文件末尾（高危，勿插入中部）**：方块数字 ID 由注册顺序决定（`nextId++`），存档 `modifiedBlocks`、联机账本 `server/world/*.json` 全按数字 ID 落盘——在中部插入注册会让其后所有方块 ID 整体错位，旧存档里的方块变成别的东西（B27 门家族曾整段移位，B28 起改为尾部追加）。既存方块的 `reg(...)` 调用位置不可移动；新状态变体（`chest_e`、`furnace_lit_w`…）追加到文件末尾段，`build28-block-textures.mjs` 有 ID 零漂移钉值断言。
 3. `MobManager.buildMaterials()` 必须在 `buildAtlas()` 之后调用（依赖图集 UV）。
 4. `ChunkMeshBuilder` 用 `atlasUV` 查询每面的 UV 坐标。
 5. UI（Hotbar、InventoryScreen）通过 `game.blockSvgMap` / `game.itemSvgMap` 查 SVG 字符串，用 `SVGTextures.svgToImage()` 绘制到 canvas。
@@ -220,7 +222,7 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/CubeWorld
 | `docs/agent-notes/dimensions-portals.md` | 维度基建/下界/末地/天域/联机同步、传送门、下界优化、末地完善（龙/末地城）、天域叙事基石（批次 A）、天域群风与众生（批次 B）、天域守誓巨像（批次 C）、天域复潮（批次 D） | 维度、传送门、下界/末地、换维联机、天域内容注册/i18n 审计/气流与免摔落/Boss AI/复潮档案 |
 | `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验） | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞 |
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
-| `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker | 渲染、光照视觉、材质、后处理、网格构建 |
+| `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图 |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关 | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关 |
 | `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座 | 菜单/视频设置、粒子、UI 界面、作弊面板、音频 |
 

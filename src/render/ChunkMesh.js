@@ -8,13 +8,19 @@ import { applyVoxelLight, applyVoxelLightWater, GfxState } from './VoxelLight.js
 
 // 6 个面的方向定义：[dx, dy, dz]
 const FACES = [
-  { dir: [1, 0, 0], uvFace: 'side' },   // +X
-  { dir: [-1, 0, 0], uvFace: 'side' },  // -X
-  { dir: [0, 1, 0], uvFace: 'top' },    // +Y
-  { dir: [0, -1, 0], uvFace: 'bottom' },// -Y
-  { dir: [0, 0, 1], uvFace: 'side' },   // +Z
-  { dir: [0, 0, -1], uvFace: 'side' }   // -Z
+  { dir: [1, 0, 0], uvFace: 'side', key: 'e' },   // +X
+  { dir: [-1, 0, 0], uvFace: 'side', key: 'w' },  // -X
+  { dir: [0, 1, 0], uvFace: 'top', key: null },   // +Y
+  { dir: [0, -1, 0], uvFace: 'bottom', key: null },// -Y
+  { dir: [0, 0, 1], uvFace: 'side', key: 's' },   // +Z
+  { dir: [0, 0, -1], uvFace: 'side', key: 'n' }   // -Z
 ];
+
+// B28 逐面纹理键：定向面方块（箱子/熔炉/头颅…）按面方向取 faceTex，其余方块走 top/side/bottom。
+function faceTexName(def, face) {
+  if (def.faceTex && face.key && def.faceTex[face.key]) return def.faceTex[face.key];
+  return def[face.uvFace] || def.side;
+}
 
 const faceCorners = [
   // +X
@@ -348,7 +354,7 @@ export class ChunkMeshBuilder {
               continue;
             }
 
-            const texName = def[face.uvFace] || def.side;
+            const texName = faceTexName(def, face);
             const uv = this.atlasUV.get(texName) || { u0: 0, v0: 0, u1: 1, v1: 1 };
             const corners = faceCorners[f];
             const faceLight = FACE_LIGHT[f];
@@ -702,7 +708,7 @@ export class ChunkMeshBuilder {
     const blkL = voxLight ? this._blockLAt(x, y, z) / 15 : 0;
     for (let f = 0; f < 6; f++) {
       const face = FACES[f];
-      const texName = def[face.uvFace] || def.side;
+      const texName = faceTexName(def, face);
       const uv = this.atlasUV.get(texName) || { u0: 0, v0: 0, u1: 1, v1: 1 };
       for (const c of faceCorners[f]) {
         const cc = [c[0] === 0 ? from[0] : to[0], c[1] === 0 ? from[1] : to[1], c[2] === 0 ? from[2] : to[2]];

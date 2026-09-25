@@ -201,6 +201,6 @@ function buildRig(model) {
 }
 
 // ── ⑥ BUILD ──
-ok(BUILD === 27, `BUILD 递增到 24（当前 ${BUILD}）`);
+ok(BUILD === 28, `BUILD 递增到 24（当前 ${BUILD}）`);
 
 console.log(`build22-fixes: ${passed} assertions ALL PASS`);

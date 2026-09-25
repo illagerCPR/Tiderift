@@ -545,7 +545,7 @@ export class RecipeViewer {
     if (!svgText) {
       const block = BlockRegistry.getByName(name);
       if (block) {
-        const texName = block.side || block.top;
+        const texName = block.icon || block.side || block.top; // B28 优先定向面（箱子/熔炉图标看得出正面）
         if (this.game.blockSvgMap[texName]) svgText = this.game.blockSvgMap[texName];
       }
     }

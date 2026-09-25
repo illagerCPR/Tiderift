@@ -51,3 +51,21 @@
 - **验证锚点**：同区块 sync `_collectData` vs worker 回执**逐字节 identical**（solid/water/light + portalCells）；重进世界 169/169 meshed、errors 0、broken false；真实挖掘 → `_meshVersion` 前进 + `position.count` 变化 + dirty false。headless 帧率低时派发节奏慢是预算制正常表现（每帧多块按 12ms 预算推进）。
 
 - **Build 7 手持物像素挤出**：`HeldItemMesh.extrudeSpriteGeometry` 替代物品/cross 的双面薄片——像素级小立方（alpha≥128 实体、只生成暴露面、depth 0.125 归一单位）。侧面 UV 用像素窄条（边缘色），前后全 UV。DoubleSide 保绕向容错；热点：`Y=(y)=>0.5-y/h` 行号翻转方向勿反（反了物品上下颠倒）。RemotePlayer 手持物（HeldItemMesh 共享缓存）自动受益。
+
+### B28 方块材质批次备忘（定向面 + 多面纠偏，防回退）
+
+- **问题面**：`textures: {top, side, bottom}` 只能表达"上下 vs 四周"，四个侧面天然同图——箱子锁扣、熔炉炉口、凋零头颅五官被画在**四个**侧面上（前后左右一模一样），另有一批方块把顶面图案铺满六面（耕地犁沟出现在侧面、信标四芒星出现在四面、音符盒圆盘出现在四面、活塞头六面同一张灰铁）。
+- **定向面基础设施（三层，改动任一层都要同步另两层）**：
+  1. `BlockRegistry.register`：解析 `textures.front` → `front`；`facing`（缺省 'n'）→ **`faceTex = {n,s,e,w}`**（facing 面 = front，其余 = side）；`icon = def.icon || front || side`（UI 图标要看得出正面）。
+  2. `ChunkMesh`：`FACES[]` 增加 `key`（`'e'|'w'|'s'|'n'|null`），`faceTexName(def, face)` 统一取纹理键（cube 主路径 + `addBox` 形制路径共用）；无 `faceTex` 的方块走原 top/side/bottom 路径（零行为变化）。
+  3. UI 图标链 7 处（Hotbar/InventoryScreen/ChestScreen/FurnaceScreen/TradeScreen/RecipeViewer/RemoteHotbarSprite）从 `block.side || block.top` 改为 `block.icon || block.side || block.top`。
+- **状态 = ID 家族（沿用 B27/B26 模式）**：箱子 4 朝向、熔炉 4 朝向 × 未点燃/点燃、凋零头颅 4 朝向、红石灯 未充能/充能。命名 `<family>` = 朝北态本名（`chest`/`furnace`/`wither_skeleton_skull`/`redstone_lamp`，**旧存档·结构箱子·联机账本零迁移**），其余 `${family}_${facing}`；派生家族 `furnace_lit`（点燃朝北）/`furnace_lit_e`…。查询统一走 `blockShape.facingId(family, facing)` / `furnaceLitId(facing, lit)`。
+- **⚠️ 新变体一律追加到 `BlockDefs.js` 文件末尾**：方块数字 ID = 注册顺序，存档与联机账本按数字落盘。B27 的门家族曾在文件中部展开，把其后所有方块 ID 整体推后（`note_block` 121→158 等），旧存档里的方块会变成别的东西；B28 起改为"本名原位、变体尾部追加"，`build28-block-textures.mjs` ①段有 ID 零漂移钉值断言（改注册顺序必炸）。
+- **家族化判定（把 `def.name === X` 全部换成 `def.baseBlock === X`）**：`Game` 破坏（`_breakChest`/`_breakFurnace`）、右键开界面（箱子/熔炉）、`NetworkManager.applyRemoteBlock` 的 `wasChest` 清容器缓存、`RedstoneSystem` 的红石灯分支、凋灵召唤的 `isSkull()`。**漏一处 = 该分支对非朝北态静默失效**（例如朝南的箱子被远端挖掉后容器缓存不清理）。
+- **家族基名自身也要带 `baseBlock`**：B27 门/床家族的本名就带（`baseBlock: 'oak_door'`），B28 三家族照做——否则"朝北态"（最常见）会漏出家族判定。同时基名带 `facingBase`（仅基名带），放置路径据此换态。
+- **掉落与工具门控的顺序陷阱**：`_blockDrops` 里 `if (def.baseBlock) return [{name: baseBlock}]` 曾排在 `minTier` 判定之前——熔炉 `minTier:1` 被短路后空手也能整块抱走。现顺序 = 潜影盒特判 → `minTier` 工具门控 → baseBlock 基础物品。中键取物（`_pickBlock`）同样要 `def.baseBlock || name` 映射，否则快捷栏会拿到 `chest_e` 这类不存在的物品。
+- **熔炉点燃态（功能性视觉）**：`updateFurnaces` 按 `st.burnTime > 0` 边沿调 `_syncFurnaceLit(key, st)`（key = `World.furnaceKey` 的 `"x,y,z"`），只在与当前 `def.lit` 不同时 `setBlock` 换家族态（保留朝向），点燃态 `light:13` 走亮块管线 + 光照增量更新；**host/单机权威**（`const isClient = !!(this.networkMode && this.net && !this.net.isHost)`，与 `fluidSim.muted` 同款门控），客户端靠 `block_set` 广播收敛。
+- **红石灯两态**：本名 = 未充能（`light: 0`，**此前恒亮 light:15、充能与否外观无差别**），`redstone_lamp_lit` = 充能（light 15）。`RedstoneSystem` 在充能边沿调 `setLampLit()`。已知边界：`poweredBlocks` 不持久化，重载存档后灯保持落盘时的态，直到附近红石有更新（与活塞/门的既有语义一致）。
+- **多面纠偏清单（六面不再同图）**：耕地（顶犁沟/侧=泥土，**必须显式 `icon: 'farmland'`**——默认图标取 side 会变成一块土）、仙人掌（顶=放射棱/侧=竖棱刺）、西瓜（顶=瓜蒂同心纹/侧=条纹）、音符盒（顶=圆盘/侧=木框）、信标（顶=下界之星/侧=黑曜石+玻璃带/底=金角基座）、潜影盒（顶=同心壳板/侧=壳壁+扣饰/底=素壳）、活塞头（顶=木芯推板/侧=活塞臂/底=接缝）、砂岩/红砂岩/石英（顶=平滑面/侧=沉积层）。
+- **纹理函数拆分纪律**：`pixelSvg(px)` 返回的是 **SVG 字符串**，同一族里"变体 = 基础图 + 叠加"必须拆成 `xxxPx(seed) → 像素数组` + `xxxTex(seed) = pixelSvg(xxxPx(seed))` 两层；直接对 `xxxTex()` 的返回值调 `setPx/fillRect` 会抛 `Cannot assign to read only property`（本批踩到 3 次）。
+- **验证**：`tests/build28-block-textures.mjs`（210 断言：ID 零漂移 / 家族规模 / 白名单逐字段透传 / faceTex 四向解析 / ChunkMesh 六面 UV 实测 / 多面清单 / 全局 SVG 引用完整性 / 红石灯真机行为 / 源码绊线）；实机用 agent-browser 看箱锁扣朝向、熔炉炉口与点燃发光、头颅五官、灯亮灭、耕地侧面回到泥土。

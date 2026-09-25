@@ -51,7 +51,7 @@ import { Mob } from '../entity/Mob.js';
 import { LocalPlayerModel } from '../entity/LocalPlayerModel.js';
 import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLight.js';
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
-import { doorId, trapdoorId, bedId } from '../core/blockShape.js';
+import { doorId, trapdoorId, bedId, facingId, furnaceLitId } from '../core/blockShape.js';
 import { SaveSystem } from '../core/SaveSystem.js';
 import { getDimension, setAetherDuskProfile } from '../core/dimensions.js';
 import { DEFAULT_BIOME_SCALE, safeBiomeScale } from '../world/biomes.js';
@@ -1387,7 +1387,9 @@ export class Game {
   // 语义对齐原版：燃料燃尽暂停（进度保温缓慢回退）、输出槽同类未满才续烧、燃料点燃即扣 1 个
   updateFurnaces(dt) {
     if (!this.world || !this.world.furnaces) return;
-    for (const [, st] of this.world.furnaces) {
+    // B28 点燃态方块切换仅 host/单机权威（客户端不写方块，靠 block_set 广播收敛——同流体模拟门控）
+    const isClient = !!(this.networkMode && this.net && !this.net.isHost);
+    for (const [key, st] of this.world.furnaces) {
       const recipe = st.input ? getSmeltingResult(st.input.name) : null;
       const canSmelt = !!(recipe && (!st.output ||
         (st.output.name === recipe.output && st.output.count + recipe.count <= 64)));
@@ -1420,7 +1422,23 @@ export class Game {
         // 熄火/断料：进度缓慢回退而不是瞬间清零
         st.cookTime = Math.max(0, st.cookTime - dt * 2);
       }
+      // B28：燃烧起止边沿切换点燃态方块（保留朝向；light:13 由光照引擎增量更新）
+      if (!isClient) this._syncFurnaceLit(key, st);
     }
+  }
+
+  // B28：熔炉点燃态方块同步（key = World.furnaceKey "x,y,z"）。
+  // 只在「方块仍是熔炉家族 + 点燃与否发生变化」时写一次；写走 World.setBlock（账本/联机/光照全路径收口）。
+  _syncFurnaceLit(key, st) {
+    const parts = key.split(',').map(Number);
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return;
+    const [x, y, z] = parts;
+    const def = BlockRegistry.getById(this.world.getBlock(x, y, z));
+    if (!def || def.baseBlock !== 'furnace') return; // 已被挖掉/替换：状态表由 _breakFurnace 清理
+    const lit = st.burnTime > 0;
+    if (def.lit === lit) return;
+    const nid = furnaceLitId(def.facing || 'n', lit);
+    if (nid) this.world.setBlock(x, y, z, nid);
   }
 
   // 挖毁熔炉：清理状态 + 内容物散落（箱子同款语义），关掉正开着的炉界面
@@ -1448,7 +1466,9 @@ export class Game {
   // 热栏已有该物品 → 直接选中那格；否则以 1 个替换当前选中格。仅创造响应，生存/旁观忽略。
   _pickBlock() {
     if (!this.player.creative || !this.selectedBlock || !this.world) return;
-    const name = BlockRegistry.getNameById(this.selectedBlock.id);
+    // B28：状态家族方块（门/床/箱子/熔炉/头颅…）取物映射回基础物品名（否则拿到 _e/_open 这类不存在的物品）
+    const def = BlockRegistry.getById(this.selectedBlock.id);
+    const name = (def && def.baseBlock) || BlockRegistry.getNameById(this.selectedBlock.id);
     if (!name) return;
     const slots = this.inventory.slots;
     for (let i = 0; i < 9; i++) {
@@ -1580,10 +1600,10 @@ export class Game {
       if (this.player.creative) {
         if (this.particles) this.particles.burstBlockBreak(hit.block.x + 0.5, hit.block.y, hit.block.z + 0.5, def, this.world);
         audio.blockBreak(def);
-        if (def.name === 'chest') this._breakChest(hit.block, false);
+        if (def.baseBlock === 'chest') this._breakChest(hit.block, false); // B28 家族（四朝向）
         if (def.name === 'beacon') this._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
         if (def.name === 'shulker_box') this._breakShulkerBox(hit.block, false); // Idea-2C：创造也掉盒（内容跟随）
-        if (def.name === 'furnace') this._breakFurnace(hit.block);
+        if (def.baseBlock === 'furnace') this._breakFurnace(hit.block); // B28 家族（四朝向 × 点燃态）
         if (def.name === 'end_crystal') this._breakCrystal(hit.block.x, hit.block.y, hit.block.z);
         // Build 20 ④：创造挖星髓不再激怒潮鸣（激怒调用仅生存分支保留）
         if (def.name === 'gale_block') this._clearGaleColumn(hit.block.x, hit.block.y, hit.block.z); // 批次 B：拆风阵块清气流柱
@@ -1620,10 +1640,10 @@ export class Game {
         if (this.breakingProgress >= 1) {
           if (this.particles) this.particles.burstBlockBreak(hit.block.x + 0.5, hit.block.y, hit.block.z + 0.5, def, this.world);
           audio.blockBreak(def);
-          if (def.name === 'chest') this._breakChest(hit.block, true);
+          if (def.baseBlock === 'chest') this._breakChest(hit.block, true); // B28 家族（四朝向）
           if (def.name === 'beacon') this._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
           if (def.name === 'shulker_box') this._breakShulkerBox(hit.block, true); // Idea-2C：内容跟随盒体
-          if (def.name === 'furnace') this._breakFurnace(hit.block);
+          if (def.baseBlock === 'furnace') this._breakFurnace(hit.block); // B28 家族（四朝向 × 点燃态）
           if (def.name === 'end_crystal') this._breakCrystal(hit.block.x, hit.block.y, hit.block.z);
           if (def.name === 'star_marrow_ore') this.mobManager?.angerTideEchoes(hit.block.x, hit.block.y, hit.block.z); // 批次 B：潮鸣激怒
           if (def.name === 'gale_block') this._clearGaleColumn(hit.block.x, hit.block.y, hit.block.z); // 批次 B：拆风阵块清气流柱
@@ -1677,7 +1697,7 @@ export class Game {
       // 右键熔炉打开熔炉界面（方块交互优先于手持食物食用，与原版一致）
       const furnaceHit = this.selectedBlock;
       const furnaceDef = furnaceHit ? BlockRegistry.getById(furnaceHit.id) : null;
-      if (furnaceDef && furnaceDef.name === 'furnace' && this.furnaceScreen && !this.player.spectator) {
+      if (furnaceDef && furnaceDef.baseBlock === 'furnace' && this.furnaceScreen && !this.player.spectator) {
         this.furnaceScreen.show(furnaceHit.block.x, furnaceHit.block.y, furnaceHit.block.z);
         this.controls.mouseRight = false;
         return;
@@ -1763,7 +1783,7 @@ export class Game {
           return;
         }
         // T5：右键箱子/潜影盒打开容器界面（创造/生存都可；旁观不可）
-        if (targetDef && (targetDef.name === 'chest' || targetDef.name === 'shulker_box') && this.chestScreen && !this.player.spectator) {
+        if (targetDef && (targetDef.baseBlock === 'chest' || targetDef.name === 'shulker_box') && this.chestScreen && !this.player.spectator) {
           this.chestScreen.show(hit.block.x, hit.block.y, hit.block.z);
           this.controls.mouseRight = false;
           return;
@@ -1899,7 +1919,12 @@ export class Game {
             this.controls.mouseRight = false;
             return;
           }
-          this.world.setBlock(placeX, placeY, placeZ, blockDef.id);
+          // B28 定向面方块（箱子/熔炉/头颅）：正面朝玩家 → 放置时换成对应朝向态 ID
+          // （家族态之间共享同一物品；掉落/取物经 baseBlock 映射回基础名）
+          const placedId = blockDef.facingBase
+            ? (facingId(blockDef.facingBase, this._facingTowardPlayer(placeX, placeZ)) || blockDef.id)
+            : blockDef.id;
+          this.world.setBlock(placeX, placeY, placeZ, placedId);
           audio.blockPlace(blockDef);
           if (this.redstone) this.redstone.onBlockChange(placeX, placeY, placeZ);
           this._trySummonIronGolem(placeX, placeY, placeZ); // Idea-2E：铁傀儡召唤检测（南瓜/铁块完成 T 型）
@@ -2590,14 +2615,15 @@ export class Game {
     if (!SAND || !SKULL) return false;
     const get = (bx, by, bz) => this.world.getBlock(bx, by, bz);
     const placed = get(x, y, z);
-    if (placed !== SAND && placed !== SKULL) return false;
+    const isSkull = (id) => { const d = BlockRegistry.getById(id); return !!(d && d.baseBlock === 'wither_skeleton_skull'); }; // B28：头颅四朝向家族
+    if (placed !== SAND && !isSkull(placed)) return false;
     // 扫描头层 ty 的 3 连头颅排，再按形状补验下层；命中返回待清除块与召唤点
     const scan = (ty, shape) => {
       for (const [ax, az] of [[1, 0], [0, 1]]) {       // 水平轴向：x / z
         for (let h0 = -3; h0 <= 3; h0++) {             // 头排起点相对放置点（沿轴标量）
           const hx = x + ax * h0, hz = z + az * h0;
           let ok = true;
-          for (let i = 0; i < 3 && ok; i++) if (get(hx + ax * i, ty, hz + az * i) !== SKULL) ok = false;
+          for (let i = 0; i < 3 && ok; i++) if (!isSkull(get(hx + ax * i, ty, hz + az * i))) ok = false;
           if (!ok) continue;
           if (shape === 'flat') {                      // 兼容平铺：沙排 4 连，头排左/右两种对齐
             for (const off of [0, -1]) {
@@ -2626,7 +2652,9 @@ export class Game {
       return null;
     };
     // 头/沙的层位由放置物决定：放头 → 头层 y；放沙 → 沙排 y（头层 y+1）或柱底 y（头层 y+2）
-    const hit = placed === SKULL
+    // B28：头颅是四朝向家族，判层必须按家族判（曾用 placed === SKULL 基名，
+    // 朝南/东/西的头颅会被当成"放的是沙"去扫上层，T 型召唤静默失效）
+    const hit = isSkull(placed)
       ? (scan(y, 't') || scan(y, 'flat'))
       : (scan(y + 2, 't') || scan(y + 1, 't') || scan(y + 1, 'flat'));
     if (!hit) return false;
@@ -3048,6 +3076,12 @@ export class Game {
   _blockDrops(def) {
     // Idea-2C：潜影盒不走通用掉落（_breakShulkerBox 已产出内容跟随盒体的单一掉落）
     if (def.name === 'shulker_box') return [];
+    // B28：家族态方块（门/床/箱子/熔炉/红石灯/头颅）先过工具门控再映射基础物品——
+    // 熔炉 minTier:1 若被 baseBlock 短路绕过，空手也能把熔炉整块抱走（原版不允许）
+    if (def.minTier > 0) {
+      const held = this._heldToolItem();
+      if (!held || held.tool !== def.tool || (held.tier || 0) < def.minTier) return [];
+    }
     // B27 门/床/活板门家族：任一状态破坏只掉 1 个基础物品（另一半连动消失不重复掉）
     if (def.baseBlock) return [{ name: def.baseBlock, count: 1 }];
     // 小麦成熟：小麦×1 + 种子 1-3（原版式）；未熟：仅种子×1

@@ -158,12 +158,14 @@ export class RedstoneSystem {
           this.poweredBlocks.set(k2, isPowered);
           this.scheduleUpdate(x, y, z);
         }
-      } else if (def.name === REDSTONE_LAMP) {
+      } else if (def.baseBlock === REDSTONE_LAMP) {
+        // B28：红石灯 = 未充能本名 + `_lit` 两态方块（此前恒亮 light:15、充能与否无外观差别）
         const power = this.getPower(x, y, z);
         const wasPowered = this.poweredBlocks.get(k2) || false;
         const isPowered = power > 0;
         if (wasPowered !== isPowered) {
           this.poweredBlocks.set(k2, isPowered);
+          this.setLampLit(x, y, z, isPowered);
           this.scheduleUpdate(x, y, z);
         }
       } else if (def.name === PISTON || def.name === STICKY_PISTON) {
@@ -226,6 +228,18 @@ export class RedstoneSystem {
         this.world.setBlock(x, y + 1, z, aboveAbove);
       }
     }
+  }
+
+  // B28：红石灯充能态切换（未充能本名 ⇄ `redstone_lamp_lit`）。方块 ID 即状态，
+  // 落 World.setBlock（存档/联机账本/光照增量全路径收口）；light 15 只在充能态生效。
+  setLampLit(x, y, z, lit) {
+    const def = BlockRegistry.getById(this.world.getBlock(x, y, z));
+    if (!def || def.baseBlock !== REDSTONE_LAMP) return false;
+    if (def.lit === lit) return false;
+    const nid = BlockRegistry.getId(lit ? `${REDSTONE_LAMP}_lit` : REDSTONE_LAMP);
+    if (!nid) return false;
+    this.world.setBlock(x, y, z, nid);
+    return true;
   }
 
   // 切换门/活板门开合（B27：状态 = 方块 ID 家族；废除旧"删除方块表示打开"）

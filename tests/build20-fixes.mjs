@@ -273,6 +273,6 @@ ok(BlockRegistry.getNameById(99999) === null, 'getNameById 未注册 id 返回 n
   ok(srcOf('../src/core/SaveSystem.js').includes('aetherDusk: !!game.aetherDusk'), '存档仍持久化复潮状态');
 }
 
-ok(BUILD === 27, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
+ok(BUILD === 28, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
 
 console.log(`build20-fixes: ${passed} passed`);

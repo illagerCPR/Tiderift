@@ -209,9 +209,11 @@ function near(a, b, eps = 1e-4) { return Math.abs(a - b) < eps; }
   ok(!rsSrc.includes('直接移除门方块'), '红石：删除式开门已废除');
 
   const reg = srcOf('../src/core/BlockRegistry.js');
-  for (const field of ['shape', 'part', 'facing', 'open', 'baseBlock']) {
+  for (const field of ['shape', 'part', 'open', 'baseBlock']) {
     ok(reg.includes(`${field}: def.${field}`), `BlockRegistry 白名单透传 ${field}`);
   }
+  // B28：facing 改为"显式 facing 优先，未给但给了 front 时按朝北"的推导（仍是白名单字段）
+  ok(reg.includes('const facing = def.facing') && /\bfacing,\n/.test(reg), 'BlockRegistry 白名单透传 facing');
   const wsrc = srcOf('../src/core/World.js');
   ok(wsrc.includes("sDef.part === 'door_lower'"), 'finalize：旧存档单格门迁移扫描');
   const vil = srcOf('../src/world/structures/village.js');

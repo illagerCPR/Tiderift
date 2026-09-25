@@ -189,6 +189,25 @@ function cactusTex(seed) {
   return pixelSvg(px);
 }
 
+// 仙人掌顶/底面（B28）：芯部亮绿 + 放射棱线 + 边缘刺点（侧面那套竖棱不该出现在头顶）
+function cactusTopTex(seed) {
+  const px = makeTex();
+  const g = [58, 118, 44];
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const r = Math.hypot(x - 7.5, y - 7.5);
+      let f = 0.94 + hash2(x, y, seed) * 0.12;
+      if (r < 4.5) f *= 1.14;
+      if (r > 6.6) f *= 0.86;
+      px[y * 16 + x] = rgb(g, f);
+    }
+  }
+  for (const [px2, py2] of [[7, 1], [8, 14], [1, 7], [14, 8], [3, 3], [12, 12]]) {
+    setPx(px, px2, py2, 'rgb(214,214,182)');
+  }
+  return pixelSvg(px);
+}
+
 function pumpkinSideTex(seed) {
   const px = makeTex();
   const o = [206, 122, 30];
@@ -214,6 +233,22 @@ function pumpkinTopTex(seed) {
     }
   }
   fillRect(px, 7, 7, 8, 8, rgb([88, 110, 40]));
+  return pixelSvg(px);
+}
+
+// 西瓜顶/底面（B28）：瓜蒂凹陷 + 同心瓜皮纹（条纹只属于侧面）
+function melonTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const r = Math.hypot(x - 7.5, y - 7.5);
+      const ring = Math.floor(r / 2) % 2 === 0;
+      const base = ring ? [128, 176, 60] : [96, 152, 48];
+      px[y * 16 + x] = rgb(base, 0.9 + hash2(x, y, seed) * 0.16);
+    }
+  }
+  fillRect(px, 6, 6, 9, 9, rgb([188, 176, 96]));   // 瓜蒂
+  fillRect(px, 7, 7, 8, 8, rgb([146, 132, 62]));
   return pixelSvg(px);
 }
 
@@ -449,13 +484,37 @@ function craftingSideTex(seed) {
   return pixelSvg(px);
 }
 
-function furnaceTex(seed) {
+// 熔炉（B28 定向面）：炉口只在正面；侧面砖框石身；顶面通风环；底面石头。
+// 家族 4 朝向 × 未点燃/点燃两态（点燃态 `furnace_lit*` 走 light:13 亮块管线，见 Game.updateFurnaces）。
+function furnaceBasePx(seed) {
   const px = makeTex();
   for (let y = 0; y < 16; y++) {
     for (let x = 0; x < 16; x++) {
       px[y * 16 + x] = rgb([120, 120, 120], 0.9 + hash2(x, y, seed) * 0.2);
     }
   }
+  return px;
+}
+
+// 侧面：石身 + 圆石砖框（原版熔炉侧面是石砖圈住整面）
+function furnaceSidePx(seed) {
+  const px = furnaceBasePx(seed);
+  const frame = rgb([88, 88, 88]);
+  for (let i = 0; i < 16; i++) {
+    setPx(px, i, 0, frame); setPx(px, i, 15, frame);
+    setPx(px, 0, i, frame); setPx(px, 15, i, frame);
+  }
+  for (let i = 2; i <= 13; i += 3) {
+    fillRect(px, i, 1, i, 4, rgb([104, 104, 104]));
+    fillRect(px, i, 11, i, 14, rgb([104, 104, 104]));
+  }
+  return px;
+}
+function furnaceSideTex(seed) { return pixelSvg(furnaceSidePx(seed)); }
+
+// 正面：石身 + 炉口（上半通风槽 + 下半炉膛）+ 砖框
+function furnaceFrontPx(seed) {
+  const px = furnaceSidePx(seed);
   const frame = rgb([88, 88, 88]);
   for (let i = 0; i < 16; i++) {
     setPx(px, i, 0, frame); setPx(px, i, 15, frame);
@@ -464,6 +523,36 @@ function furnaceTex(seed) {
   fillRect(px, 5, 8, 10, 8, rgb([70, 70, 70]));
   fillRect(px, 4, 9, 11, 13, rgb([30, 30, 30]));
   fillRect(px, 5, 12, 10, 13, rgb([58, 44, 36]));
+  return px;
+}
+function furnaceFrontTex(seed) { return pixelSvg(furnaceFrontPx(seed)); }
+
+// 正面（点燃）：炉膛炭火 + 火星（点燃态专用；亮块管线会让它夜里自发光）
+function furnaceFrontLitTex(seed) {
+  const px = furnaceFrontPx(seed);
+  fillRect(px, 4, 9, 11, 13, rgb([64, 26, 12]));
+  fillRect(px, 5, 10, 10, 13, rgb([196, 88, 24]));
+  fillRect(px, 5, 12, 10, 13, rgb([248, 196, 84]));
+  for (const [fx, fy] of [[5, 10], [8, 9], [10, 11], [6, 9]]) setPx(px, fx, fy, 'rgb(255,232,150)');
+  fillRect(px, 5, 8, 10, 8, rgb([120, 96, 72]));
+  return pixelSvg(px);
+}
+
+// 顶面：石面 + 通风环（原版熔炉顶的圆形炉盖）
+function furnaceTopTex(seed) {
+  const px = furnaceBasePx(seed);
+  const frame = rgb([88, 88, 88]);
+  for (let i = 0; i < 16; i++) {
+    setPx(px, i, 0, frame); setPx(px, i, 15, frame);
+    setPx(px, 0, i, frame); setPx(px, 15, i, frame);
+  }
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const r = Math.hypot(x - 7.5, y - 7.5);
+      if (r <= 5.6 && r >= 4.2) px[y * 16 + x] = rgb([92, 92, 92]);
+      else if (r < 2.4) px[y * 16 + x] = rgb([68, 68, 68]);
+    }
+  }
   return pixelSvg(px);
 }
 
@@ -529,7 +618,9 @@ function seaLanternTex(seed) {
   return pixelSvg(px);
 }
 
-function redstoneLampTex(seed) {
+// 红石灯（B28）：铁栅格 + 中央灯芯。未充能 = 暗灯芯（light 0）；充能 = 亮灯芯（light 15，走亮块管线）。
+// 两态是独立方块 ID（家族：redstone_lamp = 未充能本名，redstone_lamp_lit = 充能态，尾部追加注册）。
+function redstoneLampTex(seed, lit) {
   const px = makeTex();
   for (let y = 0; y < 16; y++) {
     for (let x = 0; x < 16; x++) {
@@ -538,7 +629,14 @@ function redstoneLampTex(seed) {
       px[y * 16 + x] = rgb(c, f);
     }
   }
-  fillRect(px, 6, 6, 9, 9, rgb([172, 128, 66]));
+  const core = lit ? [255, 224, 140] : [92, 66, 40];
+  const ring = lit ? [248, 176, 74] : [110, 78, 44];
+  fillRect(px, 5, 5, 10, 10, rgb(ring));
+  fillRect(px, 6, 6, 9, 9, rgb(core));
+  if (lit) {
+    fillRect(px, 7, 7, 8, 8, 'rgb(255,248,214)');
+    for (const [gx, gy] of [[4, 4], [11, 4], [4, 11], [11, 11]]) setPx(px, gx, gy, rgb([252, 214, 130]));
+  }
   return pixelSvg(px);
 }
 
@@ -706,8 +804,50 @@ function pistonBottomTex(seed) {
   return pixelSvg(px);
 }
 
-function pistonHeadTex(seed) {
-  return mineralBlockTex([160, 160, 160], seed);
+// 活塞头（B28）：顶面 = 推出面板（铁框 + 木芯，原版活塞头顶面看得见的推板），
+// 侧面 = 活塞臂（沿用灰铁），底面 = 与活塞机身的接缝。此前六面同一张灰铁图。
+function pistonHeadBasePx(seed, tone = [160, 160, 160]) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.96 + hash2(x, y, seed) * 0.08;
+      if (x === 0 || y === 0) f *= 1.12;
+      else if (x === 15 || y === 15) f *= 0.82;
+      px[y * 16 + x] = rgb(tone, f);
+    }
+  }
+  return px;
+}
+
+function pistonHeadTopTex(seed) {
+  const px = pistonHeadBasePx(seed);
+  const frame = rgb([104, 104, 104]);
+  for (let i = 1; i < 15; i++) {
+    setPx(px, i, 1, frame); setPx(px, i, 14, frame);
+    setPx(px, 1, i, frame); setPx(px, 14, i, frame);
+  }
+  fillRect(px, 3, 3, 12, 12, rgb([176, 140, 86]));  // 木板推面
+  for (let y = 4; y <= 11; y += 3) fillRect(px, 4, y, 11, y, rgb([148, 114, 66]));
+  return pixelSvg(px);
+}
+
+function pistonHeadSideTex(seed) {
+  const px = pistonHeadBasePx(seed);
+  fillRect(px, 0, 0, 15, 2, rgb([132, 132, 132]));
+  fillRect(px, 0, 13, 15, 15, rgb([116, 116, 116]));
+  fillRect(px, 5, 4, 10, 11, rgb([106, 106, 106])); // 活塞臂凹槽
+  return pixelSvg(px);
+}
+
+function pistonHeadBottomTex(seed) {
+  const px = pistonHeadBasePx(seed, [150, 150, 150]);
+  const frame = rgb([96, 96, 96]);
+  for (let i = 0; i < 16; i++) {
+    setPx(px, i, 0, frame); setPx(px, i, 15, frame);
+    setPx(px, 0, i, frame); setPx(px, 15, i, frame);
+  }
+  fillRect(px, 5, 5, 10, 10, rgb([116, 116, 116]));
+  return pixelSvg(px);
 }
 
 // ---------- 注册 ----------
@@ -987,9 +1127,48 @@ function endPortalFrameSideTex(seed) {
   return pixelSvg(px);
 }
 
-reg('sandstone', { hardness: 0.8, tool: 'pickaxe', minTier: 1 }, { sandstone: sandstoneTex(86) });
-reg('red_sandstone', { hardness: 0.8, tool: 'pickaxe', minTier: 1 }, { red_sandstone: sandstoneTexR(87) });
-reg('quartz_block', { hardness: 0.8, tool: 'pickaxe', minTier: 1 }, { quartz_block: noiseTex([236, 233, 226], 88, { dark: 0.97, light: 1.03, dProb: 0.12, lProb: 0.1 }) });
+// 砂岩顶/底面（B28）：平滑石面 + 四周浅框（原版砂岩只有侧面带沉积层）
+function sandstoneTopTex(seed, base) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.96 + hash2(x, y, seed) * 0.08;
+      if (x <= 1 || x >= 14 || y <= 1 || y >= 14) f *= 0.94;
+      px[y * 16 + x] = rgb(base, f);
+    }
+  }
+  return pixelSvg(px);
+}
+
+// 石英顶/底面（B28）：细边框纹（原版石英块顶面有一圈浅槽）
+function quartzTopTex(seed) {
+  const px = makeTex();
+  const base = [236, 233, 226];
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(base, 0.97 + hash2(x, y, seed) * 0.05);
+  for (let i = 0; i < 16; i++) {
+    setPx(px, i, 0, rgb(base, 0.88)); setPx(px, i, 15, rgb(base, 0.88));
+    setPx(px, 0, i, rgb(base, 0.88)); setPx(px, 15, i, rgb(base, 0.88));
+    setPx(px, i, 2, rgb(base, 0.93)); setPx(px, i, 13, rgb(base, 0.93));
+    setPx(px, 2, i, rgb(base, 0.93)); setPx(px, 13, i, rgb(base, 0.93));
+  }
+  return pixelSvg(px);
+}
+
+reg('sandstone', {
+  hardness: 0.8, tool: 'pickaxe', minTier: 1,
+  textures: { top: 'sandstone_top', side: 'sandstone', bottom: 'sandstone_top' },
+}, { sandstone: sandstoneTex(86), sandstone_top: sandstoneTopTex(866, [216, 203, 155]) });
+reg('red_sandstone', {
+  hardness: 0.8, tool: 'pickaxe', minTier: 1,
+  textures: { top: 'red_sandstone_top', side: 'red_sandstone', bottom: 'red_sandstone_top' },
+}, { red_sandstone: sandstoneTexR(87), red_sandstone_top: sandstoneTopTex(867, [206, 118, 62]) });
+reg('quartz_block', {
+  hardness: 0.8, tool: 'pickaxe', minTier: 1,
+  textures: { top: 'quartz_block_top', side: 'quartz_block', bottom: 'quartz_block_top' },
+}, {
+  quartz_block: noiseTex([236, 233, 226], 88, { dark: 0.97, light: 1.03, dProb: 0.12, lProb: 0.1 }),
+  quartz_block_top: quartzTopTex(89),
+});
 
 // 下界砖：深紫红砖 + 深缝（brickTex 的调色变体）
 function brickTexMagenta(seed) {
@@ -1027,8 +1206,18 @@ reg('crafting_table', { tool: 'axe', textures: { top: 'crafting_table_top', side
     crafting_table_top: craftingTopTex(91),
     crafting_table_side: craftingSideTex(92)
   });
-reg('furnace', { textures: { top: 'stone', side: 'furnace_side', bottom: 'stone' }, hardness: 3.5, tool: 'pickaxe', minTier: 1 },
-  { furnace_side: furnaceTex(93) });
+// 熔炉（B28 定向面）：本名 = 朝北/未点燃（旧存档零迁移）；朝向与点燃态变体尾部追加。
+const FURNACE_TEX = { top: 'furnace_top', side: 'furnace_side', bottom: 'stone', front: 'furnace_front' };
+const FURNACE_SVG = {
+  furnace_top: furnaceTopTex(93),
+  furnace_side: furnaceSideTex(94),
+  furnace_front: furnaceFrontTex(95),
+  furnace_front_lit: furnaceFrontLitTex(96),
+};
+reg('furnace', {
+  textures: FURNACE_TEX, hardness: 3.5, tool: 'pickaxe', minTier: 1,
+  facing: 'n', baseBlock: 'furnace', facingBase: 'furnace', lit: false,
+}, { ...FURNACE_SVG });
 reg('glass', { transparent: true, hardness: 0.3 }, { glass: glassTex() });
 reg('glowstone', { displayName: '荧石', light: 15, hardness: 0.3, lore: ['坠入地底的海水在地火中凝成的光。', '云民叫它长明灯石，用它造通往家乡的门。'] }, { glowstone: glowstoneTex(95) });
 reg('sea_lantern', { displayName: '海晶灯', light: 15, hardness: 0.3 }, { sea_lantern: seaLanternTex(96) });
@@ -1168,10 +1357,16 @@ reg('mushroom_cap_red', { displayName: '红色蘑菇盖', hardness: 0.3 },
   { mushroom_cap_red: mushroomCapRedTex(122) });
 reg('mushroom_cap_brown', { displayName: '棕色蘑菇盖', hardness: 0.3 },
   { mushroom_cap_brown: noiseTex([148, 104, 62], 123, { dark: 0.88, light: 1.1, dProb: 0.2, lProb: 0.14 }) });
-reg('cactus', { transparent: true, solid: true, hardness: 0.4 }, { cactus: cactusTex(111) });
+reg('cactus', {
+  transparent: true, solid: true, hardness: 0.4,
+  textures: { top: 'cactus_top', side: 'cactus', bottom: 'cactus_top' },
+}, { cactus: cactusTex(111), cactus_top: cactusTopTex(1111) });
 reg('pumpkin', { textures: { top: 'pumpkin_top', side: 'pumpkin_side', bottom: 'pumpkin_top' }, hardness: 1 },
   { pumpkin_top: pumpkinTopTex(112), pumpkin_side: pumpkinSideTex(113) });
-reg('melon', { hardness: 1 }, { melon: melonTex(114) });
+reg('melon', {
+  hardness: 1,
+  textures: { top: 'melon_top', side: 'melon', bottom: 'melon_top' },
+}, { melon: melonTex(114), melon_top: melonTopTex(1141) });
 reg('hay_block', { textures: { top: 'hay_top', side: 'hay_side', bottom: 'hay_top' }, hardness: 0.5 },
   { hay_top: hayTopTex(116), hay_side: haySideTex(117) });
 
@@ -1278,7 +1473,10 @@ reg('chorus_flower', { displayName: '紫颂花', transparent: true, solid: false
   });
 
 // --- 红石相关 ---
-reg('redstone_lamp', { displayName: '红石灯', light: 15, hardness: 0.3 }, { redstone_lamp: redstoneLampTex(131) });
+// B28：本名 = 未充能态（light 0）；充能态 `redstone_lamp_lit`（light 15）尾部追加注册，
+// 由 RedstoneSystem 在充能边沿切换（此前红石灯恒亮 light:15、充能与否外观无差别）。
+reg('redstone_lamp', { displayName: '红石灯', hardness: 0.3, baseBlock: 'redstone_lamp' },
+  { redstone_lamp: redstoneLampTex(131, false), redstone_lamp_lit: redstoneLampTex(132, true) });
 reg('redstone_torch', { displayName: '红石火把', transparent: true, light: 14, hardness: 0, renderType: 'cross', solid: false },
   { redstone_torch: (function () { const px = makeTex();
     for (let y = 2; y < 6; y++) for (let x = 7; x < 10; x++) px[y * 16 + x] = 'rgb(220,40,40)';
@@ -1314,7 +1512,14 @@ reg('piston', { textures: { top: 'piston_top', side: 'piston_side', bottom: 'pis
   piston_side: pistonSideTex(134),
   piston_bottom: pistonBottomTex(135)
 });
-reg('piston_head', { transparent: true, hardness: 0.5, solid: false }, { piston_head: pistonHeadTex(136) });
+reg('piston_head', {
+  transparent: true, hardness: 0.5, solid: false,
+  textures: { top: 'piston_head_top', side: 'piston_head_side', bottom: 'piston_head_bottom' },
+}, {
+  piston_head_top: pistonHeadTopTex(136),
+  piston_head_side: pistonHeadSideTex(137),
+  piston_head_bottom: pistonHeadBottomTex(138),
+});
 reg('sticky_piston', { textures: { top: 'sticky_piston_top', side: 'piston_side', bottom: 'piston_bottom' }, hardness: 1.5 }, {
   sticky_piston_top: stickyTopTex(137),
   piston_side: pistonSideTex(134),
@@ -1364,19 +1569,37 @@ for (const facing of FACINGS) {
     }, { oak_trapdoor: trapdoorTex(146) });
   }
 }
-reg('note_block', { hardness: 1 }, { note_block: (function () { const px = makeTex();
+// 音符盒（B28）：侧面 = 深色木框（原版音符盒四壁的木框），顶面 = 中央音符圆盘（只该出现在顶上）。
+// 此前同一张带圆盘的图铺满六面，四面都像"顶"。
+function noteBlockSidePx(seed) {
+  const px = makeTex();
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
-    px[y * 16 + x] = rgb([120, 92, 56], 0.92 + hash2(x, y, 147) * 0.14);
+    px[y * 16 + x] = rgb([120, 92, 56], 0.92 + hash2(x, y, seed) * 0.14);
   }
   const frame = rgb([70, 52, 32]);
   for (let i = 0; i < 16; i++) {
     setPx(px, i, 0, frame); setPx(px, i, 15, frame);
     setPx(px, 0, i, frame); setPx(px, 15, i, frame);
   }
+  fillRect(px, 2, 2, 13, 2, rgb([104, 78, 46]));
+  fillRect(px, 2, 13, 13, 13, rgb([96, 72, 42]));
+  return px;
+}
+function noteBlockSideTex(seed) { return pixelSvg(noteBlockSidePx(seed)); }
+
+function noteBlockTopTex(seed) {
+  const px = noteBlockSidePx(seed);
   fillRect(px, 5, 5, 10, 10, rgb([90, 68, 42]));
   fillRect(px, 7, 7, 8, 8, rgb([220, 214, 200]));
-  return pixelSvg(px); })()
-});
+  setPx(px, 6, 6, rgb([186, 180, 166]));
+  setPx(px, 9, 9, rgb([186, 180, 166]));
+  return pixelSvg(px);
+}
+
+reg('note_block', {
+  hardness: 1,
+  textures: { top: 'note_block_top', side: 'note_block_side', bottom: 'note_block_side' },
+}, { note_block_top: noteBlockTopTex(147), note_block_side: noteBlockSideTex(148) });
 
 // --- 混凝土（染色算 1 种，以白色代表）---
 reg('white_concrete', { hardness: 1.8, tool: 'pickaxe' }, { white_concrete: noiseTex([228, 228, 228], 151, { dark: 0.98, light: 1.02, dProb: 0.1, lProb: 0.1 }) });
@@ -1447,41 +1670,101 @@ for (const half of ['foot', 'head']) {
 }
 
 // --- 容器方块（T5：箱子，内容经 loot.js 惰性生成） ---
-function chestTex(seed, latch) {
+// B28 定向面：正面（锁扣）只出现在 facing 边，其余三面为素木板——原版箱子的"前后左右不再相同"。
+// 家族 4 状态：chest（朝北本名，旧存档/结构箱子零迁移）/ chest_s / chest_e / chest_w，
+// 放置时正面朝玩家（Game._facingTowardPlayer）；facingBase 供放置路径替换 ID。
+function chestBoardPx(seed) {
   const px = makeTex();
   const base = [168, 128, 74];
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     px[y * 16 + x] = rgb(base, 0.92 + hash2(x, y, seed) * 0.16);
   }
-  // 外框与盖缝
+  return px;
+}
+
+// 侧面：木板 + 四边暗框 + 横向盖缝（盖 1/3 处）
+function chestSidePx(seed) {
+  const px = chestBoardPx(seed);
+  const base = [168, 128, 74];
   fillRect(px, 0, 0, 15, 0, rgb([94, 62, 32]));
   fillRect(px, 0, 15, 15, 15, rgb([82, 52, 24]));
   fillRect(px, 0, 0, 0, 15, rgb([94, 62, 32]));
   fillRect(px, 15, 0, 15, 15, rgb([82, 52, 24]));
   fillRect(px, 1, 5, 14, 5, rgb([94, 62, 32]));
-  // 盖板/底板受光线
   fillRect(px, 1, 1, 14, 1, rgb(base, 1.14));
   fillRect(px, 1, 6, 14, 6, rgb(base, 1.1));
-  if (latch) {
-    fillRect(px, 7, 4, 8, 7, 'rgb(158,158,158)');
-    fillRect(px, 7, 7, 8, 7, 'rgb(96,96,96)');
-  }
+  // 铁箍：左右两条竖带（原版箱子侧面的金属包角）
+  fillRect(px, 3, 1, 3, 14, rgb([150, 150, 150]));
+  fillRect(px, 12, 1, 12, 14, rgb([150, 150, 150]));
+  return px;
+}
+function chestSideTex(seed) { return pixelSvg(chestSidePx(seed)); }
+
+// 正面：侧面 + 中央锁扣（盖缝跨越的金属搭扣 + 钥匙孔）
+function chestFrontTex(seed) {
+  const px = chestSidePx(seed);
+  fillRect(px, 7, 3, 8, 7, 'rgb(158,158,158)');
+  fillRect(px, 6, 4, 9, 5, 'rgb(120,120,120)');
+  fillRect(px, 7, 6, 8, 7, 'rgb(96,96,96)');   // 钥匙孔
+  fillRect(px, 6, 3, 6, 7, 'rgb(120,120,120)');
+  fillRect(px, 9, 3, 9, 7, 'rgb(120,120,120)');
   return pixelSvg(px);
 }
-reg('chest', { textures: { top: 'chest_top', side: 'chest_side', bottom: 'chest_bottom' }, hardness: 2.5 },
-  {
-    chest_top: chestTex(961, false),
-    chest_side: chestTex(962, true),
-    chest_bottom: chestTex(963, false),
-  });
+
+// 顶面：盖板（内缩一圈 + 铰链侧压条 + 木纹横条）
+function chestTopTex(seed) {
+  const px = chestBoardPx(seed);
+  const base = [168, 128, 74];
+  fillRect(px, 0, 0, 15, 0, rgb([104, 70, 38]));
+  fillRect(px, 0, 15, 15, 15, rgb([88, 58, 28]));
+  fillRect(px, 0, 0, 0, 15, rgb([104, 70, 38]));
+  fillRect(px, 15, 0, 15, 15, rgb([88, 58, 28]));
+  fillRect(px, 1, 1, 14, 2, rgb(base, 1.16));  // 铰链压条
+  fillRect(px, 1, 14, 14, 14, rgb(base, 0.86));
+  for (let x = 2; x <= 13; x += 4) fillRect(px, x, 4, x, 13, rgb([150, 114, 64]));
+  return pixelSvg(px);
+}
+
+// 底面：素木板（无盖缝无锁扣）
+function chestBottomTex(seed) {
+  const px = chestBoardPx(seed);
+  fillRect(px, 0, 0, 15, 0, rgb([94, 62, 32]));
+  fillRect(px, 0, 15, 15, 15, rgb([82, 52, 24]));
+  fillRect(px, 0, 0, 0, 15, rgb([94, 62, 32]));
+  fillRect(px, 15, 0, 15, 15, rgb([82, 52, 24]));
+  return pixelSvg(px);
+}
+
+const CHEST_TEX = {
+  top: 'chest_top', side: 'chest_side', bottom: 'chest_bottom', front: 'chest_front',
+};
+const CHEST_SVG = {
+  chest_top: chestTopTex(961),
+  chest_side: chestSideTex(962),
+  chest_front: chestFrontTex(963),
+  chest_bottom: chestBottomTex(964),
+};
+// 朝北 = 本名（旧存档/结构箱子/账本零迁移，ID 不变）；facingBase 让放置路径按玩家方位换态。
+// 其余三朝向变体 `chest_s/_e/_w` **文件末尾追加**（新增 ID 一律尾部，防既有方块 ID 错位）。
+reg('chest', {
+  textures: CHEST_TEX, hardness: 2.5, facing: 'n', baseBlock: 'chest', facingBase: 'chest',
+}, { ...CHEST_SVG });
 
 // 潜影盒（Idea-2C）：27 槽随身容器方块，物品形态内容跟随（槽位 data 字段）
-function shulkerBoxTex(seed) {
+// 潜影盒（B28）：侧面 = 壳壁 + 盖缝 + 中央扣饰；顶面 = 同心壳板（盖子）；底面 = 素壳。
+// 此前六面同一张"带扣饰的侧壁"，扣饰在头顶和脚底各出现一次。
+function shulkerShellPx(seed) {
   const px = makeTex();
   const base = [172, 136, 200]; // 潜影紫
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     px[y * 16 + x] = rgb(base, 0.9 + hash2(x, y, seed) * 0.18);
   }
+  return px;
+}
+
+function shulkerBoxSideTex(seed) {
+  const px = shulkerShellPx(seed);
+  const base = [172, 136, 200];
   fillRect(px, 0, 0, 15, 0, rgb([124, 94, 154]));
   fillRect(px, 0, 15, 15, 15, rgb([98, 74, 126]));
   fillRect(px, 0, 0, 0, 15, rgb([124, 94, 154]));
@@ -1491,7 +1774,41 @@ function shulkerBoxTex(seed) {
   fillRect(px, 7, 3, 8, 6, 'rgb(158,148,172)');   // 中央扣饰
   return pixelSvg(px);
 }
-reg('shulker_box', { displayName: '潜影盒', hardness: 2, lore: ['扣上就再没有缝的壳，摔不碎，也撬不开。', '拾遗者的行囊——他们的规矩：拾来的东西先装进自己的壳，再入库。'] }, { shulker_box: shulkerBoxTex(977) });
+
+function shulkerBoxTopTex(seed) {
+  const px = shulkerShellPx(seed);
+  const base = [172, 136, 200];
+  fillRect(px, 0, 0, 15, 0, rgb([124, 94, 154]));
+  fillRect(px, 0, 15, 15, 15, rgb([98, 74, 126]));
+  fillRect(px, 0, 0, 0, 15, rgb([124, 94, 154]));
+  fillRect(px, 15, 0, 15, 15, rgb([98, 74, 126]));
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const r = Math.hypot(x - 7.5, y - 7.5);
+    if (r > 6.4) px[y * 16 + x] = rgb([140, 108, 168]);
+    else if (r > 3.6 && r < 4.6) px[y * 16 + x] = rgb(base, 1.12);
+  }
+  fillRect(px, 7, 7, 8, 8, rgb([158, 148, 172]));
+  return pixelSvg(px);
+}
+
+function shulkerBoxBottomTex(seed) {
+  const px = shulkerShellPx(seed);
+  fillRect(px, 0, 0, 15, 0, rgb([124, 94, 154]));
+  fillRect(px, 0, 15, 15, 15, rgb([98, 74, 126]));
+  fillRect(px, 0, 0, 0, 15, rgb([124, 94, 154]));
+  fillRect(px, 15, 0, 15, 15, rgb([98, 74, 126]));
+  return pixelSvg(px);
+}
+
+reg('shulker_box', {
+  displayName: '潜影盒', hardness: 2,
+  lore: ['扣上就再没有缝的壳，摔不碎，也撬不开。', '拾遗者的行囊——他们的规矩：拾来的东西先装进自己的壳，再入库。'],
+  textures: { top: 'shulker_box_top', side: 'shulker_box_side', bottom: 'shulker_box_bottom' },
+}, {
+  shulker_box_top: shulkerBoxTopTex(976),
+  shulker_box_side: shulkerBoxSideTex(977),
+  shulker_box_bottom: shulkerBoxBottomTex(978),
+});
 
 // --- 耕种（P3-4）：耕地 / 小麦作物 8 阶段 / 草丛（种子来源） ---
 // 湿土：比 dirt 深 + 水渍暗斑 + 两条犁沟
@@ -1547,7 +1864,12 @@ function tallGrassTex(seed) {
   return pixelSvg(px);
 }
 
-reg('farmland', { displayName: '耕地', tool: 'shovel', hardness: 0.6 }, { farmland: farmlandTex(61) });
+// 耕地（B28）：顶面 = 湿土 + 犁沟；侧面/底面 = 泥土（此前六面都是犁沟土，"田垄"出现在侧面）。
+// icon 显式指回 top：默认图标取 side（=泥土）会让物品栏里的耕地变成一块土。
+reg('farmland', {
+  displayName: '耕地', tool: 'shovel', hardness: 0.6, icon: 'farmland',
+  textures: { top: 'farmland', side: 'dirt', bottom: 'dirt' },
+}, { farmland: farmlandTex(61) });
 for (let s = 0; s <= 7; s++) {
   reg(`wheat_crop_${s}`, { displayName: '小麦', transparent: true, solid: false, hardness: 0, renderType: 'cross' },
     { [`wheat_crop_${s}`]: wheatTex(s) });
@@ -1557,48 +1879,119 @@ reg('tall_grass', { displayName: '草丛', transparent: true, solid: false, hard
 
 // 凋零骷髅头颅方块（Idea-2D-②，**文件末尾追加**防方块 ID 错位）：
 // 与同名物品互通——放置消耗物品、破坏掉回同名物品；T 型摆塔（4 灵魂沙 + 3 头）召唤凋灵
-function witherSkullBlockTex(seed, withFace) {
+// B28 定向面：五官只在正面（facing 边），侧面 = 颞骨 + 耳窝，顶面 = 颅缝 + 裂纹。
+// 此前五官被画在四个侧面（前后左右一模一样的脸）；家族变体 `_s/_e/_w` 尾部追加。
+function witherSkullBasePx(seed) {
   const px = makeTex();
-  const bone = [64, 64, 70], boneD = [44, 44, 50], boneHi = [92, 92, 98], socket = [14, 14, 18];
+  const bone = [64, 64, 70];
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     px[y * 16 + x] = rgb(bone, 0.9 + hash2(x, y, seed) * 0.2);
   }
-  fillRect(px, 0, 3, 15, 3, rgb(boneD));   // 颅缝暗线
-  if (withFace) {
-    fillRect(px, 3, 6, 5, 7, rgb(socket));    // 左眼窝
-    fillRect(px, 10, 6, 12, 7, rgb(socket));  // 右眼窝
-    fillRect(px, 7, 9, 8, 10, rgb(socket));   // 鼻腔
-    for (const x of [4, 6, 9, 11]) {          // 獠牙列
-      setPx(px, x, 12, rgb(boneHi));
-      setPx(px, x, 13, rgb(boneD));
-    }
+  return px;
+}
+
+// 正面：眼窝 + 鼻腔 + 獠牙列
+function witherSkullFrontTex(seed) {
+  const px = witherSkullBasePx(seed);
+  const boneD = [44, 44, 50], boneHi = [92, 92, 98], socket = [14, 14, 18];
+  fillRect(px, 0, 3, 15, 3, rgb(boneD));
+  fillRect(px, 3, 6, 5, 7, rgb(socket));
+  fillRect(px, 10, 6, 12, 7, rgb(socket));
+  fillRect(px, 7, 9, 8, 10, rgb(socket));
+  for (const x of [4, 6, 9, 11]) {
+    setPx(px, x, 12, rgb(boneHi));
+    setPx(px, x, 13, rgb(boneD));
   }
   return pixelSvg(px);
 }
-reg('wither_skeleton_skull', { displayName: '凋零骷髅头颅', hardness: 1,
-  textures: { top: 'wither_skull_top', side: 'wither_skull_side', bottom: 'wither_skull_top' } },
-  { wither_skull_top: witherSkullBlockTex(131, false), wither_skull_side: witherSkullBlockTex(132, true) });
 
-// 信标（Idea-2D-③，**文件末尾追加**防方块 ID 错位）：金字塔基座激活，右键选效果周期给玩家 buff
-function beaconTex() {
+// 侧面：颅缝 + 颞骨暗带 + 耳窝（无眼鼻）
+function witherSkullSideTex(seed) {
+  const px = witherSkullBasePx(seed);
+  const boneD = [44, 44, 50], boneHi = [92, 92, 98];
+  fillRect(px, 0, 3, 15, 3, rgb(boneD));
+  fillRect(px, 0, 4, 15, 5, rgb([56, 56, 62]));
+  fillRect(px, 10, 8, 12, 10, rgb([36, 36, 42])); // 耳窝
+  setPx(px, 11, 9, rgb([22, 22, 26]));
+  fillRect(px, 3, 12, 6, 12, rgb(boneHi));
+  return pixelSvg(px);
+}
+
+// 顶面：颅缝十字 + 骨缝裂纹（原版头颅顶）
+function witherSkullTopTex(seed) {
+  const px = witherSkullBasePx(seed);
+  const boneD = [40, 40, 46], boneHi = [96, 96, 102];
+  fillRect(px, 0, 7, 15, 8, rgb(boneD));
+  fillRect(px, 7, 0, 8, 15, rgb(boneD));
+  for (const [cx, cy] of [[3, 3], [12, 4], [4, 11], [11, 12]]) setPx(px, cx, cy, rgb(boneHi));
+  return pixelSvg(px);
+}
+
+reg('wither_skeleton_skull', {
+  displayName: '凋零骷髅头颅', hardness: 1,
+  textures: { top: 'wither_skull_top', side: 'wither_skull_side', bottom: 'wither_skull_top', front: 'wither_skull_front' },
+  facing: 'n', baseBlock: 'wither_skeleton_skull', facingBase: 'wither_skeleton_skull',
+}, {
+  wither_skull_top: witherSkullTopTex(131),
+  wither_skull_side: witherSkullSideTex(132),
+  wither_skull_front: witherSkullFrontTex(133),
+});
+
+// 信标（Idea-2D-③；B28 拆面）：顶面 = 下界之星（唯一发光面），侧面 = 黑曜石框 + 玻璃带 + 金角，
+// 底面 = 黑曜石底座。此前六面同一张四芒星图，星的四面都亮。
+function beaconSideTex(seed) {
   const px = makeTex();
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
-    px[y * 16 + x] = rgb([26, 28, 40], 0.9 + hash2(x, y, 141) * 0.2); // 深夜蓝底
+    px[y * 16 + x] = rgb([26, 28, 40], 0.9 + hash2(x, y, seed) * 0.2); // 深夜蓝底（黑曜石）
   }
-  // 中央下界之星纹样（暖白四芒）
+  // 中段玻璃带（半透青白），带内可见微光
+  fillRect(px, 1, 6, 14, 9, rgb([118, 176, 190], 0.92 + 0.08));
+  for (let x = 1; x <= 14; x += 3) fillRect(px, x, 6, x, 9, rgb([96, 148, 164]));
+  // 四角金饰
+  for (const [cx, cy] of [[1, 1], [14, 1], [1, 14], [14, 14]]) {
+    fillRect(px, cx, cy, cx + 1, cy + 1, rgb([226, 184, 92]));
+  }
+  fillRect(px, 0, 0, 15, 0, rgb([14, 15, 24]));
+  fillRect(px, 0, 15, 15, 15, rgb([14, 15, 24]));
+  return pixelSvg(px);
+}
+
+function beaconTopTex() {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    px[y * 16 + x] = rgb([26, 28, 40], 0.9 + hash2(x, y, 141) * 0.2);
+  }
   const star = [240, 238, 220];
   fillRect(px, 7, 2, 8, 13, rgb(star, 0.95));
   fillRect(px, 2, 7, 13, 8, rgb(star, 0.95));
   fillRect(px, 6, 6, 9, 9, rgb([255, 255, 245]));
   setPx(px, 5, 5, rgb(star)); setPx(px, 10, 5, rgb(star));
   setPx(px, 5, 10, rgb(star)); setPx(px, 10, 10, rgb(star));
-  // 四角金饰
   for (const [cx, cy] of [[1, 1], [14, 1], [1, 14], [14, 14]]) {
     fillRect(px, cx, cy, cx + 1, cy + 1, rgb([226, 184, 92]));
   }
   return pixelSvg(px);
 }
-reg('beacon', { displayName: '信标', light: 15, hardness: 3, tool: 'pickaxe' }, { beacon: beaconTex() });
+
+function beaconBottomTex() {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    px[y * 16 + x] = rgb([20, 22, 32], 0.9 + hash2(x, y, 142) * 0.2);
+  }
+  for (const [cx, cy] of [[1, 1], [14, 1], [1, 14], [14, 14]]) {
+    fillRect(px, cx, cy, cx + 1, cy + 1, rgb([196, 158, 78]));
+  }
+  return pixelSvg(px);
+}
+
+reg('beacon', {
+  displayName: '信标', light: 15, hardness: 3, tool: 'pickaxe',
+  textures: { top: 'beacon_top', side: 'beacon_side', bottom: 'beacon_bottom' },
+}, {
+  beacon_top: beaconTopTex(),
+  beacon_side: beaconSideTex(143),
+  beacon_bottom: beaconBottomTex(),
+});
 
 // ── 天域叙事基石（批次 A，**文件末尾追加**防方块 ID 错位）────────────────
 // 星髓 = 凝固的潮之力（docs/aether-storyline.md §2.2）：矿石 teal 晶簇 / 块体亮脉络。
@@ -1837,6 +2230,51 @@ function whaleBoneTex() {
   return pixelSvg(px);
 }
 reg('whale_bone_block', { hardness: 1.5, tool: 'pickaxe' }, { whale_bone_block: whaleBoneTex() });
+
+// ── B28 定向面/状态家族变体（**一律文件末尾追加**：既存方块 ID 一律不动，旧存档/联机账本零迁移）──
+// 命名约定见 src/core/blockShape.js facingId()：家族本名 = 朝北态，其余 `${family}_${facing}`。
+// 变体必须带 baseBlock（掉落映射回基础物品）与 facing（渲染逐面取纹理）。
+
+// 箱子：朝北 = 'chest'（本名，结构箱子/旧存档同 ID）；其余三朝向
+for (const facing of ['s', 'e', 'w']) {
+  reg(`chest_${facing}`, {
+    textures: CHEST_TEX, hardness: 2.5, facing, baseBlock: 'chest',
+    displayName: '箱子',
+  }, { ...CHEST_SVG });
+}
+
+// 熔炉：未点燃三朝向 + 点燃四朝向（点燃态 light 13 走亮块管线，Game.updateFurnaces 切换）
+for (const facing of ['s', 'e', 'w']) {
+  reg(`furnace_${facing}`, {
+    textures: FURNACE_TEX, hardness: 3.5, tool: 'pickaxe', minTier: 1,
+    facing, baseBlock: 'furnace', lit: false, displayName: '熔炉',
+  }, { ...FURNACE_SVG });
+}
+const FURNACE_LIT_TEX = { ...FURNACE_TEX, front: 'furnace_front_lit' };
+for (const facing of ['n', 's', 'e', 'w']) {
+  const name = facing === 'n' ? 'furnace_lit' : `furnace_lit_${facing}`;
+  reg(name, {
+    textures: FURNACE_LIT_TEX, hardness: 3.5, tool: 'pickaxe', minTier: 1, light: 13,
+    facing, baseBlock: 'furnace', lit: true, displayName: '熔炉',
+  }, { ...FURNACE_SVG });
+}
+
+// 凋零骷髅头颅：五官只在正面（facing 边）
+for (const facing of ['s', 'e', 'w']) {
+  reg(`wither_skeleton_skull_${facing}`, {
+    displayName: '凋零骷髅头颅', hardness: 1, facing, baseBlock: 'wither_skeleton_skull',
+    textures: { top: 'wither_skull_top', side: 'wither_skull_side', bottom: 'wither_skull_top', front: 'wither_skull_front' },
+  }, {
+    wither_skull_top: witherSkullTopTex(131),
+    wither_skull_side: witherSkullSideTex(132),
+    wither_skull_front: witherSkullFrontTex(133),
+  });
+}
+
+// 红石灯充能态（light 15；未充能本名 light 0，两态由 RedstoneSystem 切换）
+reg('redstone_lamp_lit', {
+  displayName: '红石灯', hardness: 0.3, light: 15, lit: true, baseBlock: 'redstone_lamp',
+}, { redstone_lamp_lit: redstoneLampTex(132, true) });
 
 export const BlockSVGDefinitions = svgMap;
 
