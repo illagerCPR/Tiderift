@@ -270,6 +270,15 @@ else
     exit 1
 fi
 
+# B29 更名 Tiderift（Beta 版本格式/logo/引用面）+ 创造栏技术方块过滤 + 等轴图标回归（纯 node）
+echo "=== build29-rename-icons ==="
+if node tests/build29-rename-icons.mjs; then
+    echo "build29-rename-icons: OK"
+else
+    echo "build29-rename-icons: FAILED"
+    exit 1
+fi
+
 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
 echo "=== end-dragon ==="
 if node tests/end-dragon.mjs; then

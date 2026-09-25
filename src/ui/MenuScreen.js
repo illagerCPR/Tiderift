@@ -7,7 +7,7 @@ import { t, getLocale, onLocaleChange } from '../i18n/index.js';
 import { globeIconDataUri } from './LanguageScreen.js';
 import { personIconDataUri } from './SkinScreen.js';
 import { getLanHost, setLanHost, normalizeLanHost, lanWsUrl, probeLanServer } from '../net/lanStatus.js';
-import logoUrl from '../../res/logo-cubeworld-js-edition.png';
+import logoUrl from '../../res/logo-tiderift-js-edition.png';
 
 // 刷新图标（Build 23：主界面 LAN 组件；石质浅底上用深色描边——原 #e8e8e8 与按钮浅灰底对比不足）
 function refreshIconDataUri() {
@@ -133,7 +133,7 @@ export class MenuScreen {
   // ---------- 主页 ----------
   _renderMain() {
     this.el.innerHTML = `
-      <img src="${logoUrl}" alt="CubeWorld" style="
+      <img src="${logoUrl}" alt="Tiderift" style="
         width: 500px; max-width: 92vw; image-rendering: pixelated;
         filter: drop-shadow(5px 6px 0 rgba(0,0,0,0.45)); margin-bottom: 2px;" />
       <div style="font-size: 13px; color: #ccc; margin-bottom: 3vh;">${t('JavaScript 版 3D 沙盒游戏')}</div>

@@ -68,7 +68,7 @@ ok(gameSrc.includes('_finaleTide.ritual && p > 0.25 && this.mobManager'), '龙�
 ok(gameSrc.includes('this.net.sendFinaleState({ offered: true'), '献证 LAN 上报（F1 缺口补齐）');
 
 // ── ⑤ 发版 ──
-ok(BUILD === 28, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
+ok(BUILD === 29, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
 
 // ── ⑥ K3 终局成就 ──
 const hudSrc = readFileSync('./src/ui/Hud.js', 'utf8');

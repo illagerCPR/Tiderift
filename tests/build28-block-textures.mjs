@@ -297,16 +297,24 @@ const def = (n) => BlockRegistry.getById(id(n));
   ok(cm.includes("key: 'e'") && cm.includes("key: 'n'"), 'ChunkMesh：FACES 带方向键');
   ok(cm.includes('def.faceTex[face.key]'), 'ChunkMesh：逐面取 faceTex');
 
-  // UI 图标链：8 处渲染点都必须优先定向面（否则箱子图标变成没有锁扣的木板）
-  let iconSites = 0;
-  for (const f of ['../src/ui/TradeScreen.js', '../src/ui/FurnaceScreen.js', '../src/ui/Hotbar.js',
+  // UI 图标链：B29 起收敛到 BlockIcon 统一入口——7 个渲染点必须委托 BlockIcon，
+  // 且 BlockIcon 兜底链保留定向面优先（否则箱子图标变成没有锁扣的木板）
+  const ICON_SITES = ['../src/ui/TradeScreen.js', '../src/ui/FurnaceScreen.js', '../src/ui/Hotbar.js',
     '../src/ui/ChestScreen.js', '../src/ui/InventoryScreen.js', '../src/ui/RecipeViewer.js',
-    '../src/render/RemoteHotbarSprite.js']) {
+    '../src/render/RemoteHotbarSprite.js'];
+  for (const f of ICON_SITES) {
     const src = srcOf(f);
-    if (src.includes('block.icon || block.side || block.top')) iconSites++;
-    else ok(false, `${f} 图标解析链未优先定向面`);
+    ok(src.includes("from '../render/BlockIcon.js'") || src.includes("from './BlockIcon.js'"),
+      `${f} 图标链已委托 BlockIcon`);
   }
-  ok(iconSites === 7, `图标解析链 7 处全部优先定向面（实测 ${iconSites}）`);
+  const bi = srcOf('../src/render/BlockIcon.js');
+  ok(bi.includes('block.icon || block.side || block.top'), 'BlockIcon 兜底链仍优先定向面');
+  ok(bi.includes('def.front || def.side'), 'BlockIcon 等轴取面走 front 优先');
+  let legacySites = 0;
+  for (const f of ICON_SITES) {
+    if (srcOf(f).includes('block.icon || block.side || block.top')) legacySites++;
+  }
+  ok(legacySites === 0, `7 个渲染点均不再自带旧取纹链（残留 ${legacySites}）`);
   ok(!srcOf('../src/ui/Hotbar.js').includes('const texName = block.side || block.top'), 'Hotbar 旧图标链已废除');
 }
 

@@ -1,4 +1,4 @@
-# CubeWorld 世界观总纲 —— 一潮三分（设计稿 v1）
+# Tiderift 世界观总纲 —— 一潮三分（设计稿 v1；B29 起项目定名 Tiderift/裂潮，总纲即命名来源）
 
 > 日期：2026-09-15 编制 ｜ 最后滚动核对：Alpha Build 23（2026-09-16）｜ 性质：设计大纲 + 叙事状态登记（不随批次 bump BUILD）
 > 关联：`docs/aether-storyline.md`（天域篇定稿）、`docs/agent-notes/dimensions-portals.md`（维度防回退）、`TODO.md` Idea-5

@@ -1,7 +1,7 @@
-# CubeWorld GitHub Wiki 增量更新 —— 交接提示词（批次 7）
+# Tiderift GitHub Wiki 增量更新 —— 交接提示词（批次 7；Wiki 站原名 CubeWorld Wiki，随仓库更名自动重定向）
 
 > 交接日期：2026-09-16 ｜ 移交方：上一会话（已完成 docs/worldview.md 的 Build 23 核对）
-> 任务：把 GitHub Wiki（`illagerCPR/CubeWorld.wiki`）从 **Alpha Build 7 基准**增量更新到 **Alpha Build 23**。
+> 任务：把 GitHub Wiki（`illagerCPR/Tiderift.wiki`）从 **Alpha Build 7 基准**增量更新到 **Alpha Build 23**。
 > 本文件自包含：不依赖任何历史会话上下文，按本文即可开工。
 
 ## 0. 任务一句话
@@ -12,15 +12,15 @@ CubeWorld Wiki（gollum/GitHub Wiki 文档站，44 页）最后一次全量更�
 
 | 项 | 位置 |
 |---|---|
-| 项目工作副本 | `~/projects/project-mc/`（远程 `illagerCPR/CubeWorld`，master） |
-| Wiki 仓库 | `git clone https://github.com/illagerCPR/CubeWorld.wiki.git`（gollum 格式，`.md` 即页面） |
-| 版本权威 | `gh release list --repo illagerCPR/CubeWorld`（当前最新 `alpha-build-23`）+ `src/version.js`（`BUILD = 23`） |
+| 项目工作副本 | `~/projects/project-mc/`（远程 `illagerCPR/Tiderift`，master） |
+| Wiki 仓库 | `git clone https://github.com/illagerCPR/Tiderift.wiki.git`（gollum 格式，`.md` 即页面） |
+| 版本权威 | `gh release list --repo illagerCPR/Tiderift`（当前最新 `alpha-build-23`）+ `src/version.js`（`BUILD = 23`） |
 | 本地预览 | Wiki 仓库内自带 `preview.sh`（批次 1–6 沿用） |
 | 版本常量 | `src/version.js` —— 文档基准版本号以它为准，勿信页面旧文 |
 
 ## 2. 权威素材源（按优先级）
 
-1. **GitHub Releases 发布说明**：`gh release view alpha-build-<N> --repo illagerCPR/CubeWorld` —— 每版玩家可感知变化的权威清单（Changelog 页的主要素材）。
+1. **GitHub Releases 发布说明**：`gh release view alpha-build-<N> --repo illagerCPR/Tiderift` —— 每版玩家可感知变化的权威清单（Changelog 页的主要素材）。
 2. **git 提交标题**：`git log --oneline` —— 本项目提交标题即极详尽交付说明（含实现要点、测试断言数、冒烟结果），比 Release 说明更细，开发者页素材主要来源。
 3. **批次踩坑备忘**：`docs/agent-notes/`（7 篇：worldgen-structures / dimensions-portals / survival-items / mobs-entities / rendering-lighting / multiplayer / ui-misc）—— 按"现象→原因→正确做法"吸收进 Known-Pitfalls 与各页实现要点。
 4. **世界观文档（本次已核对到 Build 23）**：`docs/worldview.md`（一潮三分总纲 + 四界篇章 + 术语表）与 `docs/aether-storyline.md`（天域篇全文）—— 新增叙事页的素材。

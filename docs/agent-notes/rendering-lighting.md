@@ -69,3 +69,14 @@
 - **多面纠偏清单（六面不再同图）**：耕地（顶犁沟/侧=泥土，**必须显式 `icon: 'farmland'`**——默认图标取 side 会变成一块土）、仙人掌（顶=放射棱/侧=竖棱刺）、西瓜（顶=瓜蒂同心纹/侧=条纹）、音符盒（顶=圆盘/侧=木框）、信标（顶=下界之星/侧=黑曜石+玻璃带/底=金角基座）、潜影盒（顶=同心壳板/侧=壳壁+扣饰/底=素壳）、活塞头（顶=木芯推板/侧=活塞臂/底=接缝）、砂岩/红砂岩/石英（顶=平滑面/侧=沉积层）。
 - **纹理函数拆分纪律**：`pixelSvg(px)` 返回的是 **SVG 字符串**，同一族里"变体 = 基础图 + 叠加"必须拆成 `xxxPx(seed) → 像素数组` + `xxxTex(seed) = pixelSvg(xxxPx(seed))` 两层；直接对 `xxxTex()` 的返回值调 `setPx/fillRect` 会抛 `Cannot assign to read only property`（本批踩到 3 次）。
 - **验证**：`tests/build28-block-textures.mjs`（210 断言：ID 零漂移 / 家族规模 / 白名单逐字段透传 / faceTex 四向解析 / ChunkMesh 六面 UV 实测 / 多面清单 / 全局 SVG 引用完整性 / 红石灯真机行为 / 源码绊线）；实机用 agent-browser 看箱锁扣朝向、熔炉炉口与点燃发光、头颅五官、灯亮灭、耕地侧面回到泥土。
+
+## Build 29 批次（2026-09-25 交付）—— 方块图标类原版等轴三面化（BlockIcon 统一入口）
+
+- **统一入口 `src/render/BlockIcon.js`**：`drawIconInto(ctx, size, name, resolveItemSvg, isStale)` 三级解析——物品 SVG 平铺 → 立方方块等轴三面（`getBlockIcon`）→ 其余方块单面平铺兜底。**新 UI 一律调它，禁止自绘方块图标链**；B28 的 `block.icon || block.side || block.top` 链收口为该文件导出的 `getFlatBlockSvg(name)`（全项目唯一出现处，`build29` 有"仅剩一处"绊线、`build28` 有"7 站均委托"绊线）。
+- **等轴几何（32px 设计基准）**：菱形上顶点 (16,2)/左 (2,10)/右 (30,10)/前 (16,18)、侧棱高 14；`FACE_XFORMS` 三组矩阵按 16px 源图归一（0.875 = 14/16），`setTransform` 后直接 `drawImage`；`ctx.setTransform(1,0,0,1,0,0)` 复位勿漏（否则污染后续绘制）。面亮度沿用原版：top 1.0 / 左面（front）0.8 / 右面（side）0.6——箱子锁扣、熔炉炉口出现在左面且亮度比 top 低一档。
+- **压暗必须 multiply + destination-in 两步**：只 `multiply` 会把透明像素填成灰块（火把/玻璃类贴图会糊出一整块方片），`destination-in` 用原图抠回 alpha 后再落笔。
+- **缓存两层**：图标 canvas 按 `` `${name}@${size}` `` 存 **Promise**（并发首绘只建一次）；变暗贴图 `WeakMap<Image, Map<level, canvas>>`。二次绘制全同步。
+- **形制判定 `isIsoBlock(def)`（ItemCategories.js 纯函数，node 可测）**：`renderType === 'cube'` 且无 `shape` 且非流体才等轴；cross/portal/flat、门/床/活板门（带 shape）→ 平铺 sprite（原版对非立方同样平铺）。`piston_head` 无 shape 也无形制特判，世界内就是整格立方 → 等轴是正确行为（曾误判为平铺，回归预期修正而非代码）。
+- **7 个调用站委托**：Hotbar（`isStale = () => this._sig[i] !== sig` 延续防闪烁守卫语义，`iconCache`/`getIconSvg` 已删）；RemoteHotbarSprite 的 `getIcon` 先 `getBlockIcon(name, 32)`（canvas）再 `getIconSvg`（物品/非立方）兜底——`drawImage` 接受 canvas 源，绘制站零改动；ChestScreen/FurnaceScreen/TradeScreen/InventoryScreen/RecipeViewer 的 `drawIcon` 全部一行转发。
+- **测试侧高坑**：node 套件里 `import ItemRegistry` 后 **必须副作用导入 `ItemDefs.js`**，否则 `getByName` 全空（同 worker 图陷阱，本批再踩一次）。
+- **验证**：`tests/build29-rename-icons.mjs` 405 断言（iso 判定正反清单 / 全部 iso 方块三面贴图齐备 / 矩阵·亮度·multiply·缓存·isStale 绊线 / 7 站委托 / 旧链仅剩一处）；实机 agent-browser 热栏混合排布截图确认"立方等轴 + 床/火把平铺"同框正确、创造栏与 JEI 图标同步等轴。

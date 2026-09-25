@@ -3,9 +3,8 @@
 // 熔炉状态来自 World.furnaces（惰性创建，直接改引用，存档序列化持久化）。
 // 烧炼推进由 Game.updateFurnaces 每帧驱动（界面开关都不影响）；本类 tick() 只负责刷新显示。
 import { SMELT_TIME, getSmeltingResult, getFuelTime } from '../core/Smelting.js';
-import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
-import { SVGTextures } from '../render/SVGTextures.js';
+import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
 import { getDisplayName } from './itemName.js';
 
@@ -225,23 +224,11 @@ export class FurnaceScreen {
   }
 
   async drawIcon(canvas, name) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, 32, 32);
-    let svgText = null;
-    const item = ItemRegistry.getByName(name);
-    if (item && this.game.itemSvgMap[name]) svgText = this.game.itemSvgMap[name];
-    if (!svgText) {
-      const block = BlockRegistry.getByName(name);
-      if (block) {
-        const texName = block.icon || block.side || block.top; // B28 优先定向面（箱子/熔炉图标看得出正面）
-        if (this.game.blockSvgMap[texName]) svgText = this.game.blockSvgMap[texName];
-      }
-    }
-    if (svgText) {
-      const img = await SVGTextures.svgToImage(svgText);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, 32, 32);
-    }
+    // B29 统一走 BlockIcon：物品 SVG 平铺 / 立方方块等轴三面 / 其余方块单面平铺
+    await drawIconInto(canvas.getContext('2d'), 32, name, (n) => {
+      const item = ItemRegistry.getByName(n);
+      return item && this.game.itemSvgMap[n] ? this.game.itemSvgMap[n] : null;
+    });
   }
 
   bindSlots() {

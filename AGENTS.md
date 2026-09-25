@@ -91,7 +91,7 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - **新增方块/状态变体一律追加在 `BlockDefs.js` 文件末尾（高危，勿插入中部）**：方块数字 ID 由注册顺序决定（`nextId++`），存档 `modifiedBlocks`、联机账本 `server/world/*.json` 全按数字 ID 落盘——在中部插入注册会让其后所有方块 ID 整体错位，旧存档里的方块变成别的东西（B27 门家族曾整段移位，B28 起改为尾部追加）。既存方块的 `reg(...)` 调用位置不可移动；新状态变体（`chest_e`、`furnace_lit_w`…）追加到文件末尾段，`build28-block-textures.mjs` 有 ID 零漂移钉值断言。
 3. `MobManager.buildMaterials()` 必须在 `buildAtlas()` 之后调用（依赖图集 UV）。
 4. `ChunkMeshBuilder` 用 `atlasUV` 查询每面的 UV 坐标。
-5. UI（Hotbar、InventoryScreen）通过 `game.blockSvgMap` / `game.itemSvgMap` 查 SVG 字符串，用 `SVGTextures.svgToImage()` 绘制到 canvas。
+5. UI（Hotbar、InventoryScreen）通过 `game.blockSvgMap` / `game.itemSvgMap` 查 SVG 字符串，用 `SVGTextures.svgToImage()` 绘制到 canvas。**B29 起图标绘制统一走 `src/render/BlockIcon.js` 的 `drawIconInto()`**（物品 SVG 平铺 → 立方方块等轴三面 → 其余单面兜底；等轴判定 `isIsoBlock`、技术方块过滤 `isTechnicalBlock` 均在 `ItemCategories.js`）——新 UI 禁止自绘方块图标链。
 
 新增方块/物品时，必须同时：注册到 Registry + 生成对应 SVG + 确认 SVG map 中纹理名与 `block.textures` 引用一致 + 按需补 `displayName`。
 
@@ -198,16 +198,17 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 
 ## 任务进度（Roadmap）
 
-LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/CubeWorld.git`，原 Web-MC 已改名 CubeWorld，localStorage 前缀 `project-mc-save-` 为兼容保留）。各阶段交付内容与提交号用 `git log --oneline` 查看，设计细节见 `docs/lan-multiplayer-design.md`（v1.1）。
+LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.git`，原 Web-MC → CubeWorld → **Tiderift（裂潮，B29 定名，世界观见 `docs/worldview.md`）**，localStorage 前缀 `project-mc-save-` 为兼容保留不动）。各阶段交付内容与提交号用 `git log --oneline` 查看，设计细节见 `docs/lan-multiplayer-design.md`（v1.1）。
 
-**交付约定（2026-09-12 起）**：每完成一个阶段性批次即 `git push origin master`，并用 `gh run watch <runId> --repo illagerCPR/CubeWorld --exit-status` 确认 CI 绿后再收尾汇报；不积压未推送的本地提交。
+**交付约定（2026-09-12 起）**：每完成一个阶段性批次即 `git push origin master`，并用 `gh run watch <runId> --repo illagerCPR/Tiderift --exit-status` 确认 CI 绿后再收尾汇报；不积压未推送的本地提交。
 
-**版本号与发布规则（2026-09-13 确立）**：
-- 版本格式 **Alpha Build X**；X 从 1 起，**每次功能交付完成（批次 push + CI 绿）递增 1**，一个批次 = 一个 Release。
+**版本号与发布规则（2026-09-13 确立；B29 起更新）**：
+- 版本格式 **Tiderift Beta Build X**（B29 前为 `CubeWorld Alpha Build X`；**前缀变动 Build 数不重置**，X 连续递增）；X 从 1 起，**每次功能交付完成（批次 push + CI 绿）递增 1**，一个批次 = 一个 Release。
 - 版本常量唯一来源 `src/version.js`（`BUILD` 数字 + `VERSION_LABEL` 模板）：递增版本只改这一个数字，其他地方一律引用常量，禁止硬编码版本文本。
 - **版本号同步纪律（2026-09-13 补强）**：每次变动版本号（BUILD 递增）**必须在同一批次提交内更新 `src/version.js` 的 `BUILD`**——主界面与游戏内左下角均引用 `VERSION_LABEL` 常量自动跟随，改常量即改界面，勿漏；发布 Release 前先核对 `src/version.js` 的 BUILD 数值 = 目标 Build 号（曾发生连发 3 个 Release 而常量停在 1、界面显示与实际版本脱节的失误）。
-- 显示规则：主界面（`MenuScreen.versionEl`）与游戏内（`Hud.versionTag`）**左下角**常驻文本 `CubeWorld Alpha Build X`，格式勿改；新增 UI 不得遮挡/移除该元素（主菜单元素挂 body 勿挂 `MenuScreen.el`——`render()` 重建 innerHTML 会清除）。
-- 发布：每批 CI 绿后 `gh release create alpha-build-<X> --repo illagerCPR/CubeWorld --title "CubeWorld Alpha Build <X>" --notes "<本批内容简述>"`，tag 指向已绿的 master 提交。
+- 显示规则：主界面（`MenuScreen.versionEl`）与游戏内（`Hud.versionTag`）**左下角**常驻文本 `Tiderift Beta Build X`，格式勿改；新增 UI 不得遮挡/移除该元素（主菜单元素挂 body 勿挂 `MenuScreen.el`——`render()` 重建 innerHTML 会清除）。
+- 发布：每批 CI 绿后 `gh release create beta-build-<X> --repo illagerCPR/Tiderift --title "Tiderift Beta Build <X>" --notes "<本批内容简述>"`，tag 指向已绿的 master 提交（B29 前的 tag 为 `alpha-build-1..28`，保留不改）。
+- **更名落地（B29）**：游戏内显示名/README/徽章/package.json 已改 Tiderift；仓库已 `gh repo rename`（旧 URL GitHub 自动重定向）；**本地工作区目录名 `project-mc` 保留不改**；`res/logo-tiderift-js-edition.png` 为当前 logo（旧 logo-cubeworld 素材保留未引用）。
 
 后续候选（见 `docs/lan-multiplayer-design.md` §11 阶段 12）：Tab 玩家列表面板、远端盔甲外观同步、服务器性能面板（消息速率图表）、房间私聊/队伍分组。
 
@@ -222,8 +223,8 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/CubeWorld
 | `docs/agent-notes/dimensions-portals.md` | 维度基建/下界/末地/天域/联机同步、传送门、下界优化、末地完善（龙/末地城）、天域叙事基石（批次 A）、天域群风与众生（批次 B）、天域守誓巨像（批次 C）、天域复潮（批次 D） | 维度、传送门、下界/末地、换维联机、天域内容注册/i18n 审计/气流与免摔落/Boss AI/复潮档案 |
 | `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验） | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞 |
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
-| `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图 |
+| `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、UI 图标链 |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关 | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关 |
-| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座 | 菜单/视频设置、粒子、UI 界面、作弊面板、音频 |
+| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤 | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

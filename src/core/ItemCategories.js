@@ -101,3 +101,37 @@ const MAP = {
 export function getItemCategory(name) {
   return MAP[name] || 'misc';
 }
+
+// ---------- B29 创造模式技术性方块过滤 + 图标形制判定（纯函数，无 DOM） ----------
+
+// 显式技术方块：机制载体而非内容方块，不进创造物品栏（类JEI 面板不受影响，仍全量展示）
+const TECHNICAL_NAMES = new Set([
+  'piston_head',                    // 活塞推出态载体（由活塞放置/收回自动管理）
+  'end_portal', 'nether_portal', 'aether_portal', 'end_gateway', // 传送门幕（搭框点燃/折跃生成）
+  'end_portal_frame_eye',           // 末地门框架已嵌眼态（框架本名可放，眼由掷眼填充）
+  'wind_current',                   // 天域气流柱载体（结构生成）
+]);
+for (let i = 0; i <= 7; i++) TECHNICAL_NAMES.add(`wheat_crop_${i}`); // 小麦生长阶段
+
+// 技术性方块判定：
+//   ① 流体及流动等级（B26 water/lava + *_flow_N）
+//   ② 状态家族变体（def.baseBlock 且非本名——B27 门/床/活板门、B28 箱/炉/头颅/红石灯全家族，
+//      规则化覆盖现有与未来家族，无需逐名维护）
+//   ③ 显式清单（上表）
+// farmland 保留（原版创造栏同样提供）；redstone_wire/redstone_torch 等红石件是玩家可放置内容，保留。
+export function isTechnicalBlock(def) {
+  if (!def) return false;
+  if (def.name === 'air') return true;
+  if (def.fluidType) return true;
+  if (def.baseBlock && def.name !== def.baseBlock) return true;
+  return TECHNICAL_NAMES.has(def.name);
+}
+
+// 图标形制判定：仅"满格立方"用等轴三面合成；cross/portal/flat 渲染形制、带 shape 的
+// 部分方块（门/床/活板门）与流体走单面平铺（原版对非立方方块同样用平铺 sprite）。
+export function isIsoBlock(def) {
+  if (!def || def.id === 0) return false;
+  if (def.renderType && def.renderType !== 'cube') return false;
+  if (def.shape || def.fluidType) return false;
+  return true;
+}

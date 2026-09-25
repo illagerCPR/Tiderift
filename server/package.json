@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "CubeWorld 局域网联机房间服务器",
+  "description": "Tiderift 局域网联机房间服务器",
   "scripts": {
     "start": "node index.mjs"
   },

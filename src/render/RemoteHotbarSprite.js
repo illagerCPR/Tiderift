@@ -1,13 +1,12 @@
 // RemoteHotbarSprite.js -- 远端玩家头顶快捷栏 sprite（阶段11）
-// 9 槽 canvas 广告牌：物品图标走 itemSvgMap→blockSvgMap 解析链（与 Hotbar 同口径），
+// 9 槽 canvas 广告牌：立方方块图标为等轴三面合成（B29 BlockIcon），物品/非立方走单面解析链兜底，
 // 选中槽白框高亮；内容/选中态签名未变化不重绘（player_state 20Hz 高频触发也只做字符串比较）。
 // 注意：texture/material 每实例独享（昵称标签同款），dispose 必须释放；图标 Image 模块级缓存复用。
 import * as THREE from 'three';
 import { ItemRegistry } from '../core/ItemRegistry.js';
 import { ItemSVGDefinitions } from '../items/ItemDefs.js';
-import { BlockRegistry } from '../core/BlockRegistry.js';
-import { BlockSVGDefinitions } from '../blocks/BlockDefs.js';
 import { SVGTextures } from './SVGTextures.js';
+import { getBlockIcon, getFlatBlockSvg } from './BlockIcon.js';
 
 const CELL = 20;         // 单槽像素
 const PAD = 3;           // 画布外边距
@@ -20,27 +19,33 @@ const WORLD_W = 2.0;     // 世界宽度（高按画布比例换算）
 // 模块级图标缓存：name -> {promise, img|null}（跨玩家/跨重建复用，避免重复解码）
 const iconCache = new Map();
 
-// 与 Hotbar.getIconSvg 同口径的 SVG 解析链：物品优先，方块用 side 贴图
+// 与 Hotbar 同口径的单面解析链：物品 SVG 优先，方块走 B28 定向面链（BlockIcon 统一收口，仅作兜底）
 function getIconSvg(name) {
   const item = ItemRegistry.getByName(name);
   if (item && ItemSVGDefinitions[name]) return ItemSVGDefinitions[name];
-  const block = BlockRegistry.getByName(name);
-  if (block) {
-    const texName = block.icon || block.side || block.top; // B28 优先定向面（箱子/熔炉图标看得出正面）
-    if (BlockSVGDefinitions[texName]) return BlockSVGDefinitions[texName];
-  }
-  return null;
+  return getFlatBlockSvg(name);
 }
 
-// 取图标：返回已就绪的 Image（同步）或 null（异步加载中/失败；加载完成后由回调触发重绘）
+// 取图标：立方方块走等轴三面 canvas（B29），物品/非立方方块回退单面贴图 Image。
+// 返回已就绪的绘制源（canvas/Image，同步）或 null（异步加载中/失败；加载完成后由回调触发重绘）
 function getIcon(name, onLoaded) {
   let e = iconCache.get(name);
   if (!e) {
-    const svg = getIconSvg(name);
-    if (!svg) return null;
     e = { promise: null, img: null };
-    e.promise = SVGTextures.svgToImage(svg)
-      .then((img) => { e.img = img; if (onLoaded) onLoaded(); })
+    e.promise = getBlockIcon(name, 32)
+      .then((canvas) => {
+        if (canvas) {
+          e.img = canvas;
+          if (onLoaded) onLoaded();
+          return null;
+        }
+        const svg = getIconSvg(name);
+        if (!svg) return null;
+        return SVGTextures.svgToImage(svg).then((img) => {
+          e.img = img;
+          if (onLoaded) onLoaded();
+        });
+      })
       .catch(() => {});
     iconCache.set(name, e);
   }

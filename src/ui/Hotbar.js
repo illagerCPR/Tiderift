@@ -1,8 +1,7 @@
 // Hotbar.js -- 快捷栏 UI
-import { SVGTextures } from '../render/SVGTextures.js';
-import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
 import { getDisplayName } from './itemName.js';
+import { drawIconInto } from '../render/BlockIcon.js';
 
 export class Hotbar {
   constructor(inventory) {
@@ -33,7 +32,6 @@ export class Hotbar {
       this.slots.push({ el: slot, canvas, count });
     }
     document.body.appendChild(this.el);
-    this.iconCache = new Map();
     this._sig = new Array(9).fill(null); // 槽位内容签名（name|count），未变化不重绘
     this._sel = new Array(9).fill(null); // 选中态缓存
 
@@ -71,25 +69,14 @@ export class Hotbar {
         this._sig[i] = sig;
         const ctx = slot.canvas.getContext('2d');
         if (s) {
-          // 渲染物品图标
-          let svgText = this.iconCache.get(s.name);
-          if (!svgText) {
-            svgText = this.getIconSvg(s.name);
-            if (svgText) this.iconCache.set(s.name, svgText);
-          }
-          if (svgText) {
-            const img = await SVGTextures.svgToImage(svgText);
-            // await 期间槽位状态又变化——过期绘制直接放弃，由最新一次 update 负责
-            //（并发 update 下旧图标曾回写覆盖已清空的槽：献证消耗后快捷栏图标残留的来源）
-            if (this._sig[i] !== sig) continue;
-            ctx.clearRect(0, 0, 32, 32);
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(img, 0, 0, 32, 32);
-            slot.count.textContent = s.count > 1 ? s.count : '';
-          } else {
-            ctx.clearRect(0, 0, 32, 32);
-            slot.count.textContent = s.count > 1 ? s.count : '';
-          }
+          // B29：物品 SVG 平铺 / 立方方块等轴三面 / 其余方块单面平铺，统一走 BlockIcon；
+          // isStale 守卫延续旧语义——await 期间槽位状态又变化时过期绘制直接放弃
+          //（并发 update 下旧图标曾回写覆盖已清空的槽：献证消耗后快捷栏图标残留的来源）
+          await drawIconInto(ctx, 32, s.name, (n) => {
+            const item = ItemRegistry.getByName(n);
+            return item && ItemSVGMap[n] ? ItemSVGMap[n] : null;
+          }, () => this._sig[i] !== sig);
+          slot.count.textContent = s.count > 1 ? s.count : '';
         } else {
           ctx.clearRect(0, 0, 32, 32);
           slot.count.textContent = '';
@@ -102,22 +89,9 @@ export class Hotbar {
       }
     }
   }
-
-  getIconSvg(name) {
-    // 优先物品 SVG，再方块 SVG
-    const item = ItemRegistry.getByName(name);
-    if (item && ItemSVGMap[name]) return ItemSVGMap[name];
-    const block = BlockRegistry.getByName(name);
-    if (block) {
-      // 用方块侧面贴图
-      const texName = block.icon || block.side || block.top; // B28 优先定向面（箱子/熔炉图标看得出正面）
-      if (BlockSVGMap[texName]) return BlockSVGMap[texName];
-    }
-    return null;
-  }
 }
 
-// 引用：由 main.js 注入
+// 引用：由 main.js 注入（物品 SVG 供 drawIconInto 解析；blockMap 仅为兼容旧注入签名保留）
 let ItemSVGMap = {};
 let BlockSVGMap = {};
 export function setSvgMaps(itemMap, blockMap) {

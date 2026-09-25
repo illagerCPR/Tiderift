@@ -103,7 +103,7 @@ ok(waiting.lines.length === 3, '候潮章 3 行（状态章克制）');
 const waitText = JSON.stringify(waiting);
 ok(!waitText.includes('龙') && !waitText.includes('一整片海'), '候潮章不写龙、不写终章内容（终章走纹章 lore，不变量 7）');
 ok(waitText.includes('潮的出生地'), '候潮章承载去向引导（去潮的出生地听完断句）');
-ok(BUILD === 28, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump）`);
+ok(BUILD === 29, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump）`);
 ok(emblem.lore.every((l) => l.length > 0) && egg.lore.every((l) => l.length > 0), 'lore 行文非空（行文纪律兜底）');
 
 console.log(`endgame-content: ${passed} assertions passed`);

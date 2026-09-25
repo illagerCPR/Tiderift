@@ -160,6 +160,6 @@ function farmWaterAt(at, nameOf, rec) {
 }
 
 // ── ④ BUILD 钉值 ──
-ok(BUILD === 28, 'BUILD 27（B26 流体模拟批次 bump）');
+ok(BUILD === 29, 'BUILD 27（B26 流体模拟批次 bump）');
 
 console.log(`PASS build25-fixes: ${passed} 断言`);

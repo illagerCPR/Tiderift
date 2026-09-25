@@ -99,6 +99,6 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 }
 
 // ── ⑤ BUILD ──
-ok(BUILD === 28, `BUILD 递增到 24（当前 ${BUILD}）`);
+ok(BUILD === 29, `BUILD 递增到 24（当前 ${BUILD}）`);
 
 console.log(`build23-menu-lan: ${passed} assertions ALL PASS`);

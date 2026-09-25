@@ -1,25 +1,25 @@
 <div align="center">
-  <img src="res/logo-cubeworld-js-edition.png" alt="CubeWorld — JavaScript Edition" width="600">
+  <img src="res/logo-tiderift-js-edition.png" alt="Tiderift — JavaScript Edition" width="600">
 </div>
 
 <div align="center">
 
-[![CI](https://github.com/illagerCPR/CubeWorld/actions/workflows/ci.yml/badge.svg)](https://github.com/illagerCPR/CubeWorld/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/illagerCPR/CubeWorld?include_prereleases&label=Release)](https://github.com/illagerCPR/CubeWorld/releases)
+[![CI](https://github.com/illagerCPR/Tiderift/actions/workflows/ci.yml/badge.svg)](https://github.com/illagerCPR/Tiderift/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/illagerCPR/Tiderift?include_prereleases&label=Release)](https://github.com/illagerCPR/Tiderift/releases)
 
 </div>
 
-网页版 3D 沙盒游戏（Web 版我的世界），基于 **Vite 5 + Three.js 0.160** 的纯前端体素游戏，支持**单机存档**与**局域网联机**。仓库：`https://github.com/illagerCPR/CubeWorld.git`（原 Project-MC / Web-MC）。
+网页版 3D 沙盒游戏（Web 版我的世界），基于 **Vite 5 + Three.js 0.160** 的纯前端体素游戏，支持**单机存档**与**局域网联机**。仓库：`https://github.com/illagerCPR/Tiderift.git`（原 Project-MC / Web-MC / CubeWorld，**Beta Build 29 起定名 Tiderift / 裂潮**，世界观见 `docs/worldview.md`）。
 
 - 程序化生成无限世界（确定性种子，联机时各端生成一致地形），地形生成与网格构建 **Worker 多线程化**（不卡主线程）
 - **多维度**：主世界 / 下界 / 末地 / 天域，传送门搭建与通行，联机按维度同步
 - 创造 / 生存 / 旁观三种模式
-- 方块挖掘、放置、合成、背包、快捷栏（**60+ 方块材质 + 85 个物品图标按原版像素风重绘**）
+- 方块挖掘、放置、合成、背包、快捷栏（**60+ 方块材质 + 85 个物品图标按原版像素风重绘，方块物品栏/快捷栏图标为原版式等轴三面立体渲染**）
 - **粒子系统**：破坏方块碎屑（按方块贴图取色）、燃烧火焰与烟、熔岩点燃玩家、TNT/苦力怕爆炸碎屑潮
 - **程序化音频**（WebAudio 合成，无音频文件）：材质九类分路音效、挖掘/脚步/落地/水花距离衰减、**怪物语音**、计划式风声与 BGM，音效/音乐可在视频设置开关
 - **视频设置**（主菜单 + ESC 暂停菜单共用）：渲染距离 / 视野 / 亮度 / 云 / 粒子密度 / 平滑光照 / 视角摇晃 / 灵敏度 / 全屏，**光照增强三档**（关闭 / 基础=水面反射+云影 / **完整**=再加泛光、体积光、色彩分级后处理链，默认完整）与**四个子开关**（泛光 / 体积光 / 水面真反射 / 太阳阴影），实时生效并持久化
 - **多语言界面**（11 种：简体中文 / 繁體中文 / English / Français / Deutsch / 日本語 / 한국어 / العربية / Русский / Español / Português）：主界面与暂停菜单的地球小按钮打开语言切换界面，即选即存；全部界面文本与方块/物品/怪物名称均已本地化（阿语暂为 LTR 布局）
-- **创造模式物品栏**：8 分类页签（建筑/自然/功能/红石/工具与战斗/食物/材料/杂项）+ 搜索框 + 摧毁槽 + **生存物品栏页签**（盔甲穿戴 + 合成 + 背包，原版式）；**原版式取物**——开局空背包，点物品拿起整组到光标再放进槽位（右键拿 1 个），不直接进快捷栏
+- **创造模式物品栏**：8 分类页签（建筑/自然/功能/红石/工具与战斗/食物/材料/杂项）+ 搜索框 + 摧毁槽 + **技术性方块不进栏**（流体/流动等级/状态家族变体/传送门/作物阶段/活塞头等，类 JEI 面板仍全量可查）+ **生存物品栏页签**（盔甲穿戴 + 合成 + 背包，原版式）；**原版式取物**——开局空背包，点物品拿起整组到光标再放进槽位（右键拿 1 个），不直接进快捷栏
 - **手持物 3D 模型**：方块为六面贴图立方体，工具/物品/火把等采用 **MC 风格像素挤出**（每个不透明像素生成带厚度的小立方，只渲染暴露面），远端玩家手持物同步立体化
 - **主菜单原版式全景背景**（预烘焙六面全景图 + 盒体旋转播放 + 动态云层叠加，启动即显）：同一机位连续拍摄多群系交界（蘑菇岛入景，画面零建筑），并以**完整光照增强档**烘焙（ACES 色调映射 + 泛光/体积光/色彩分级 + 水面真反射 + 太阳阴影）
 - **体素光照系统**：天光/方块光 BFS 传播（**洞穴会黑、火把照亮 14 格、影柱随挖放实时变化**）、逐顶点平滑光照 + AO 环境光遮蔽、昼夜只改 shader uniform 零重建
@@ -190,7 +190,7 @@ npm run preview        # 预览构建产物
 ## 项目结构
 
 ```
-CubeWorld/
+Tiderift/
 ├── res/                  # Logo 与主菜单全景图素材
 ├── src/
 │   ├── main.js          # 入口：Game + MenuScreen + NetworkManager
