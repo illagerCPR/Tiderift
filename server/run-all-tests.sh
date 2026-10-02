@@ -279,6 +279,15 @@ else
     exit 1
 fi
 
+# B30 水中上岸助推 + 氧气原版口径回归（纯 node：物理场景仿真/助推门限/陆上台阶保持/氧气 15 秒/溺水 2HP/s/接线绊线）
+echo "=== build30-water-exit-air ==="
+if node tests/build30-water-exit-air.mjs; then
+    echo "build30-water-exit-air: OK"
+else
+    echo "build30-water-exit-air: FAILED"
+    exit 1
+fi
+
 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
 echo "=== end-dragon ==="
 if node tests/end-dragon.mjs; then

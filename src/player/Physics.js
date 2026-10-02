@@ -9,6 +9,8 @@ const JUMP_VELOCITY = 9;
 const WATER_GRAVITY = -8;       // 水中重力（约为陆地的 1/4）
 const WATER_DRAG = 0.8;         // 水中垂直阻力（每帧速度衰减）
 const WATER_HORZ_DRAG = 0.7;    // 水中水平阻力
+const WATER_EXIT_BOOST = 4.0;   // 水中上岸助推（与 Space 上浮同级）：贴岸碰撞时抬升竖直速度
+const WATER_EXIT_VY_GATE = -0.6; // 助推门限：下沉趋势（潜游/坠水掠墙）不助推，悬浮/上浮贴岸才触发
 export const GLIDE_GRAVITY = -9;  // 鞘翅滑翔重力（约为落体的 1/3.5；Game._updateGliding 升力上限也引用）
 const GLIDE_MAX_FALL = -3.9;    // 滑翔下沉速度上限（m/s，原版平飞下沉口径）
 const GLIDE_WALL_CRASH_SPEED = 8; // 滑翔撞墙的最小水平冲击速度（低于此仅停下不受伤）
@@ -65,7 +67,11 @@ export class Physics {
     }
     
     entity.onGround = false;
-    
+
+    // 身体浸水判定（脚部 + 躯干中点任一格为水）：水中上岸助推依赖它而非眼位 inWater——
+    // 贴岸上爬时头先出水，眼位判定会翻 false 导致助推中断（原版 isInWater 语义）
+    entity.bodyInWater = this._bodyInWater(entity, half);
+
     // 分轴移动 + 碰撞，每轴逐步检测所有可能碰撞的方块
     this.moveAxis(entity, 'y', entity.velocity.y * dt, half, height);
     this.moveAxis(entity, 'x', entity.velocity.x * dt, half, height);
@@ -150,53 +156,26 @@ export class Physics {
     }
 
     if (bestResolve !== null) {
-      // 自动台阶（auto-jump）：水平碰撞时若阻挡方块顶面只高出 1 个方块以内，
-      // 同时玩家头部上方有足够空间，则提升玩家 y 而不阻挡水平移动
-      // 适用于陆上台阶和水中上岸；滑翔中禁用——否则俯冲会沿山坡逐级"漂移爬山"，
-      // 撞山应走碰撞回退 → wallCrash 伤害停滑（原版语义）
+      // 水平碰撞分流：
+      // ① 陆上自动台阶（auto-jump）：阻挡方块顶面只高出 1 格以内且上方有空间 → 抬升 y 保留水平移动
+      // ② 水中上岸（B30，类原版）：不做瞬抬台阶，改为给一记上浮助推（与 Space 上浮同级），
+      //    沿岸壁逐帧上爬、翻过岸沿后由水平移速自然带上岸；身体（脚/躯干）离水助推即停，
+      //    水面以上的高墙因此爬不上去（原版语义）。滑翔中两者都禁用（撞山应走 wallCrash 伤害停滑）
       if (axis !== 'y' &&
           !entity.gliding &&
           !maxBlockTopIsDoor && // B27：门板不可踏越
           isFinite(maxBlockTopY) &&
           maxBlockTopY - entity.position.y > 0 &&
           maxBlockTopY - entity.position.y <= 1.0 + 0.01) {
-        // 验证目标位置 [maxBlockTopY, maxBlockTopY + height] 内无碰撞
         const targetY = maxBlockTopY + 0.0001;
-        const tMinX = entity.position.x - half;
-        const tMaxX = entity.position.x + half;
-        const tMinZ = entity.position.z - half;
-        const tMaxZ = entity.position.z + half;
-        const tbxMin = Math.floor(tMinX);
-        const tbxMax = Math.floor(tMaxX - 0.0001);
-        const tbyMin = Math.floor(targetY);
-        const tbyMax = Math.floor(targetY + height - 0.0001);
-        const tbzMin = Math.floor(tMinZ);
-        const tbzMax = Math.floor(tMaxZ - 0.0001);
-        let blocked = false;
-        for (let bx = tbxMin; bx <= tbxMax; bx++) {
-          for (let by = tbyMin; by <= tbyMax; by++) {
-            for (let bz = tbzMin; bz <= tbzMax; bz++) {
-              const id = this.world.getBlock(bx, by, bz);
-              if (id === 0) continue;
-              const def = BlockRegistry.getById(id);
-              if (!def || !def.solid) continue;
-              // B27：形制方块按格内盒判定（床 9/16 顶上不算阻挡，auto-jump 才能直接走上床）
-              const box = def.shape ? cellBox(def, bx, by, bz) : null;
-              if (box) {
-                if (tMaxX > box[0] && tMinX < box[3] &&
-                    targetY + height > box[1] && targetY < box[4] &&
-                    tMaxZ > box[2] && tMinZ < box[5]) { blocked = true; break; }
-              } else {
-                blocked = true;
-                break;
-              }
-            }
-            if (blocked) break;
+        if (entity.bodyInWater && !entity.flying) {
+          // 水中：岸沿可越且顶部有空间、且无下沉意图（潜游/坠水掠墙不打断）→ 上浮助推
+          if (entity.velocity.y > WATER_EXIT_VY_GATE &&
+              this._yClearAt(entity, half, height, targetY)) {
+            entity.velocity.y = Math.max(entity.velocity.y, WATER_EXIT_BOOST);
           }
-          if (blocked) break;
-        }
-        if (!blocked) {
-          // 抬升 y 到阻挡方块顶面，保留水平移动
+        } else if (this._yClearAt(entity, half, height, targetY)) {
+          // 陆上：抬升 y 到阻挡方块顶面，保留水平移动
           entity.position.y = targetY;
           return;
         }
@@ -219,6 +198,59 @@ export class Physics {
         entity.velocity.z = 0;
       }
     }
+  }
+
+  // 身体浸水判定：AABB 脚部（+0.05）与躯干中点（+0.9）两层、水平覆盖格任一为水即真
+  _bodyInWater(entity, half) {
+    const bxMin = Math.floor(entity.position.x - half);
+    const bxMax = Math.floor(entity.position.x + half);
+    const bzMin = Math.floor(entity.position.z - half);
+    const bzMax = Math.floor(entity.position.z + half);
+    for (const dy of [0.05, 0.9]) {
+      const by = Math.floor(entity.position.y + dy);
+      for (let bx = bxMin; bx <= bxMax; bx++) {
+        for (let bz = bzMin; bz <= bzMax; bz++) {
+          const def = BlockRegistry.getById(this.world.getBlock(bx, by, bz));
+          if (def && def.fluidType === 'water') return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // 验证实体抬升到 targetY 后 [targetY, targetY + height] 范围内无碰撞
+  // （陆上 auto-step 与水中上岸助推共用的顶部空间检查；形制方块按格内盒判定）
+  _yClearAt(entity, half, height, targetY) {
+    const tMinX = entity.position.x - half;
+    const tMaxX = entity.position.x + half;
+    const tMinZ = entity.position.z - half;
+    const tMaxZ = entity.position.z + half;
+    const tbxMin = Math.floor(tMinX);
+    const tbxMax = Math.floor(tMaxX - 0.0001);
+    const tbyMin = Math.floor(targetY);
+    const tbyMax = Math.floor(targetY + height - 0.0001);
+    const tbzMin = Math.floor(tMinZ);
+    const tbzMax = Math.floor(tMaxZ - 0.0001);
+    for (let bx = tbxMin; bx <= tbxMax; bx++) {
+      for (let by = tbyMin; by <= tbyMax; by++) {
+        for (let bz = tbzMin; bz <= tbzMax; bz++) {
+          const id = this.world.getBlock(bx, by, bz);
+          if (id === 0) continue;
+          const def = BlockRegistry.getById(id);
+          if (!def || !def.solid) continue;
+          // B27：形制方块按格内盒判定（床 9/16 顶上不算阻挡，auto-jump 才能直接走上床）
+          const box = def.shape ? cellBox(def, bx, by, bz) : null;
+          if (box) {
+            if (tMaxX > box[0] && tMinX < box[3] &&
+                targetY + height > box[1] && targetY < box[4] &&
+                tMaxZ > box[2] && tMinZ < box[5]) return false;
+          } else {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
   }
 
   jump(entity) {

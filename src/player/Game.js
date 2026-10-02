@@ -7,6 +7,7 @@ import { ChunkMeshBuilder, RenderQuality } from '../render/ChunkMesh.js';
 import { World } from '../core/World.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
+import { updateAirSupply } from '../core/AirSupply.js';
 import { Player } from './Player.js';
 import { Physics, GLIDE_GRAVITY } from './Physics.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
@@ -438,6 +439,7 @@ export class Game {
       this.player.xpLevel = p.xpLevel ?? 0;
       this.player.onFire = p.onFire ?? 0;
       this.player.airTicks = p.airTicks ?? 300;
+      this.player.drownTimer = 1; // 溺水计时器不进存档，加载即复位
     } else {
       this.player.position.set(spawn.x, spawn.y, spawn.z);
     }
@@ -754,7 +756,7 @@ export class Game {
   };
 
   // 检测眼睛位置是否在水里，更新 inWater / 氧气 / 溺水
-  _updateWaterState() {
+  _updateWaterState(dt) {
     const p = this.player;
     const eyeY = p.position.y + 1.62;
     const bx = Math.floor(p.position.x);
@@ -765,16 +767,8 @@ export class Game {
     p.inWater = !!(def && def.fluid && def.fluidType === 'water');
 
     if (p.survival) {
-      if (p.inWater) {
-        p.airTicks -= 1;
-        if (p.airTicks <= 0) {
-          // 溺水：每秒扣 1 血（约每 20 帧一次）
-          p.airTicks = 20;
-          p.health = Math.max(0, p.health - 1);
-        }
-      } else {
-        p.airTicks = Math.min(300, p.airTicks + 10);
-      }
+      // 氧气/溺水（B30 起原版口径：满氧 15 秒、溺水每秒 2 血，逐帧按 dt 折算帧率无关）
+      updateAirSupply(p, p.inWater, dt);
       // 熔岩点燃（离开熔岩后延续 onFire 秒再熄灭）；入水即灭火
       if (p.inWater) {
         p.onFire = 0;
@@ -860,7 +854,7 @@ export class Game {
 
   update(dt) {
     // 检测玩家是否在水中（眼睛位置）
-    this._updateWaterState();
+    this._updateWaterState(dt);
     // 检测玩家是否在上升气流柱内（天域批次 B：足部/身体任一格为 wind_current）
     this._updateUpdraftState();
     // 守誓巨像裂心风拽光环（天域批次 C：各端本地结算）

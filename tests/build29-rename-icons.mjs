@@ -27,8 +27,8 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
 const def = (n) => BlockRegistry.getById(BlockRegistry.getId(n));
 
 // ── ① 更名落地 ──
-ok(BUILD === 29, `BUILD = 29（当前 ${BUILD}）`);
-ok(VERSION_LABEL === 'Tiderift Beta Build 29', `VERSION_LABEL = Tiderift Beta Build 29（当前 "${VERSION_LABEL}"）`);
+ok(BUILD === 30, `BUILD = 30（当前 ${BUILD}）`);
+ok(VERSION_LABEL === 'Tiderift Beta Build 30', `VERSION_LABEL = Tiderift Beta Build 30（当前 "${VERSION_LABEL}"）`);
 ok(srcOf('../src/version.js').includes('`Tiderift Beta Build ${BUILD}`'), 'version.js 模板为 Tiderift Beta Build');
 
 // src/ 全目录无 CubeWorld 残留（改名完整性；历史名称只允许留在 docs/AGENTS/README 的叙述里）

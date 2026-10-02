@@ -128,15 +128,17 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 ### 玩家受击与无敌帧
 
 - 玩家走 `Player.hurt(amount, source, showVignette=true)`，内部 0.5 秒无敌帧（`invulnerable`），创造/旁观模式直接返回 false。`Game.update()` 每帧衰减 `invulnerable`。
-- `player.onHurt = (amount, source) => this.hud.flashDamage(amount)` 在 `Game.start()` 中注册。新加伤害源时**所有一次性攻击**（怪物 `Mob.attack`、摔落、爆炸）应调用 `player.hurt(amount, source, true)`；持续/低频伤害（溺水每秒 1 血、饥饿每秒 0.5 血）直接 `player.health -= amount`，**不要**触发红屏（连续闪屏很烦）。
+- `player.onHurt = (amount, source) => this.hud.flashDamage(amount)` 在 `Game.start()` 中注册。新加伤害源时**所有一次性攻击**（怪物 `Mob.attack`、摔落、爆炸）应调用 `player.hurt(amount, source, true)`；持续/低频伤害（溺水每秒 2 血、饥饿每秒 0.5 血）直接 `player.health -= amount`，**不要**触发红屏（连续闪屏很烦）。
 - `Hud.flashDamage(damage)` 内部 set opacity 到 `Math.min(0.9, 0.3 + damage * 0.04)` 后用双层 `requestAnimationFrame` 启动 `transition: opacity 0.5s ease-out` → 0 的淡出。修改时**不要去掉双层 RAF**——少了会让 opacity 0 立刻写回覆盖 intensity。
 
 ### 玩家物理与游泳
 
 - `Physics.moveAxis()` 对每个轴单独移动+碰撞回退，**收集所有碰撞方块取最保守的回退位置**（不要改回"命中即停"的早期实现，曾导致穿墙）。
-- **auto-jump（自动台阶）**：`moveAxis` 中水平碰撞时若 `maxBlockTopY - entity.position.y > 0 && <= 1.0+0.01`，且抬升后 `[targetY, targetY+height]` 范围内无碰撞，则直接抬升 y 而不回退水平位置。陆上台阶和水中上岸共用此逻辑——不要依赖 `inWater` 触发水岸上岸（玩家头出水后 inWater 会变 false，会失败）。
-- 水中物理：`inWater` 由 `Game._updateWaterState()` 根据眼睛位置方块 `def.fluid && name==='water'` 判定；水中重力 -8、阻力 0.8、水平速度上限 ~4.3；Space 上浮、Shift 下潜（逻辑在 `Game.update()` 中而非 Physics）；`airTicks=300`，水下递减，<0 溺水扣血。
-- Hud 顶部 `airBar` 显示剩余氧气（仅 `inWater && airTicks<300` 时渲染）。
+- **auto-jump（自动台阶，仅陆上）**：`moveAxis` 中水平碰撞时若 `maxBlockTopY - entity.position.y > 0 && <= 1.0+0.01`，且抬升后 `[targetY, targetY+height]` 范围内无碰撞（`_yClearAt`），则直接抬升 y 而不回退水平位置。
+- **水中上岸（B30 起，类原版，勿改回瞬抬）**：`moveAxis` 水平碰撞且 `entity.bodyInWater && !entity.flying` 时不再瞬抬台阶，改为**上浮助推** `velocity.y = max(vy, WATER_EXIT_BOOST=4.0)`（与 Space 上浮同级）——贴岸逐帧上爬、翻过岸沿后由水平移速自然带上岸；助推门限 `vy > WATER_EXIT_VY_GATE(-0.6)`（潜游下潜/坠水掠墙不打断）。**浸水判定用 `bodyInWater`（脚部+0.05/躯干+0.9 任一格为水，`Physics._bodyInWater`），勿用眼位 `inWater`**——贴岸上爬时头先出水，眼位判定会翻 false 使助推中断。岸沿可越（stepH≤1.0）是助推前置，水面以上的高墙因此爬不上去（原版语义）。
+- 水中物理：`inWater` 由 `Game._updateWaterState(dt)` 根据眼睛位置方块 `def.fluid && fluidType==='water'` 判定；水中重力 -8、阻力 0.8、水平速度上限 ~4.3；Space 上浮、Shift 下潜（逻辑在 `Game.update()` 中而非 Physics）。
+- 氧气/溺水（B30 起原版口径，`src/core/AirSupply.js` 纯函数，node 可测）：`airTicks` 语义=原版 tick（20 tick/s），满氧 300 = **15 秒**，逐帧按 `dt*20` 折算（帧率无关）；耗尽后 `drownTimer` 每 1 秒扣 2 血；出水约 0.5 秒回满。勿改回逐帧 -1（60fps 下只有 5 秒）。
+- Hud 顶部 `airBar` 显示剩余氧气（仅 `inWater && airTicks<300` 时渲染；气泡公式 `(airTicks/300)*10` 以 300 为满）。
 
 ### 食物与饥饿
 
@@ -221,7 +223,7 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/fluid-sim.md` | B26 流体模拟（M1 可流动水/岩浆 + M3 联机批量/相遇固化 + M2 部分水位） | 流体、FluidSim、方块注册白名单、水面渲染高度 |
 | `docs/agent-notes/worldgen-structures.md` | 自然建筑/村庄/要塞、T5 战利品箱与村民交易、W 水面/洞穴、生物群系规模、群系扩展、B25 树让位/村庄麦田/全景禁结构 | 地形生成、结构、群系、loot/容器/交易 |
 | `docs/agent-notes/dimensions-portals.md` | 维度基建/下界/末地/天域/联机同步、传送门、下界优化、末地完善（龙/末地城）、天域叙事基石（批次 A）、天域群风与众生（批次 B）、天域守誓巨像（批次 C）、天域复潮（批次 D） | 维度、传送门、下界/末地、换维联机、天域内容注册/i18n 审计/气流与免摔落/Boss AI/复潮档案 |
-| `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验） | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞 |
+| `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验）、B30 水中上岸助推 + 氧气原版口径 | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞、游泳/氧气 |
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
 | `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、UI 图标链 |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关 | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关 |

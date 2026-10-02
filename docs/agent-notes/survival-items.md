@@ -85,3 +85,11 @@
 - **respawn 床失效校验**：重生时校验 bedSpawn 格仍是床（part bed_*），失效清 bedSpawn + 提示回世界出生点。仅单机 bedSpawn 生效（联机位置服务器权威，勿放开）。
 - **村庄门**：`village.js` buildHouse 用 `doorId('oak_door', half, facing)` 放上下两格，face 映射 `z-→n / z+→s / x-→w / x+→e`（面板贴外墙面）。旧存档村庄区块重生成时自动获得双格门（结构块不进账本）；**玩家手放的旧式单格门**靠 `World._finalizeChunk` 迁移扫描补上半（lower+上方空气 → 直写 upper，幂等不进账本——账本重放后重扫，幂等兜底）。
 - **agent-browser 实机陷阱（本批新增）**：①右键链里村民优先——村庄里测门会被村民截胡开交易屏，先离开村庄或在远空平台测；②headless 后台 tab rAF 节流到 ~2fps，`mouse down→up` 间隔必须 >1 帧周期（≥1.5s）否则 update 看不到按下沿；③`controls.enabled` 会被 UI 开关置 false——ESC 关屏顺序错乱后需 eval 置回；④会话崩溃后换新会话名重开（不同会话=不同浏览器 profile，localStorage 存档不跨会话）；⑤斜着走向关门会从门格侧面绕过（门只挡自己格的面板，正常）——直走测试必须 yaw 对准。
+
+### B30 批次备忘（防回退）—— 水中上岸助推（类原版） + 氧气原版口径
+
+- **水中上岸 = 上浮助推，不再是瞬抬台阶（勿改回）**：`Physics.moveAxis` 水平碰撞且 `entity.bodyInWater && !entity.flying` 时，若岸沿可越（stepH ∈ (0, 1.0+ε]）且顶部有空间（`_yClearAt`，与陆上 auto-step 共用）且 `vy > WATER_EXIT_VY_GATE(-0.6)`，给 `velocity.y = max(vy, WATER_EXIT_BOOST=4.0)`（与 Space 上浮同级）。原实现走 auto-step 瞬抬 +1（`position.y = targetY; return`）——玩家观感是"从水里被吸上岸"，B30 起改为贴岸逐帧上爬、翻沿后由水平移速带上去（node 仿真：Space 按住 30 帧后松开仅按前进，1.1 秒上岸，全程单帧 Δy ≤ 0.052）。陆上 auto-step 行为原样保留（回归钉值在 build30 ③段：瞬抬到 65.0001 且水平保留）。
+- **浸水判定 = `bodyInWater`（脚部+0.05/躯干+0.9 任一格为水），勿用眼位 `inWater`**：贴岸上爬时头先出水，眼位判定翻 false 会拦腰打断爬岸。`Physics.collide` 开头每帧调 `_bodyInWater` 计算（AABB 覆盖格 × 两层）。但**游戏逻辑分路仍用眼位**：游泳/下潜/氧气在 `Game._updateWaterState`，两套判定并存、各管各的（物理助推 vs 玩法状态）。
+- **助推门限 `vy > -0.6` 的取舍**：被动下沉稳态 ≈ -0.53（60fps；-8 重力 × 0.8 阻力），-0.6 恰好放行"悬浮贴岸助推"；潜游（Shift 每帧 vy=-4）、坠水掠墙（高速下沉）被拦住不打断。若调门限注意 30fps 稳态 ≈ -0.47、低 fps ≈ -0.42，门限必须低于全部稳态。
+- **氧气原版口径（`src/core/AirSupply.js` 纯函数，node 可测）**：旧实现逐帧 -1（60fps 下满氧仅 5 秒，与 Player.js 注释"原版 15 秒"脱节）、溺水每 20 帧扣 1 血（≈3HP/s）。现 `airTicks` 语义 = 原版 tick（20 tick/s），`-=` `dt*20`（帧率无关，60/30fps 均 15 秒耗尽，钉值 895..905 帧）；耗尽后 `drownTimer` 每秒扣 2 血（原版口径）；出水 `+dt*600`（约 0.5 秒回满）并复位计时。`airTicks` 仍进存档（SaveSystem），`drownTimer` 不进（加载复位 1，Game.start 有显式复位行）。Hud 气泡公式 `(airTicks/300)*10` 未动（满值 300 不变）。
+- **测试基建**：`tests/build30-water-exit-air.mjs`（44 断言）——物理场景用**稀疏 Map stub world + 最小实体对象**直跑真 `Physics`（无需 World/Renderer）；贴岸场景起始 x=0.68（0.5 起步单帧位移 0.036 碰不到墙，曾假 FAIL）；全程爬岸仿真模拟 Game 双分支速度覆写（inWater→2.15 / 陆上→4.3 + 眼位 inWater 折算）。AGENTS.md「玩家物理与游泳」节已重写为 B30 口径。

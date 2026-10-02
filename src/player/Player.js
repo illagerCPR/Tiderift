@@ -36,7 +36,8 @@ export class Player {
     this.gamemode = 'creative';
     this.inWater = false;
     this.onFire = 0;
-    this.airTicks = 300; // 氧气（原版 300 tick = 15 秒）
+    this.airTicks = 300;      // 氧气（原版口径：满氧 300 tick = 15 秒，20 tick/s 按 dt 折算）
+    this.drownTimer = 1;      // 溺水伤害计时（秒，耗尽后每 1 秒扣 2 血）
     this.invulnerable = 0;     // 受击后无敌帧（秒），> 0 时阻止 hurt()
     this.effects = new Map();  // 状态效果（信标 buff + 凋零 debuff 统一管理）：name -> { level, time(秒) }
     this.onHurt = null;          // 受击回调 (amount, source) => void，由 Game 注册
