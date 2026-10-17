@@ -15,6 +15,15 @@ function safeNum(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
+// S2：快照内层账本条目必须是 [键, 值] 数组（畸形档里的 null/数字条目会让解构抛 TypeError）
+function safeEntries(v) {
+  return Array.isArray(v) ? v.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [];
+}
+// S2：坏档告警（畸形快照跳过坏项，不再抛异常崩服）
+function warnBadSnapshot(roomName, what) {
+  console.warn(`[世界] 房间「${roomName}」快照 ${what}，已跳过`);
+}
+
 // Idea-2C：内容跟随物品（潜影盒）——27 槽数组，槽 = null 或 {name,count}；
 // 嵌套 data（盒中盒，原版同样禁止）或任一槽非法 → 整体拒绝（视为普通物品）
 function sanitizeItemData(v) {
@@ -141,7 +150,9 @@ export class Room {
 
   // 从磁盘快照恢复房间世界状态（服务器重启后复活），过期掉落物丢弃；旧 host 已不在线，由新进玩家接管
   // 快照 V2：dimensionBlocks/dimensionContainers {dim: [entries]}；旧格式（平铺 blocks/containers 数组）迁移进主世界桶
+  // S2：内层账本逐项校验（entries/containers/drops 非数组或条目畸形 → 告警跳过坏项，不得崩服）
   restore(snap) {
+    if (!snap || typeof snap !== 'object') { warnBadSnapshot(this.name, '外层非对象'); return; }
     this.seed = safeInt(snap.seed, this.seed);
     this.biomeScale = snap.biomeScale != null ? safeBiomeScale(snap.biomeScale) : this.biomeScale;
     this.time = safeNum(snap.time, this.time);
@@ -154,35 +165,34 @@ export class Room {
     this.dimensionBlocks = new Map();
     if (snap.dimensionBlocks && typeof snap.dimensionBlocks === 'object' && !Array.isArray(snap.dimensionBlocks)) {
       for (const [dim, entries] of Object.entries(snap.dimensionBlocks)) {
+        if (!Array.isArray(entries)) { warnBadSnapshot(this.name, `维度 ${dim} 的方块账本非数组`); continue; }
         const m = this.dimBucket(this.dimensionBlocks, Room.safeDim(dim));
-        for (const [k, id] of entries) if (typeof k === 'string') m.set(k, safeInt(id, 0));
+        for (const [k, id] of safeEntries(entries)) m.set(k, safeInt(id, 0));
       }
     } else {
       const m = this.dimBucket(this.dimensionBlocks, DEFAULT_DIMENSION);
-      for (const [k, id] of (snap.blocks || [])) if (typeof k === 'string') m.set(k, safeInt(id, 0));
+      for (const [k, id] of safeEntries(snap.blocks)) m.set(k, safeInt(id, 0));
     }
     this.dimensionContainers = new Map();
     if (snap.dimensionContainers && typeof snap.dimensionContainers === 'object' && !Array.isArray(snap.dimensionContainers)) {
       for (const [dim, entries] of Object.entries(snap.dimensionContainers)) {
+        if (!Array.isArray(entries)) { warnBadSnapshot(this.name, `维度 ${dim} 的容器账本非数组`); continue; }
         const m = this.dimBucket(this.dimensionContainers, Room.safeDim(dim));
-        for (const [k, items] of entries) {
-          if (typeof k === 'string' && Array.isArray(items) && items.length === 27) {
-            m.set(k, items.map((s) => this.sanitizeStack(s)));
-          }
+        for (const [k, items] of safeEntries(entries)) {
+          if (Array.isArray(items) && items.length === 27) m.set(k, items.map((s) => this.sanitizeStack(s)));
         }
       }
     } else {
       const m = this.dimBucket(this.dimensionContainers, DEFAULT_DIMENSION);
-      for (const [k, items] of (snap.containers || [])) {
-        if (typeof k === 'string' && Array.isArray(items) && items.length === 27) {
-          m.set(k, items.map((s) => this.sanitizeStack(s)));
-        }
+      for (const [k, items] of safeEntries(snap.containers)) {
+        if (Array.isArray(items) && items.length === 27) m.set(k, items.map((s) => this.sanitizeStack(s)));
       }
     }
     this.drops = new Map();
     const now = Date.now();
     const ttl = this.dropTtlMs();
-    for (const d of (snap.drops || [])) {
+    if (snap.drops !== undefined && !Array.isArray(snap.drops)) warnBadSnapshot(this.name, '掉落物列表非数组');
+    for (const d of (Array.isArray(snap.drops) ? snap.drops : [])) {
       if (!d || typeof d.id !== 'number' || !d.name) continue;
       if (now - safeNum(d.spawnedAt, now) > ttl) continue; // 过期掉落物不恢复
       this.drops.set(d.id, {
@@ -345,7 +355,8 @@ export class Room {
     // 群系规模与 seed 同语义：仅首次开房固定，重复开房/加入沿用房间记录（两端群系布局一致）
     if (this.biomeScale === null) this.biomeScale = safeBiomeScale(msg.biomeScale);
     player.mode = msg.mode === 'creative' ? 'creative' : (msg.mode === 'spectator' ? 'spectator' : 'survival');
-    this.hostId = player.id;
+    // S5：hostId 仅在空位或原 host 已离线时接管（与 joinRoom 同口径），防同房二次「创建房间」夺权
+    if (this.hostId === null || !this.players.has(this.hostId)) this.hostId = player.id;
     this.sendTo(player, MSG.ROOM_CREATED, { roomId: this.name });
     // restart=true 表示世界内换房到新房间：客户端需重启本地世界（新 seed）
     this.sendTo(player, MSG.WORLD_INFO, { seed: this.seed, mode: player.mode, time: this.time, hostId: this.hostId, room: this.name, restart: !!msg.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });

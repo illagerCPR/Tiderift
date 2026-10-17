@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFileAtomic } from './store.js';
 
 const CONFIG_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config.json');
 
@@ -220,7 +221,7 @@ export function applyConfig(current, patch) {
 }
 
 export function saveConfig(cfg) {
-  try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8'); } catch (e) {
+  try { writeFileAtomic(CONFIG_PATH, JSON.stringify(cfg, null, 2)); } catch (e) {
     console.error(`[配置] 写入 ${CONFIG_PATH} 失败: ${e.message}`);
   }
 }

@@ -26,9 +26,15 @@ const BOOT_TIME = Math.floor(Date.now() / 1000);
 const rooms = new Map();
 let nextPlayerId = 1;
 
+// S4：房间名统一口径——trim 后截断 40 字符（对齐 store.roomFileName 落盘口径，内存 key 与磁盘文件名一致）
+const ROOM_NAME_MAX = 40;
+function normalizeRoomName(name) {
+  return String(name || '').trim().slice(0, ROOM_NAME_MAX) || 'default';
+}
+
 // 取（或创建）指定房间；创建时若磁盘有该房间存档则恢复其世界
 function getRoom(name) {
-  const key = String(name || '').trim() || 'default';
+  const key = normalizeRoomName(name);
   let room = rooms.get(key);
   if (!room) {
     room = new Room(key, (r) => store.saveRoom(r), serverConfig);
@@ -98,7 +104,7 @@ function handleCommand(player, text) {
 
 // 世界内换房（阶段5）：保持 WebSocket 连接，离开当前房间并加入目标房间，客户端重启本地世界
 function switchRoom(player, roomName) {
-  const key = String(roomName || '').trim() || 'default';
+  const key = normalizeRoomName(roomName);
   if (!player.room) return;
   if (key === player.room.name) {
     player.room.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `你已在房间「${key}」` });
@@ -122,6 +128,14 @@ function switchRoom(player, roomName) {
   target.joinRoom(player, {}, { restart: true });
   target.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `已切换到房间「${target.name}」seed=${target.seed}` });
   console.log(`[换房] ${player.name}: ${oldRoom.name} -> ${target.name}`);
+}
+
+// S5：首次开房/加入前先退旧房（与 switchRoom 同语义），防同一玩家在两个房间同时登记成幽灵成员。
+// 目标与当前同名时不退——原地重开/重进保持原行为，避免自己退自己触发 host 交接抖动。
+function leaveCurrentRoom(player, targetKey) {
+  if (!player.room || player.room.name === targetKey) return;
+  player.room.removePlayer(player.id);
+  player.room = null;
 }
 
 // 服务器管理面板（阶段 4）：HTTP 路由 + JSON API
@@ -250,8 +264,15 @@ function maskedConfig() {
   return c;
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://' + req.headers.host);
+// S1：handler 具名化，URL 解析移入 try（畸形 Host 此前在 try 外抛出 → unhandledRejection → 进程终止）
+async function handleHttpRequest(req, res) {
+  let url;
+  try {
+    url = new URL(req.url, 'http://' + req.headers.host);
+  } catch {
+    sendJson(res, 400, { error: '请求格式非法' });
+    return;
+  }
   const p = url.pathname;
 
   // Build 21 M3：玩家皮肤代理（公开 GET——玩家无管理口令也能用；Mojang API 无 CORS
@@ -553,6 +574,21 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('404 Not Found');
+}
+
+// S1：handler 顶层兜底——任何未捕获异常/拒绝都在此收敛并回 500，不再逃逸为 unhandledRejection
+const server = http.createServer(async (req, res) => {
+  try {
+    await handleHttpRequest(req, res);
+  } catch (err) {
+    console.error(`[HTTP] 请求处理异常: ${(err && err.message) || err}`);
+    try {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: '服务器内部错误' }));
+      } else res.end();
+    } catch { /* 响应已不可写 */ }
+  }
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -628,6 +664,16 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+// S1：进程级兜底——未捕获异常/未处理拒绝只记日志、不再走 Node 默认终止（否则单个畸形请求带走全部房间与连接）
+process.on('uncaughtException', (err) => {
+  console.error(`[异常] uncaughtException: ${(err && err.stack) || err}`);
+  logAdmin('crash-guard', `uncaughtException: ${(err && err.message) || err}`);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error(`[异常] unhandledRejection: ${(reason && reason.stack) || reason}`);
+  logAdmin('crash-guard', `unhandledRejection: ${(reason && reason.message) || reason}`);
+});
+
 function send(ws, data) {
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
 }
@@ -673,16 +719,18 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.t === MSG.CREATE_ROOM) {
-      const roomKey = String(msg.room || '').trim() || 'default';
+      const roomKey = normalizeRoomName(msg.room);
       if (!whitelistAllows(roomKey, player.name)) { rejectByWhitelist(player, roomKey); return; } // 阶段11：白名单
-      const room = getRoom(msg.room);
+      leaveCurrentRoom(player, roomKey); // S5：登记前先退旧房（与换房路径同语义）
+      const room = getRoom(roomKey);
       if (!room.addPlayer(player)) return; // 房间已满：addPlayer 已发 kicked
       player.room = room;
       room.createRoom(player, msg);
     } else if (msg.t === MSG.JOIN_ROOM) {
-      const roomKey = String(msg.room || '').trim() || 'default';
+      const roomKey = normalizeRoomName(msg.room);
       if (!whitelistAllows(roomKey, player.name)) { rejectByWhitelist(player, roomKey); return; } // 阶段11：白名单
-      const room = getRoom(msg.room);
+      leaveCurrentRoom(player, roomKey); // S5：登记前先退旧房（与换房路径同语义）
+      const room = getRoom(roomKey);
       if (!room.addPlayer(player)) return; // 房间已满：addPlayer 已发 kicked
       player.room = room;
       room.joinRoom(player, msg);

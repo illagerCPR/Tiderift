@@ -327,7 +327,7 @@
       return;
     }
     el.innerHTML = status.rooms.map((room, idx) => `
-      <div class="room-title">房间「${room.name}」
+      <div class="room-title">房间「${esc(room.name)}」
         <span class="tag">seed=${room.seed}</span>
         <span class="tag">方块改动 ${room.blocks}</span>
         <span class="tag">掉落物 ${room.drops}</span>
@@ -336,7 +336,7 @@
         <tr><th>玩家</th><th>模式</th><th>生命/饥饿</th><th>位置</th><th>限速丢包</th><th></th></tr>
         ${room.players.map((p) => `
           <tr>
-            <td>${p.name}${p.host ? '<span class="tag tag-host">HOST</span>' : ''}</td>
+            <td>${esc(p.name)}${p.host ? '<span class="tag tag-host">HOST</span>' : ''}</td>
             <td>${p.mode}</td>
             <td>${p.health}/${p.food}</td>
             <td>${fmtPos(p.pos)}</td>

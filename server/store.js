@@ -16,6 +16,18 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+// S3：原子落盘——先写同目录临时文件再 rename 替换，避免写入中途崩溃/掉电留下截断档（截断档=静默丢档）
+export function writeFileAtomic(file, text) {
+  const tmp = `${file}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch {}
+    throw e;
+  }
+}
+
 // 房间世界快照（纯数据，saveRoom 与 Idea-4B 备份导出共用）
 // 快照 V2（M4）：blocks/containers 按维度分桶 {dim: [entries]}；旧格式由 Room.restore 迁移
 export function roomSnapshot(room) {
@@ -45,21 +57,56 @@ export function roomSnapshot(room) {
 export function saveRoom(room, dir = DEFAULT_DIR) {
   ensureDir(dir);
   const data = roomSnapshot(room);
-  fs.writeFileSync(path.join(dir, roomFileName(room.name) + '.json'), JSON.stringify(data, null, 2), 'utf8');
+  writeFileAtomic(path.join(dir, roomFileName(room.name) + '.json'), JSON.stringify(data, null, 2));
+}
+
+// 坏档归档：移入 <dir>/corrupt/（默认即 server/world/corrupt/，跑批 rm -rf server/world 一并清理）
+function archiveCorrupt(dir, file, reason) {
+  const target = path.join(dir, 'corrupt', `${file.replace(/\.json$/, '')}-${Date.now()}.json`);
+  try {
+    ensureDir(path.dirname(target));
+    fs.renameSync(path.join(dir, file), target);
+    console.error(`[世界] 坏档 ${file}（${reason}）已归档到 ${target}`);
+  } catch (e) {
+    console.error(`[世界] 坏档 ${file}（${reason}）归档失败: ${e.message}`);
+  }
+}
+
+// S2：快照形状校验——内层 entries/containers/drops 必须为数组，否则 Room.restore 迭代时抛 TypeError 崩服
+function isRoomSnapshot(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (typeof data.name !== 'string' || !Number.isInteger(data.seed)) return false;
+  for (const key of ['dimensionBlocks', 'dimensionContainers']) {
+    const bucket = data[key];
+    if (bucket === undefined) continue;
+    if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) return false;
+    for (const entries of Object.values(bucket)) if (!Array.isArray(entries)) return false;
+  }
+  for (const key of ['blocks', 'containers', 'drops']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
+    if (data[key] !== undefined && !Array.isArray(data[key])) return false;
+  }
+  return true;
 }
 
 // 读取磁盘上全部房间快照（原始对象数组，恢复逻辑在 Room.restore）
+// 坏档（解析失败/形状非法）移入 corrupt/ 保留现场并报警，既不让畸形档流进 restore，也不静默丢档
 export function loadRooms(dir = DEFAULT_DIR) {
   const rooms = [];
   if (!fs.existsSync(dir)) return rooms;
   for (const f of fs.readdirSync(dir)) {
     if (!f.endsWith('.json')) continue;
+    let data = null;
     try {
-      const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-      if (data && typeof data.name === 'string' && Number.isInteger(data.seed)) rooms.push(data);
+      data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
     } catch (e) {
-      console.error(`[世界] 读取 ${f} 失败: ${e.message}`);
+      archiveCorrupt(dir, f, `JSON 解析失败: ${e.message}`);
+      continue;
     }
+    if (!isRoomSnapshot(data)) {
+      archiveCorrupt(dir, f, '快照结构非法');
+      continue;
+    }
+    rooms.push(data);
   }
   return rooms;
 }
@@ -87,7 +134,7 @@ export function savePlayerProfiles(roomName, profiles, dir = DEFAULT_DIR) {
   const playersDir = path.join(dir, 'players');
   if (!fs.existsSync(playersDir)) fs.mkdirSync(playersDir, { recursive: true });
   const file = path.join(playersDir, roomFileName(roomName) + '.players.json');
-  fs.writeFileSync(file, JSON.stringify(profiles, null, 2), 'utf8');
+  writeFileAtomic(file, JSON.stringify(profiles, null, 2));
 }
 
 export function deletePlayerProfiles(roomName, dir = DEFAULT_DIR) {
@@ -109,7 +156,7 @@ function backupsDir(dir) {
 export function backupRoom(room, dir = DEFAULT_DIR) {
   const ts = Date.now();
   const file = `${roomFileName(room.name)}-${ts}.json`;
-  fs.writeFileSync(path.join(backupsDir(dir), file), JSON.stringify(roomSnapshot(room), null, 2), 'utf8');
+  writeFileAtomic(path.join(backupsDir(dir), file), JSON.stringify(roomSnapshot(room), null, 2));
   return file;
 }
 
