@@ -90,25 +90,42 @@ export class InventoryScreen {
     `;
     document.body.appendChild(this.tooltip);
     
-    document.addEventListener('mousemove', (e) => {
+    // document 级监听器保存引用，dispose 时移除（避免切换存档累积）
+    this._disposed = false;
+    this._onCursorMove = (e) => {
       if (this.cursorItem) {
         this.cursorEl.style.left = (e.clientX - 22) + 'px';
         this.cursorEl.style.top = (e.clientY - 22) + 'px';
       }
-    });
+    };
+    document.addEventListener('mousemove', this._onCursorMove);
     
     // 右键拖拽时放置单个
-    document.addEventListener('contextmenu', (e) => {
+    this._onContextMenu = (e) => {
       if (this.visible) e.preventDefault();
-    });
+    };
+    document.addEventListener('contextmenu', this._onContextMenu);
 
-    document.addEventListener('mousemove', (e) => {
+    this._onTooltipMove = (e) => {
       if (!this.visible) { this.tooltip.style.display = 'none'; return; }
       if (this._hoverEl && this._hoverEl.contains(e.target)) {
         this.tooltip.style.left = (e.clientX + 14) + 'px';
         this.tooltip.style.top = (e.clientY + 14) + 'px';
       }
-    });
+    };
+    document.addEventListener('mousemove', this._onTooltipMove);
+  }
+
+  // 释放：摘掉 3 个 document 监听器并移除三个 DOM 节点（Game 切换存档时调用，幂等）
+  dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    document.removeEventListener('mousemove', this._onCursorMove);
+    document.removeEventListener('contextmenu', this._onContextMenu);
+    document.removeEventListener('mousemove', this._onTooltipMove);
+    this.el.remove();
+    this.cursorEl.remove();
+    this.tooltip.remove();
   }
 
   _bindHover(slot, name) {

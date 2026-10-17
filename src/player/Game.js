@@ -224,14 +224,26 @@ export class Game {
     // 粒子系统（新建型：随世界销毁）
     if (this.particles) { this.particles.dispose(); this.particles = null; }
     if (this.fireParticles) { this.fireParticles.dispose(); this.fireParticles = null; }
+    // 投射物与末影之眼飞行（内存级运行时列表，mesh 挂在跨存档共享 scene 上——新建型收口点）
+    if (this.eyeFlight) {
+      this.renderer.scene.remove(this.eyeFlight.mesh);
+      this.eyeFlight.mesh.geometry.dispose();
+      this.eyeFlight.mesh.material.dispose();
+      this.eyeFlight = null;
+    }
+    if (this.arrows) {
+      for (const a of this.arrows) this.renderer.scene.remove(a.mesh);
+    }
+    this.arrows = [];
+    if (this.witherSkulls) {
+      for (const s of this.witherSkulls) this.renderer.scene.remove(s.mesh);
+    }
+    this.witherSkulls = [];
+    // Idea-2D-③：信标激活状态（内存级——效果选择随会话，方块本身走账本；换世界清光柱）
+    this._clearBeaconState();
     // 旧 UI DOM
     if (this.hotbar) { this.hotbar.el.remove(); this.hotbar = null; }
-    if (this.inventoryScreen) {
-      if (this.inventoryScreen.tooltip) this.inventoryScreen.tooltip.remove();
-      if (this.inventoryScreen.cursorEl) this.inventoryScreen.cursorEl.remove();
-      this.inventoryScreen.el.remove();
-      this.inventoryScreen = null;
-    }
+    if (this.inventoryScreen) { this.inventoryScreen.dispose(); this.inventoryScreen = null; }
     if (this.chestScreen) { this.chestScreen.dispose(); this.chestScreen = null; }
     if (this.beaconScreen) { this.beaconScreen.dispose(); this.beaconScreen = null; }
     if (this.steleScreen) { this.steleScreen.dispose(); this.steleScreen = null; }
@@ -456,24 +468,8 @@ export class Game {
     this.inventory.slots = new Array(this.inventory.size).fill(null);
     this.inventory.armor = new Array(4).fill(null);
     this.inventory.hotbarSelected = 0;
-    // 床重生点：旧档读取 / 新档清空；末影之眼飞行与弓箭投射物残留清理
+    // 床重生点：旧档读取 / 新档清空（投射物/光柱等 scene 残留由 _disposeWorld 单点收口）
     this.bedSpawn = (loadData && loadData.bedSpawn) || null;
-    if (this.eyeFlight) {
-      this.renderer.scene.remove(this.eyeFlight.mesh);
-      this.eyeFlight.mesh.geometry.dispose();
-      this.eyeFlight.mesh.material.dispose();
-      this.eyeFlight = null;
-    }
-    if (this.arrows) {
-      for (const a of this.arrows) this.renderer.scene.remove(a.mesh);
-    }
-    this.arrows = [];
-    if (this.witherSkulls) {
-      for (const s of this.witherSkulls) this.renderer.scene.remove(s.mesh);
-    }
-    this.witherSkulls = [];
-    // Idea-2D-③：信标激活状态（内存级——效果选择随会话，方块本身走账本；换世界清光柱）
-    this._clearBeaconState();
     this._meshBuildSeq = 0; // B-②：网格派发版本号（跨存档共享实例，单调递增即可）
     this._bowCharging = false; // 存档切换：清掉上一存档的蓄力状态
     this._bowCharge = 0;

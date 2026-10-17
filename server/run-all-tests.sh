@@ -360,6 +360,15 @@ else
     exit 1
 fi
 
+# 资源释放回归守卫（纯 node：unloadChunk 三 mesh 释放 / InventoryScreen dispose 接线 / _disposeWorld 单点收口）
+echo "=== leak-guards ==="
+if node tests/leak-guards.mjs; then
+    echo "leak-guards: OK"
+else
+    echo "leak-guards: FAILED"
+    exit 1
+fi
+
 # 测试非幂等：先确认 3001 空闲，再清空运行时数据保证干净状态
 if (exec 3<>/dev/tcp/127.0.0.1/3001) 2>/dev/null; then
     exec 3>&- 3<&- 2>/dev/null

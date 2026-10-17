@@ -182,6 +182,7 @@ export class World {
     if (c) {
       if (c.mesh) c.mesh.geometry.dispose();
       if (c.waterMesh) c.waterMesh.geometry.dispose();
+      if (c.lightMesh) c.lightMesh.geometry.dispose();
       this.chunks.delete(k);
     }
   }
