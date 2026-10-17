@@ -26,7 +26,6 @@ import { MobManager } from '../src/entity/MobManager.js';
 import { Player } from '../src/player/Player.js';
 import { Raycast } from '../src/player/Raycast.js';
 import { PARTS } from '../src/entity/RemotePlayer.js';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -272,7 +271,5 @@ ok(BlockRegistry.getNameById(99999) === null, 'getNameById 未注册 id 返回 n
     '换维透传字段保留（单机换维 loadData 合成携带该字段）');
   ok(srcOf('../src/core/SaveSystem.js').includes('aetherDusk: !!game.aetherDusk'), '存档仍持久化复潮状态');
 }
-
-ok(BUILD === 30, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
 
 console.log(`build20-fixes: ${passed} passed`);

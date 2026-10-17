@@ -12,7 +12,6 @@ import * as THREE from 'three';
 import { partRects, SKIN_STORAGE_KEY, DEFAULT_SKIN_URLS } from '../src/entity/PlayerSkin.js';
 import { PARTS, buildParts, RemotePlayer } from '../src/entity/RemotePlayer.js';
 import { LocalPlayerModel } from '../src/entity/LocalPlayerModel.js';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -220,7 +219,5 @@ function noOverlap(a, b) {
   ok(ss.includes('https://minotar.net/skin/'), '单机回退第三方镜像');
   ok(ss.includes("prefs.source = 'username'"), '拉取成功标记来源');
 }
-
-ok(BUILD === 30, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
 
 console.log(`build21-skins: ${passed} passed`);

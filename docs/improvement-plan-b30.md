@@ -20,8 +20,8 @@
 | 轮 | 主题 | 来源条目 | 状态 |
 |---|---|---|---|
 | 1 | 服务器安全加固 | S1 S2 S3 S4 S5 | 已完成（`a030689`，CI run 39037222541 绿） |
-| 2 | 前端资源泄漏收口 | F1 F2 F4 | 进行中 |
-| 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 未开始 |
+| 2 | 前端资源泄漏收口 | F1 F2 F4 | 已完成（`2f72c68`，CI run 39038154519 绿） |
+| 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 进行中 |
 | 4 | README 出仓（用户向化） | E3 | 未开始 |
 | 长期 | 渐进项：F3 Game.js 拆分、E4/E5 测试 harness 归一、S6–S10 联机打磨、F5–F9 前端模式归一、E6 覆盖补强 | 中低优先级余项 | 待排期 |
 
@@ -56,14 +56,24 @@
 
 **验收标准**：① `node --check` 全部改动文件；② 连续进出两次存档后 document 监听器计数不增长（浏览器探针）；③ `unloadChunk` 的 solid/water/light 三个 geometry 均被 dispose（node 行为级探针）；④ `returnToMenu()` 后共享 scene 不残留投射物与光标层，`_disposeWorld()` 是唯一收口点；⑤ 全套件跑批绿。
 
-## 五、轮 3–4 概要
+## 五、轮 3：工程卫生（E1/E2/E7/E10）
 
-- **轮 2 · 前端资源泄漏**：`InventoryScreen` 补 `dispose()` 并接入统一调用点；`World.unloadChunk` 补 `lightMesh` geometry dispose；`Game` 存档切换清理双轨迁移到 `_disposeWorld` 单点收口（F4）。验收：`node --check`；进两次存档后 document 监听器计数不增长；远距卸载区块无 geometry 泄漏；跑批全绿。
-- **轮 3 · 工程卫生**：CI 步骤名去硬编码计数；`run-all-tests.sh` 头部注释改口径（`server/run-all-tests.sh:2` 的「6 个套件」与实况不符）；BUILD 钉值 12 文件收敛到单文件；`package.json` 加 `test` 入口；`server/package.json` 改 `tiderift-server`。验收：跑批绿、CI 步骤名不含写死计数、升版本演练只改 1 处钉值。
-- **轮 4 · README 出仓**：`README.md` 的「回归测试 / 项目结构 / 架构要点 / 开发命令」四节迁入 `docs/`（与 `AGENTS.md` 去重），README 只留用户向内容。验收：README 无开发命令/架构/目录树/回归表，docs 侧信息不丢失。
+两路并行，文件边界互斥。
 
-## 六、进度记录
+| 路 | 负责条目 | 独占文件 |
+|---|---|---|
+| X | E1 CI 步骤名去硬编码计数 + 开发者文档套件清单对账、E7 根 package.json 补 `test` 入口、E10 `server/package.json` 与 lock 包名改 `tiderift-server` | `.github/workflows/ci.yml`、`package.json`、`server/package.json`、`server/package-lock.json`、`AGENTS.md` |
+| Y | E2 12 处 BUILD 钉值收敛到单文件 `tests/version-pin.mjs`（含"全仓无第二处钉值"元断言）、E1 跑批脚本头部注释口径 + 新套件注册 | `tests/**`、`server/run-all-tests.sh`（注释行与注册块） |
+
+**验收标准**：① `grep -rn 'BUILD === ' tests/` 仅剩 `tests/version-pin.mjs`；② 12 个被摘除钉值的测试文件逐个单跑全绿；③ `npm test` 可跑通且 `./server/run-all-tests.sh` 全绿；④ CI 步骤名不再含写死计数；⑤ 三个 package JSON 的 server 侧 name 均为 `tiderift-server` 且 lock 与 manifest 一致；⑥ AGENTS.md 联机测试段套件清单完整、无易漂移计数。
+
+## 六、轮 4 概要
+
+- **轮 4 · README 出仓（E3 + 全局 AGENTS.md 要求）**：`README.md` 的「回归测试 / 项目结构 / 架构要点 / 开发命令」四节迁入 `docs/`（与 `AGENTS.md` 去重），README 只保留用户向内容（特性介绍、操作说明、联机指南、已知限制）。验收：README 无开发命令/架构/目录树/回归表；docs 侧信息不丢失；按全局 AGENTS.md「README 面向用户、不得掺入开发者细节」逐节核对通过。
+
+## 七、进度记录
 
 | 轮 | 开始 | 结束 | 交付提交 | CI | 备注 |
 |---|---|---|---|---|---|
 | 1 | 2026-10-17 | 2026-10-17 | `a030689`（文档 `17cf02d`） | run 39037222541 绿 | 两路并行；独立验收探针 7/7；跑批 15 套件全绿 |
+| 2 | 2026-10-17 | 2026-10-17 | `2f72c68` | run 39038154519 绿 | 浏览器探针：两次进出存档监听器净增 0、scene 无残留；新增 leak-guards 17/17 |

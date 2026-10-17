@@ -9,7 +9,6 @@
 //   ⑤ 发版：BUILD 17→18（终局篇统一发版）
 import { finaleListenGate } from '../src/world/finale-tide.js';
 import { readFileSync } from 'fs';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -66,9 +65,6 @@ ok(gameSrc.includes("sendDropSpawn(p.x, p.y + 1, p.z, 'primordial_emblem', 1)"),
 ok(gameSrc.includes("m.typeName === 'dragon'"), '龙影低头取龙实体位置（在场才低头）');
 ok(gameSrc.includes('_finaleTide.ritual && p > 0.25 && this.mobManager'), '龙影环仅仪式窗口且包络盛放期');
 ok(gameSrc.includes('this.net.sendFinaleState({ offered: true'), '献证 LAN 上报（F1 缺口补齐）');
-
-// ── ⑤ 发版 ──
-ok(BUILD === 30, `BUILD 24（Build 23 主菜单与皮肤面板批次统一 bump，当前 ${BUILD}）`);
 
 // ── ⑥ K3 终局成就 ──
 const hudSrc = readFileSync('./src/ui/Hud.js', 'utf8');

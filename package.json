@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "./server/run-all-tests.sh"
   },
   "dependencies": {
     "three": "^0.160.0"

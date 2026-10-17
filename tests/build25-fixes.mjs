@@ -10,7 +10,6 @@ import { TerrainGenerator } from '../src/world/terrain.js';
 import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -158,8 +157,5 @@ function farmWaterAt(at, nameOf, rec) {
     ok(settings.includes(k), `完整档子项默认全开: ${k.split(':')[0]}`);
   }
 }
-
-// ── ④ BUILD 钉值 ──
-ok(BUILD === 30, 'BUILD 27（B26 流体模拟批次 bump）');
 
 console.log(`PASS build25-fixes: ${passed} 断言`);

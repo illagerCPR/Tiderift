@@ -11,7 +11,6 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { BUILD, VERSION_LABEL } from '../src/version.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { ItemRegistry } from '../src/core/ItemRegistry.js';
 import '../src/items/ItemDefs.js'; // 副作用导入：物品注册表填充（漏了 getByName 全空）
@@ -27,8 +26,6 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
 const def = (n) => BlockRegistry.getById(BlockRegistry.getId(n));
 
 // ── ① 更名落地 ──
-ok(BUILD === 30, `BUILD = 30（当前 ${BUILD}）`);
-ok(VERSION_LABEL === 'Tiderift Beta Build 30', `VERSION_LABEL = Tiderift Beta Build 30（当前 "${VERSION_LABEL}"）`);
 ok(srcOf('../src/version.js').includes('`Tiderift Beta Build ${BUILD}`'), 'version.js 模板为 Tiderift Beta Build');
 
 // src/ 全目录无 CubeWorld 残留（改名完整性；历史名称只允许留在 docs/AGENTS/README 的叙述里）

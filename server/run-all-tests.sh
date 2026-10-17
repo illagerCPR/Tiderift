@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-all-tests.sh -- 一键回归：结构确定性（无需服务器）→ 清状态 → 起真实服务器 → 跑全部 6 个套件 → 停服
+# run-all-tests.sh -- 一键回归：结构确定性（无需服务器）→ 清状态 → 起真实服务器 → 跑全部套件 → 停服（套件清单以本脚本内注册块为准，勿写死数量）
 # 任何套件失败则整体退出 1；CI 与本地共用同一入口（本地须在 3001 空闲时执行）
 
 set -u
@@ -366,6 +366,15 @@ if node tests/leak-guards.mjs; then
     echo "leak-guards: OK"
 else
     echo "leak-guards: FAILED"
+    exit 1
+fi
+
+# 版本钉值唯一来源（纯 node：BUILD/VERSION_LABEL 断言 + tests/ 无第二处 BUILD 钉值的元断言）
+echo "=== version-pin ==="
+if node tests/version-pin.mjs; then
+    echo "version-pin: OK"
+else
+    echo "version-pin: FAILED"
     exit 1
 fi
 

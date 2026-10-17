@@ -36,5 +36,5 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Run server regression suites (152 assertions)
+      - name: Run full regression suites (tests/ + server/)
         run: ./server/run-all-tests.sh

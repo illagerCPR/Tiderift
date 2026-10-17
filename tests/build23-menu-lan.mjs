@@ -11,7 +11,6 @@ import http from 'node:http';
 import {
   normalizeLanHost, lanWsUrl, probeLanServer, LAN_PORT, LAN_HOST_KEY, DEFAULT_LAN_HOST,
 } from '../src/net/lanStatus.js';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -97,8 +96,5 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
     }
   }
 }
-
-// ── ⑤ BUILD ──
-ok(BUILD === 30, `BUILD 递增到 24（当前 ${BUILD}）`);
 
 console.log(`build23-menu-lan: ${passed} assertions ALL PASS`);

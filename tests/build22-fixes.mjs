@@ -13,7 +13,6 @@ import * as THREE from 'three';
 import { applySkinToRig, partRects } from '../src/entity/PlayerSkin.js';
 import { buildParts } from '../src/entity/RemotePlayer.js';
 import { sampleEntityLight, applyEntityLight } from '../src/render/entityLight.js';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -199,8 +198,5 @@ function buildRig(model) {
   ok(srcOf('../src/ui/SkinScreen.js').includes("t('Minecraft®: Java Edition档案用户名')"),
     'SkinScreen 占位符引用新键');
 }
-
-// ── ⑥ BUILD ──
-ok(BUILD === 30, `BUILD 递增到 24（当前 ${BUILD}）`);
 
 console.log(`build22-fixes: ${passed} assertions ALL PASS`);

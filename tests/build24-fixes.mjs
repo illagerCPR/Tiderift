@@ -11,7 +11,6 @@ import { Biomes } from '../src/world/biomes.js';
 import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js';
-import { BUILD } from '../src/version.js';
 
 let passed = 0;
 function ok(cond, msg) {
@@ -88,7 +87,6 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
       ok(src.includes(key), `语言包 ${lang} 缺键/未更新: ${key}`);
     }
   }
-  ok(BUILD === 30, 'BUILD 24（CW-1 修复批次 bump 并 release）');
 }
 
 // ── ④ CW-1 区块边界伪影修复绊线（边缘缺失掩码 + 反向标脏 + 在途 dirty 语义）──

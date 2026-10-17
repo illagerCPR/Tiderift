@@ -9,9 +9,7 @@
 //     耗尽后每秒扣 2 血（原版口径）；airTicks 不为负；出水约 0.5 秒回满并复位溺水计时
 //   ⑤ 接线绊线：Game 走 updateAirSupply（旧逐帧 -1 逻辑已删）；Physics 助推常量/门限/身体浸水在位；
 //     Player.drownTimer 字段；Hud 气泡公式仍以 300 为满；SaveSystem 仍持久化 airTicks
-//   ⑥ BUILD = 30 / VERSION_LABEL = "Tiderift Beta Build 30"
 import { readFileSync } from 'fs';
-import { BUILD, VERSION_LABEL } from '../src/version.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js'; // 副作用导入：方块注册表填充
 import { Physics } from '../src/player/Physics.js';
@@ -205,9 +203,5 @@ function makeEntity(x, y, z, vx = 0, vy = 0, vz = 0) {
   ok(airSrc.includes("entity.airTicks -= dt * 20"), '耗氧按 20 tick/s 折算');
   ok(airSrc.includes('AIR_REGEN_PER_SEC'), '回氧速度常量在位');
 }
-
-// ═══ ⑥ 版本 ═══
-ok(BUILD === 30, `BUILD = 30（当前 ${BUILD}）`);
-ok(VERSION_LABEL === 'Tiderift Beta Build 30', `VERSION_LABEL = Tiderift Beta Build 30（当前 "${VERSION_LABEL}"）`);
 
 console.log(`build30-water-exit-air: ${passed} assertions passed`);
