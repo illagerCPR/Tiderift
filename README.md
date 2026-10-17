@@ -139,31 +139,6 @@ npm run preview        # 预览构建产物
 - **操作日志**：记录最近 200 条管理操作（配置/广播/踢人/清掉落物/删房/未授权访问），面板实时展示。
 - **鉴权**：设置**管理口令**（`adminToken`，留空=关闭）后，所有 `/api/*` 接口与面板都要求输入口令（浏览器自动记住，可选手机会话 1h/24h/7天）；未授权请求返回 401，接口不会回显口令明文；口令到期后仅允许通过面板续期/关闭鉴权（避免永久锁死）。
 
-### 4. 回归测试
-
-```bash
-./server/run-all-tests.sh   # 一键跑批：清状态 → 起服 → 跑全部套件 → 停服（CI 同款入口）
-```
-
-或逐套件运行（先 `node server/index.mjs` 启动服务器，`test-store` 除外）：
-
-| 套件 | 覆盖 |
-|---|---|
-| `node server/test-mp.mjs` | 协议端到端 34 项（方块/玩家/掉落物/怪物/红石/多房间/命令） |
-| `node server/test-store.mjs` | 世界落盘往返 15 项（无需服务器） |
-| `node server/test-admin.mjs` | 管理面板 API 26 项 |
-| `node server/test-stage5.mjs` | 世界内换房/重建世界/时间戳插值 16 项 |
-| `node server/test-stage6.mjs` | 手持物品/死亡掉落物/鉴权过期与日志 20 项 |
-| `node server/test-stage10.mjs` | RTT/快捷栏同步/掉落归属锁/多账号轮换 41 项 |
-| `node server/test-stage11.mjs` | 白名单/权限/挥动联动/头顶快捷栏/抖动自适应 45 项 |
-| `node server/test-dim.mjs` | 联机维度同步（维度化账本隔离/按维度转发） |
-| `node server/test-t5.mjs` | 容器（箱子）账本协议 + 挖必掉 |
-| `node server/test-idea2.mjs` | 箭矢/凋灵之首事件同步 16 项 |
-| `node server/test-profile.mjs` | 玩家档案（上报收录/落盘/恢复）22 项 |
-| `node server/test-idea4.mjs` | 房间设置开关/限速/备份 42 项 |
-
-> 注意：回归测试对**同一台持续运行的服务器**非幂等（测试房间与世界存档会累积、鉴权用例会改动口令）。重复跑批前请重启服务器（或清空 `server/world/` 与 `server/config.json`）——`run-all-tests.sh` 已自动处理。CI（`.github/workflows/ci.yml`）在 push master / PR 时跑 build + 全套件。
-
 ---
 
 ## 操作说明
@@ -187,69 +162,6 @@ npm run preview        # 预览构建产物
 
 ---
 
-## 项目结构
-
-```
-Tiderift/
-├── res/                  # Logo 与主菜单全景图素材
-├── src/
-│   ├── main.js          # 入口：Game + MenuScreen + NetworkManager
-│   ├── version.js       # 版本常量（BUILD / VERSION_LABEL，主界面与 HUD 左下角引用）
-│   ├── i18n/            # 本地化（t 翻译核心、11 语言包、方块/物品/怪物名称十一语字典）
-│   ├── player/          # Game(中枢/主循环)、Player、Controls、Physics、Inventory、Raycast
-│   ├── world/           # 地形生成（SimplexNoise）、生物群系
-│   ├── blocks/ items/   # 方块/物品定义 + SVG 纹理
-│   ├── core/            # World、Chunk、RedstoneSystem、Crafting、SaveSystem、LightEngine、Registry
-│   ├── render/          # Renderer、ChunkMesh、Sky、SVGTextures、粒子/后处理/手持物/远端快捷栏
-│   ├── entity/          # Mob、MobManager、RemotePlayer(远端玩家)、WitherAI/DragonAI(Boss AI)
-│   ├── audio/           # AudioEngine（WebAudio 程序化合成音效/BGM/怪物语音）
-│   ├── workers/         # 地形生成 / 网格构建 Worker（主线程不卡顿）
-│   ├── ui/              # MenuScreen、HUD、Hotbar、InventoryScreen、ChatBox、BeaconScreen 等
-│   └── net/             # NetworkManager（联机客户端网络层）、playerColor（玩家配色）
-├── server/               # 局域网房间服务器（Node + ws）
-│   ├── index.mjs        # 入口（http 管理面板 + WebSocket /ws，多房间管理 + /api 接口）
-│   ├── room.js          # 房间：玩家集合、方块账本、消息路由、世界恢复、踢人/清掉落物
-│   ├── store.js         # 世界落盘 + 快照备份（server/world/<房间名>.json）
-│   ├── config.js        # 服务器配置（默认值 + 读写 server/config.json）
-│   ├── ratelimit.js     # 令牌桶限速（聊天/方块/状态三档，热生效）
-│   ├── admin.html       # 服务器管理面板页面（房间/玩家/配置/世界/白名单/账号管理）
-│   ├── protocol.js      # 消息类型常量（浏览器与服务器共用）
-│   ├── client-sim.mjs   # 双端验证模拟客户端
-│   ├── test-*.mjs       # 12 个回归测试套件（见上方"回归测试"表）
-│   └── run-all-tests.sh # 一键跑批（CI 同款入口）
-├── docs/
-│   ├── lan-multiplayer-design.md  # 局域网联机设计文档（含分阶段路线）
-│   ├── agent-browser-eval.md      # agent-browser 冒烟实测记录
-│   └── agent-notes/               # 各子系统批次踩坑备忘（按主题分文件）
-├── start.cmd             # 开发/联机服务器启停脚本（Windows）
-├── start.sh              # 开发/联机服务器启停脚本（Linux/macOS，对标 start.cmd）
-└── .gitignore
-```
-
----
-
-## 架构要点
-
-- **确定性世界生成**：地形由 `TerrainGenerator(seed)` 用 SimplexNoise + LCG 伪随机生成，全流程无 `Math.random`。这是联机"各端自行生成相同地形、只同步修改增量"的基础；地形生成与网格构建进一步下沉到 **Worker 线程**，主线程零卡顿。
-- **单一方块写入入口**：`World.setBlock` 是唯一方块修改入口，联机时统一经它上报（挖掘/放置/TNT 爆炸/活塞全覆盖），并带 `_applyingRemote` 防回环标志；写方块同时驱动体素光增量更新。
-- **体素光照**：`LightEngine` 双通道（天光/方块光 0-15）BFS 传播 + setBlock 增量更新（双队列移除/列重播种）；网格顶点携带平滑光照 + AO，昼夜只改共享 shader uniform 不重建网格；光照纯客户端视觉，不进存档与协议。
-- **存档**：localStorage 多槽位（`project-mc-save-N`），存 `seed + modifiedBlocks 增量 + 玩家状态 + 红石 + 时间`；联机时世界状态由服务器落盘、玩家档案（背包/位置）由服务器按房间独立持久化。
-- **联机模型**：轻量主机 + 各端自跑。Node 服务器只做房间管理、方块账本（last-write-wins 仲裁）、玩家中继、昼夜权威、掉落物账本与玩家档案存储；客户端各自生成世界、自跑物理，只同步外部可见状态。
-
----
-
-## 开发命令
-
-```bash
-node --check <file>         # 语法检查
-npm run build               # 生产构建
-./server/run-all-tests.sh   # 服务器全套回归测试（CI 同款）
-```
-
-无 lint / typecheck；修改源码后请 `node --check` 每个改动文件并浏览器手测，联机改动跑全套件回归（CI 会自动跑 build + 测试）。
-
----
-
 ## 已知限制（联机）
 
 - 怪物同步采用**事件同步**（host 权威生成 + 受击/死亡广播 + 受击位置校正）：同一只怪在各端 AI 独立跑，位置可能有轻微漂移（局域网信任场景可接受）；非攻击致死（白天燃烧、掉虚空）各端可能各自产生掉落物。
@@ -266,3 +178,7 @@ npm run build               # 生产构建
 - 管理面板**默认无鉴权**（局域网信任环境）；如需限制，可在面板「配置管理」设置**管理口令**（`adminToken`）或在「管理账号」卡生成独立口令，开启后所有 API 须带口令；口令支持**过期分钟**与**多账号轮换/撤销**（全部撤销后鉴权自动关闭；到期后仅能通过面板续期/关闭，或编辑 `server/config.json` 后重启服务器）。
 - 网络延迟（RTT）为应用层 ping/pong 直测（每 2 秒一次，EMA 平滑），显示于游戏内信息栏；插值延迟自适应以 RTT 为主信号、缓冲头余量为欠载保护。
 - 聊天/方块操作由服务器**令牌桶限速**（超速消息被丢弃并在管理面板统计丢包），正常游玩不会触发。
+
+---
+
+开发者参考资料：[`docs/development.md`](docs/development.md)（环境与依赖、开发/生产命令、目录结构、架构概览、回归测试与 CI）。

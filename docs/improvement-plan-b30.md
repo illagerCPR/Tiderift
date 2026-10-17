@@ -21,8 +21,8 @@
 |---|---|---|---|
 | 1 | 服务器安全加固 | S1 S2 S3 S4 S5 | 已完成（`a030689`，CI run 39037222541 绿） |
 | 2 | 前端资源泄漏收口 | F1 F2 F4 | 已完成（`2f72c68`，CI run 39038154519 绿） |
-| 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 进行中 |
-| 4 | README 出仓（用户向化） | E3 | 未开始 |
+| 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 已完成（`e99aaa6`，CI run 39038850135 绿） |
+| 4 | README 出仓（用户向化） | E3 | 进行中 |
 | 长期 | 渐进项：F3 Game.js 拆分、E4/E5 测试 harness 归一、S6–S10 联机打磨、F5–F9 前端模式归一、E6 覆盖补强 | 中低优先级余项 | 待排期 |
 
 ## 三、轮 1：服务器安全加固（S1–S5）
@@ -67,9 +67,15 @@
 
 **验收标准**：① `grep -rn 'BUILD === ' tests/` 仅剩 `tests/version-pin.mjs`；② 12 个被摘除钉值的测试文件逐个单跑全绿；③ `npm test` 可跑通且 `./server/run-all-tests.sh` 全绿；④ CI 步骤名不再含写死计数；⑤ 三个 package JSON 的 server 侧 name 均为 `tiderift-server` 且 lock 与 manifest 一致；⑥ AGENTS.md 联机测试段套件清单完整、无易漂移计数。
 
-## 六、轮 4 概要
+## 六、轮 4：README 出仓（E3）
 
-- **轮 4 · README 出仓（E3 + 全局 AGENTS.md 要求）**：`README.md` 的「回归测试 / 项目结构 / 架构要点 / 开发命令」四节迁入 `docs/`（与 `AGENTS.md` 去重），README 只保留用户向内容（特性介绍、操作说明、联机指南、已知限制）。验收：README 无开发命令/架构/目录树/回归表；docs 侧信息不丢失；按全局 AGENTS.md「README 面向用户、不得掺入开发者细节」逐节核对通过。
+单路实施（唯一写入者持有 README.md 与新建 docs/development.md，避免同文件并发冲突）。
+
+| 路 | 负责条目 | 独占文件 |
+|---|---|---|
+| R4 | E3：README 迁出「回归测试 / 项目结构 / 架构要点 / 开发命令」四节 → 新建 `docs/development.md` 承接并去重纠错；README 只留用户向内容 + 一条开发者入口 | `README.md`、新建 `docs/development.md` |
+
+**验收标准**：① README 标题清单中不再有上述四节（联机小节编号 1/2/3 不乱）；② `docs/development.md` 覆盖原四节信息，命令与路径逐条真实存在（对照 package.json / 启动脚本 / run-all-tests.sh / docs 列表核对）；③ 迁出的回归测试段修正漂移（补 test-t5/test-dim/test-skinlog/test-hardening-edge/test-hardening-store 与 tests/ 纯 node 套件，去掉易漂移计数）；④ 与 AGENTS.md 去重（深水细节指向而非复制）；⑤ 按全局 AGENTS.md「README 面向用户、不得掺入开发者细节」逐节核对通过；⑥ 我复核后跑整批回归全绿。
 
 ## 七、进度记录
 
@@ -77,3 +83,4 @@
 |---|---|---|---|---|---|
 | 1 | 2026-10-17 | 2026-10-17 | `a030689`（文档 `17cf02d`） | run 39037222541 绿 | 两路并行；独立验收探针 7/7；跑批 15 套件全绿 |
 | 2 | 2026-10-17 | 2026-10-17 | `2f72c68` | run 39038154519 绿 | 浏览器探针：两次进出存档监听器净增 0、scene 无残留；新增 leak-guards 17/17 |
+| 3 | 2026-10-17 | 2026-10-17 | `e99aaa6` | run 39038850135 绿 | 12 处 BUILD 钉值 + 2 处 VERSION_LABEL 钉值收敛到 tests/version-pin.mjs；反证测试证明元断言会 FAIL；npm test 入口上线 |
