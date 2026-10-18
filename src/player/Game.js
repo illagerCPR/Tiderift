@@ -9,7 +9,9 @@ import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
 import { updateAirSupply } from '../core/AirSupply.js';
 import { Player } from './Player.js';
-import { Physics, GLIDE_GRAVITY } from './Physics.js';
+import { Physics } from './Physics.js';
+import { Summoning } from './Summoning.js';
+import { GlideWind } from './GlideWind.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
@@ -81,13 +83,6 @@ const ORE_XP = {
   diamond_ore: 7, deepslate_diamond_ore: 7, emerald_ore: 7,
 };
 
-// 鞘翅滑翔气动参数（每秒口径；重力/下沉上限在 Physics.js）
-const GLIDE_THRUST = 8;    // 俯冲推进加速度上限 m/s²（按 -sin(pitch) 比例；与气动阻尼平衡出俯冲极速 ~27m/s）
-const GLIDE_DRAG = 0.994;  // 水平气动阻尼（pow 基，dt*60 口径；过强会把拉起后的翱翔窗口掐死）
-const GLIDE_BRAKE = 0.5;   // 拉起刹车强度（sin(pitch) 比例的水平动能损耗；过大会瞬间失速翱翔不出）
-const GLIDE_LIFT = 6;      // 拉起升力系数（升力 = sin(pitch)·vAlong·此值；升力超过滑翔重力才净爬升）
-const GLIDE_DEPLOY_VY = -0.5; // 展开阈值：空中下落至此速度自动展开（落体展开，原版式）
-
 // 触发方块/物品定义注册
 import '../blocks/BlockDefs.js';
 import '../items/ItemDefs.js';
@@ -131,6 +126,10 @@ export class Game {
     this.hand = new FirstPersonHand(this);
     // Build 20 ⑤：本地玩家第三人称模型（跨存档共享场景挂点，可见性随视角模式）
     this.playerModel = new LocalPlayerModel(this.renderer.scene, this);
+    // 轮 8 首刀域（构造器共享型，无资源可收口）：手工召唤 / 滑翔与气流。二者一律在调用点
+    // 经 this.game 现取 world / mobManager / inventory / hud，不留构造期快照（那些随 start() 重建）。
+    this.summoning = new Summoning(this);
+    this.glideWind = new GlideWind(this);
     this.currentSlot = 1;
     this.onExit = null;
     this.mobManager = null;
@@ -784,38 +783,22 @@ export class Game {
   // 上升气流检测（天域批次 B）：足部/身体任一格 def.updraft → 本帧处于气流柱内。
   // 只作用于玩家（怪物运动不接气流，避免 AI 被抬飞出控）；联机纯本地物理零协议。
   _updateUpdraftState() {
-    const p = this.player;
-    const bx = Math.floor(p.position.x);
-    const bz = Math.floor(p.position.z);
-    const yFeet = Math.floor(p.position.y + 0.1);
-    const yBody = Math.floor(p.position.y + 1.0);
-    const d1 = BlockRegistry.getById(this.world.getBlock(bx, yFeet, bz));
-    const d2 = BlockRegistry.getById(this.world.getBlock(bx, yBody, bz));
-    this._inUpdraft = !!(d1 && d1.updraft) || !!(d2 && d2.updraft);
+    this._inUpdraft = this.glideWind.computeUpdraftState(); // 判定实现在 GlideWind，字段仍归 Game
   }
 
   // 御风斗篷穿戴检测（批次 C）：胸甲槽 = armor[1]
   _hasGaleCloak() {
-    const chest = this.inventory.armor && this.inventory.armor[1];
-    return !!(chest && chest.name === 'gale_cloak');
+    return this.glideWind.hasGaleCloak();
   }
 
   // 风阵块放置：上方 12 格写风流柱（只填空气格；逐格 setBlock → 联机逐格自动上报）
   _writeGaleColumn(x, y, z) {
-    const wid = BlockRegistry.getId('wind_current');
-    for (let h = 1; h <= 12; h++) {
-      if (y + h >= CHUNK_HEIGHT) break;
-      if (this.world.getBlock(x, y + h, z) === 0) this.world.setBlock(x, y + h, z, wid);
-    }
+    this.glideWind.writeGaleColumn(x, y, z);
   }
 
   // 拆风阵块：同步清除其上方气流柱（遇非风流格即停，玩家建筑不受影响）
   _clearGaleColumn(x, y, z) {
-    const wid = BlockRegistry.getId('wind_current');
-    for (let h = 1; h <= 12; h++) {
-      if (this.world.getBlock(x, y + h, z) !== wid) break;
-      this.world.setBlock(x, y + h, z, 0);
-    }
+    this.glideWind.clearGaleColumn(x, y, z);
   }
 
   // 燃烧表现：着火实体喷火焰+烟，玩家着火叠屏幕火光
@@ -2562,32 +2545,7 @@ export class Game {
   // 只在本地放置成功路径调用（联机远端方块变更不检测，防多端重复召唤）；
   // 命中则移除 5 块（走 setBlock 自动广播）并就地召唤护卫（联机经 mob_spawn 回执全端创建）。
   _trySummonIronGolem(x, y, z) {
-    if (!this.world || !this.mobManager) return false;
-    const IRON = BlockRegistry.getId('iron_block');
-    const PUMPKIN = BlockRegistry.getId('pumpkin');
-    if (!IRON || !PUMPKIN) return false;
-    const get = (bx, by, bz) => this.world.getBlock(bx, by, bz);
-    // 推定南瓜头位置：本次放的是头 / 柱底（头在其上 2 格）/ 柱中或臂（头在其上 1 格）
-    const placed = get(x, y, z);
-    let hx = x, hy = y, hz = z;
-    if (placed === PUMPKIN) {
-      // 本次放的是头
-    } else if (placed === IRON && get(x, y + 1, z) === IRON && get(x, y + 2, z) === PUMPKIN) {
-      hy = y + 2;
-    } else if (placed === IRON && get(x, y - 1, z) === IRON && get(x, y + 1, z) === PUMPKIN) {
-      hy = y + 1;
-    } else {
-      return false;
-    }
-    // 身柱 2 格 + 双臂各 1（臂与身上段同层）
-    if (get(hx, hy - 1, hz) !== IRON || get(hx, hy - 2, hz) !== IRON) return false;
-    if (get(hx - 1, hy - 1, hz) !== IRON || get(hx + 1, hy - 1, hz) !== IRON) return false;
-    for (const [bx, by, bz] of [[hx, hy, hz], [hx, hy - 1, hz], [hx, hy - 2, hz], [hx - 1, hy - 1, hz], [hx + 1, hy - 1, hz]]) {
-      this.world.setBlock(bx, by, bz, 0);
-    }
-    this.mobManager._spawnAt('iron_golem', hx + BLOCK_CENTER, hy - 2 + 0.1, hz + BLOCK_CENTER);
-    if (this.chatBox) this.chatBox.add(t('铁傀儡从方块中苏醒了…'), '#cfc');
-    return true;
+    return this.summoning.trySummonIronGolem(x, y, z);
   }
 
   // Idea-2D-②：凋灵召唤检测——双结构：原版 T 型（柱底 1 + 沙排 3 + 头排 3，Build 8 起）
@@ -2596,59 +2554,21 @@ export class Game {
   // 命中则移除 7 块（setBlock 自动广播账本）并就地召唤凋灵（联机经 mob_spawn 回执全端创建）。
   // 枚举：轴向 x/z × 头排起点 [-3,3]（宽枚举无害，校验保证正确性）。
   _trySummonWither(x, y, z) {
+    // 头层由放置物决定 + 形状派发**刻意留在门面**：头颅是 B28 四朝向家族，判层必须按家族判
+    //（tests/build28-block-textures.mjs:266-269 把这三行字面钉在 Game.js 上，整段搬走即红）。
+    // 扫描与落地实现在 src/player/Summoning.js。
     if (!this.world || !this.mobManager) return false;
     const SAND = BlockRegistry.getId('soul_sand');
     const SKULL = BlockRegistry.getId('wither_skeleton_skull');
     if (!SAND || !SKULL) return false;
-    const get = (bx, by, bz) => this.world.getBlock(bx, by, bz);
-    const placed = get(x, y, z);
+    const placed = this.world.getBlock(x, y, z);
     const isSkull = (id) => { const d = BlockRegistry.getById(id); return !!(d && d.baseBlock === 'wither_skeleton_skull'); }; // B28：头颅四朝向家族
     if (placed !== SAND && !isSkull(placed)) return false;
-    // 扫描头层 ty 的 3 连头颅排，再按形状补验下层；命中返回待清除块与召唤点
-    const scan = (ty, shape) => {
-      for (const [ax, az] of [[1, 0], [0, 1]]) {       // 水平轴向：x / z
-        for (let h0 = -3; h0 <= 3; h0++) {             // 头排起点相对放置点（沿轴标量）
-          const hx = x + ax * h0, hz = z + az * h0;
-          let ok = true;
-          for (let i = 0; i < 3 && ok; i++) if (!isSkull(get(hx + ax * i, ty, hz + az * i))) ok = false;
-          if (!ok) continue;
-          if (shape === 'flat') {                      // 兼容平铺：沙排 4 连，头排左/右两种对齐
-            for (const off of [0, -1]) {
-              const bx0 = hx + ax * off, bz0 = hz + az * off;
-              let ok2 = true;
-              for (let i = 0; i < 4 && ok2; i++) if (get(bx0 + ax * i, ty - 1, bz0 + az * i) !== SAND) ok2 = false;
-              if (!ok2) continue;
-              const blocks = [];
-              for (let i = 0; i < 3; i++) blocks.push([hx + ax * i, ty, hz + az * i]);
-              for (let i = 0; i < 4; i++) blocks.push([bx0 + ax * i, ty - 1, bz0 + az * i]);
-              return { blocks, cx: bx0 + ax * 1.5, cz: bz0 + az * 1.5, sy: ty };
-            }
-          } else {                                     // 原版 T：沙排 3 连同列 + 柱底在沙排中列下方一层
-            let ok2 = true;
-            for (let i = 0; i < 3 && ok2; i++) if (get(hx + ax * i, ty - 1, hz + az * i) !== SAND) ok2 = false;
-            if (!ok2) continue;
-            if (get(hx + ax, ty - 2, hz + az) !== SAND) continue;
-            const blocks = [];
-            for (let i = 0; i < 3; i++) blocks.push([hx + ax * i, ty, hz + az * i]);
-            for (let i = 0; i < 3; i++) blocks.push([hx + ax * i, ty - 1, hz + az * i]);
-            blocks.push([hx + ax, ty - 2, hz + az]);
-            return { blocks, cx: hx + ax + BLOCK_CENTER, cz: hz + az + BLOCK_CENTER, sy: ty - 1 };
-          }
-        }
-      }
-      return null;
-    };
-    // 头/沙的层位由放置物决定：放头 → 头层 y；放沙 → 沙排 y（头层 y+1）或柱底 y（头层 y+2）
-    // B28：头颅是四朝向家族，判层必须按家族判（曾用 placed === SKULL 基名，
-    // 朝南/东/西的头颅会被当成"放的是沙"去扫上层，T 型召唤静默失效）
+    const scan = (ty, shape) => this.summoning.scanWitherShape(x, y, z, ty, shape, SAND, isSkull);
     const hit = isSkull(placed)
       ? (scan(y, 't') || scan(y, 'flat'))
       : (scan(y + 2, 't') || scan(y + 1, 't') || scan(y + 1, 'flat'));
-    if (!hit) return false;
-    for (const [bx, by, bz] of hit.blocks) this.world.setBlock(bx, by, bz, 0);
-    this.mobManager._spawnAt('wither', hit.cx, hit.sy + 0.1, hit.cz);
-    if (this.chatBox) this.chatBox.add(t('凋灵从方块中苏醒了…'), '#c9c');
-    return true;
+    return this.summoning.commitWitherSummon(hit);
   }
 
   // ── 信标（Idea-2D-③）────────────────────────────────────────
@@ -3339,60 +3259,14 @@ export class Game {
   // 在水中 / 已在地面 → 折叠。独立于气动结算——水中走游泳分支不进移动滑翔分支，
   // 若不在此处统一折叠，入水后 gliding 会残留 true。
   _updateGlideFold() {
-    const p = this.player;
-    if (!p.gliding) return;
-    const chest = this.inventory ? this.inventory.armor[1] : null;
-    if (!chest || chest.name !== 'elytra' || p.flying || p.spectator || p.inWater || p.onGround) {
-      p.gliding = false;
-      if (this.hud) this.hud.setGliding(false);
-    }
+    this.glideWind.updateGlideFold();
   }
 
   // 鞘翅滑翔气动结算（移动分支调用）：返回 true 表示本帧处于滑翔（移动分支不再
   // 覆写水平速度，动量得以保留）。展开条件：胸甲槽穿鞘翅 + 空中下落（落体展开）。
   // 气动模型（简化原版）：低头俯冲加速、抬头迎角升力翱翔、常驻水平阻尼。
   _updateGlideAero(dt) {
-    const p = this.player;
-    if (!p.gliding) {
-      const chest = this.inventory ? this.inventory.armor[1] : null;
-      // onGround 必须排除：站立时每帧重力使 vy=-0.53 恰好越过展开阈值，
-      // 会与 _updateGlideFold 的落地折叠形成逐帧抖动（HUD 闪烁）
-      if (!chest || chest.name !== 'elytra' || p.flying || p.spectator || p.inWater || p.onGround) return false;
-      if (p.velocity.y > GLIDE_DEPLOY_VY) return false; // 起跳上升段不展开，过 apex 后触发
-      p.gliding = true;
-      if (this.hud) this.hud.setGliding(true);
-    }
-
-    // 气动结算：视线水平方向 = forward = (-sin(yaw), 0, -cos(yaw))；低头 pitch 为负
-    const fwdX = -Math.sin(p.yaw);
-    const fwdZ = -Math.cos(p.yaw);
-    const pitch = p.pitch;
-    const vAlong = p.velocity.x * fwdX + p.velocity.z * fwdZ; // 沿视线的前向速度分量
-
-    if (pitch < 0) {
-      // 俯冲：沿视线水平分量推进（越低头推力越大）
-      const thrust = -Math.sin(pitch) * GLIDE_THRUST;
-      p.velocity.x += fwdX * thrust * dt;
-      p.velocity.z += fwdZ * thrust * dt;
-    } else if (pitch > 0) {
-      // 拉起：机翼迎角升力 = sin(pitch)·前向速度·GLIDE_LIFT，超过滑翔重力才净爬升
-      // （鼓励"俯冲攒速→拉起翱翔"循环；速度被刹车耗尽后升力不足，自然失速下坠）
-      if (vAlong > 1) {
-        const lift = Math.sin(pitch) * vAlong * GLIDE_LIFT;
-        p.velocity.y += Math.min(lift, -GLIDE_GRAVITY * 1.35) * dt;
-      }
-      const brake = Math.min(1, Math.sin(pitch) * GLIDE_BRAKE * dt);
-      p.velocity.x -= p.velocity.x * brake;
-      p.velocity.z -= p.velocity.z * brake;
-    }
-
-    // 常驻水平气动阻尼（帧率无关）+ 爬升上限保护
-    const drag = Math.pow(GLIDE_DRAG, dt * 60);
-    p.velocity.x *= drag;
-    p.velocity.z *= drag;
-    if (p.velocity.y > 9) p.velocity.y = 9;
-
-    return true;
+    return this.glideWind.updateGlideAero(dt);
   }
 
   updateSurvival(dt) {
