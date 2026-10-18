@@ -25,7 +25,7 @@
 | 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 已完成（`e99aaa6`，CI run 39038850135 绿） |
 | 4 | README 出仓（用户向化） | E3 | 已完成（`2f99b3f`） |
 | 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 已完成（`4520a7b`，CI run 39091785891 绿） |
-| 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（本轮提交，CI 见进度记录） |
+| 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（`d908532`，CI run 39120118156 绿） |
 | 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 待启动 |
 | 8 | F3 Game.js 拆分（先只读可行性评估，确认后逐域迁移） | F3 | 待启动 |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
@@ -93,7 +93,7 @@
 | Build 31 | 2026-10-17 | 2026-10-17 | `070492d` | run 39039746519 绿 | BUILD 31 + 签名 tag `beta-build-31` + Release（Latest） |
 | 5 | 2026-10-18 | 2026-10-18 | `4520a7b`（本轮含文档） | run 39091785891 绿 | 两路并行（N1 服务端加固 5 条 / N2 落盘节流+回放打包+客户端防御）；调度方独立黑盒探针 22/22（写盘 200→3 次、SIGTERM 强刷、600 格回放 512+88 分块、删房清理、心跳 2006ms 热生效、皮肤限频 429 与日志 35→1）；浏览器端到端冒烟通过（0 TypeError）；新增三套件 51/28/18 已并入跑批；文档同步 AGENTS.md / docs/development.md / docs/agent-notes/multiplayer.md |
 
-| 6 | 2026-10-18 | 2026-10-18 | 本轮提交（含文档） | 见下 | 两波四路（第一波 P/Q/S 并行，第二波 R）；F5 四屏光标层收编 CursorOverlay（leak-guards 47/47）；F6 球体判别式统一 raySphereHit（MobManager 两处 + 远端玩家，消除每怪每帧 new Vector3）；F7 modifiedBlocks 分桶索引（40k 账本 169 区块重放 2356ms→10ms，169×65536 格逐字节等价）；F8 dispose 复用 _removeMobResources（唯一清理实现 + 幂等）；F9 眼高/方块中心/移速常量集中；F10 帧射线缓存 + Boss 列表零分配；F11 _anyInputBlockingUI 唯一清单（六类界面阻断挖掘/攻击/弓蓄力）；F12 红石/流体待处理队列键化；新增三套件 tests/ray-sphere、tests/world-mod-index、tests/mob-ray-select 并入跑批 |
+| 6 | 2026-10-18 | 2026-10-18 | `d908532`（文档另提交） | run 39120118156 绿 | 两波四路（第一波 P/Q/S 并行，第二波 R）；F5 四屏光标层收编 CursorOverlay（leak-guards 47/47）；F6 球体判别式统一 raySphereHit（MobManager 两处 + 远端玩家，消除每怪每帧 new Vector3）；F7 modifiedBlocks 分桶索引（40k 账本 169 区块重放 2356ms→10ms，169×65536 格逐字节等价）；F8 dispose 复用 _removeMobResources（唯一清理实现 + 幂等）；F9 眼高/方块中心/移速常量集中；F10 帧射线缓存 + Boss 列表零分配；F11 _anyInputBlockingUI 唯一清单（六类界面阻断挖掘/攻击/弓蓄力）；F12 红石/流体待处理队列键化；新增三套件 tests/ray-sphere、tests/world-mod-index、tests/mob-ray-select 并入跑批 |
 
 ## 八、轮 5 · 联机服务端打磨（S6–S13）
 
