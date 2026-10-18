@@ -1,6 +1,7 @@
 // test-stage6.mjs -- 阶段 6 服务器回归：手持物品同步 / 玩家死亡掉落物 / 鉴权过期与操作日志
 // 用法：node server/test-stage6.mjs   （先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
@@ -22,7 +23,7 @@ function connect(name) {
         if (p.waiters[i](m)) p.waiters.splice(i, 1);
       }
     });
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());
       if (m.t === 'welcome') {

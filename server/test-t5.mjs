@@ -1,6 +1,7 @@
 // test-t5.mjs -- T5 批次服务器回归：容器（箱子）账本协议 + mob_spawn tradeSeed 透传 + 容器落盘格式
 // 用法：node server/test-t5.mjs（需已启动 node server/index.mjs；run-all-tests.sh 调用）
 import WebSocket from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,7 @@ function connect(name) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(URL);
     ws._queue = [];
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', (d) => ws._queue.push(JSON.parse(d.toString())));
     ws.on('error', reject);
     const timer = setInterval(() => {

@@ -378,6 +378,24 @@ else
     exit 1
 fi
 
+# 落盘节流 + 账本回放打包（纯 node：Room 直接实例化，不依赖服务器进程）
+echo "=== room-persist-replay ==="
+if node tests/room-persist-replay.mjs; then
+    echo "room-persist-replay: OK"
+else
+    echo "room-persist-replay: FAILED"
+    exit 1
+fi
+
+# 客户端消息入口防御（纯 node：parseServerMessage 脏输入 + _handle 空值不抛）
+echo "=== net-message-guard ==="
+if node tests/net-message-guard.mjs; then
+    echo "net-message-guard: OK"
+else
+    echo "net-message-guard: FAILED"
+    exit 1
+fi
+
 # 测试非幂等：先确认 3001 空闲，再清空运行时数据保证干净状态
 if (exec 3<>/dev/tcp/127.0.0.1/3001) 2>/dev/null; then
     exec 3>&- 3<&- 2>/dev/null
@@ -406,7 +424,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-skinlog test-hardening-edge test-hardening-store; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-skinlog test-hardening-net test-hardening-edge test-hardening-store; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

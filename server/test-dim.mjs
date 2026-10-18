@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Room } from './room.js';
+import { PROTOCOL_VERSION } from './protocol.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const results = [];
@@ -18,7 +19,7 @@ function connect(name) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(URL);
     ws._queue = [];
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', (d) => ws._queue.push(JSON.parse(d.toString())));
     ws.on('error', reject);
     const timer = setInterval(() => {
@@ -69,7 +70,9 @@ const dropId = aDrop ? aDrop.id : -1;
 const C = await connect('DimC');
 C.ws.send(JSON.stringify({ t: 'join_room', room: ROOM }));
 await sleep(300);
-assert('C 加入（主世界）回放不含下界方块', !C.queue.some(m => m.t === 'block_change' && m.x === 10 && m.y === 70 && m.z === 10));
+assert('C 加入（主世界）回放不含下界方块',
+  !C.queue.some(m => (m.t === 'block_change' && m.x === 10 && m.y === 70 && m.z === 10) ||
+    (m.t === 'block_change_batch' && (m.list || []).some(it => it[0] === 10 && it[1] === 70 && it[2] === 10))));
 
 // ── C 换到下界：dimension_world 含 A 的下界方块 + 回放同维玩家 A ─────────
 C.ws.send(JSON.stringify({ t: 'switch_dimension', dim: 'nether' }));
@@ -98,8 +101,13 @@ assert('C（下界）未收到 B 的主世界 block_change',
 const D = await connect('DimD');
 D.ws.send(JSON.stringify({ t: 'join_room', room: ROOM }));
 await sleep(300);
-assert('D（主世界）回放含 B 的方块', !!D.queue.find(m => m.t === 'block_change' && m.x === 20 && m.y === 70 && m.z === 20 && m.by === 0));
-assert('D 回放不含 A 的下界方块', !D.queue.some(m => m.t === 'block_change' && m.x === 10 && m.y === 70 && m.z === 10));
+// S9：回放改为 block_change_batch（by=0 表示账本回放，元素形状 [x,y,z,id]）
+const dReplay = D.queue.filter(m => m.t === 'block_change_batch' && m.by === 0 && m.d === 'overworld');
+assert('D（主世界）回放含 B 的方块',
+  dReplay.some(m => (m.list || []).some(([x, y, z, id]) => x === 20 && y === 70 && z === 20 && id === 4)));
+assert('D 回放不含 A 的下界方块',
+  !D.queue.some(m => (m.t === 'block_change' && m.x === 10 && m.y === 70 && m.z === 10) ||
+    (m.t === 'block_change_batch' && (m.list || []).some(it => it[0] === 10 && it[1] === 70 && it[2] === 10))));
 
 // ── player_state 按维度过滤 ─────────────────────────────────────────────
 const cStateCount = C.queue.filter(m => m.t === 'player_state').length;
@@ -138,15 +146,23 @@ assert('非法维度收到系统提示', !!A.queue.find(m => m.t === 'chat' && m
 }
 
 // ── 快照落盘：分维度账本进 store ───────────────────────────────────────
-await sleep(200);
+// S8：落盘节流后不再依赖固定 sleep——轮询等待快照内容就绪（最多 3s，超时判失败）
 const snapPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'world', ROOM + '.json');
-const snap = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
-assert('快照含 dimensionBlocks.nether 且有 A 的方块',
-  !!snap.dimensionBlocks && !!snap.dimensionBlocks.nether &&
-  snap.dimensionBlocks.nether.some(([k, id]) => k === '10,70,10' && id === 1));
+let snap = null;
+for (let t = 0; t < 30 && !snap; t++) {
+  await sleep(100);
+  try {
+    const s = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
+    const nb = s.dimensionBlocks && s.dimensionBlocks.nether;
+    const ow = s.dimensionBlocks && s.dimensionBlocks.overworld;
+    if (nb && nb.some(([k, id]) => k === '10,70,10' && id === 1) &&
+        ow && ow.some(([k, id]) => k === '20,70,20' && id === 4)) snap = s;
+  } catch {} // 快照尚未落盘/写入中：继续轮询
+}
+assert('快照含 dimensionBlocks.nether 且有 A 的方块（3s 内落盘）',
+  !!snap && snap.dimensionBlocks.nether.some(([k, id]) => k === '10,70,10' && id === 1));
 assert('快照含 dimensionBlocks.overworld 且有 B 的方块',
-  !!snap.dimensionBlocks.overworld &&
-  snap.dimensionBlocks.overworld.some(([k, id]) => k === '20,70,20' && id === 4));
+  !!snap && snap.dimensionBlocks.overworld.some(([k, id]) => k === '20,70,20' && id === 4));
 
 // ── Room.restore：旧平铺快照迁移进主世界桶 / 新分维快照直读 ─────────────
 {

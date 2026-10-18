@@ -4,6 +4,7 @@
 //       备份导出（内存/磁盘/404/权限）、store 备份修剪、限速丢包/热恢复/心跳豁免/日志聚合
 // 用法：node server/test-idea4.mjs   （先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,7 +32,7 @@ function connect(name) {
         if (p.waiters[i](m)) p.waiters.splice(i, 1);
       }
     });
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());
       if (m.t === 'welcome') {

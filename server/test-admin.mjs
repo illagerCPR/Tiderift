@@ -2,6 +2,7 @@
 // 用法：node server/test-admin.mjs   （先启动 server/index.mjs，端口 3001）
 // 依赖 ws（server/package.json 已声明）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 
 const WS_URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
@@ -24,7 +25,7 @@ function connect(name) {
       }
     });
     ws.on('open', () => {
-      ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' }));
+      ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION }));
     });
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());

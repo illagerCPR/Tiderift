@@ -2,6 +2,7 @@
 // 流程：hello -> join_room -> 发 player_state/chat/block_set
 //       然后等待浏览器 host 放方块(60,72,60) 的广播回显，验证反向同步
 import WebSocket from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const results = [];
@@ -12,7 +13,7 @@ const ws = new WebSocket(URL);
 const inbox = [];
 ws.on('message', (d) => inbox.push(JSON.parse(d.toString())));
 await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
-ws.send(JSON.stringify({ t: 'hello', name: 'NodeClient', version: '0.1' }));
+ws.send(JSON.stringify({ t: 'hello', name: 'NodeClient', version: PROTOCOL_VERSION }));
 await sleep(150);
 const welcome = inbox.find(m => m.t === 'welcome');
 assert('Node 收到 welcome', !!welcome);

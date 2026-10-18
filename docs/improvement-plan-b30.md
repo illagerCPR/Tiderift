@@ -14,6 +14,7 @@
 | D4 | 计划落盘 | 本文件与审计报告一并纳入版本控制 |
 | D5 | Build 递增时机 | **四个批次全部完成后**再递增 BUILD 并发 Release（用户指示），中途批次只签名提交 + push + CI 绿 |
 | D6 | README 审查 | 轮 4 按全局 AGENTS.md 执行：README 只保留用户向内容，开发者向章节（回归测试/项目结构/架构要点/开发命令）迁入 docs/ |
+| D7 | 长期项排期 | 用户 2026-10-17 确认：轮 5 联机服务端打磨 → 轮 6 前端模式归一 → 轮 7 工程与覆盖 → 轮 8 F3 Game.js 拆分（先评估后迁移）；E11（three 升级）/E14（i18n 组织）判定不做；Build 递增与 Release 仍逐次单独批准 |
 
 ## 二、轮次总览
 
@@ -23,7 +24,11 @@
 | 2 | 前端资源泄漏收口 | F1 F2 F4 | 已完成（`2f72c68`，CI run 39038154519 绿） |
 | 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 已完成（`e99aaa6`，CI run 39038850135 绿） |
 | 4 | README 出仓（用户向化） | E3 | 已完成（`2f99b3f`） |
-| 长期 | 渐进项：F3 Game.js 拆分、E4/E5 测试 harness 归一、S6–S10 联机打磨、F5–F9 前端模式归一、E6 覆盖补强 | 中低优先级余项 | 待排期 |
+| 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 实施中（详见第八节） |
+| 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 待启动 |
+| 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 待启动 |
+| 8 | F3 Game.js 拆分（先只读可行性评估，确认后逐域迁移） | F3 | 待启动 |
+| 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
 
 ## 三、轮 1：服务器安全加固（S1–S5）
 
@@ -85,3 +90,35 @@
 | 2 | 2026-10-17 | 2026-10-17 | `2f72c68` | run 39038154519 绿 | 浏览器探针：两次进出存档监听器净增 0、scene 无残留；新增 leak-guards 17/17 |
 | 3 | 2026-10-17 | 2026-10-17 | `e99aaa6` | run 39038850135 绿 | 12 处 BUILD 钉值 + 2 处 VERSION_LABEL 钉值收敛到 tests/version-pin.mjs；反证测试证明元断言会 FAIL；npm test 入口上线 |
 | 4 | 2026-10-17 | 2026-10-17 | `2f99b3f` | 见下（本提交后 push） | README 268→184 行；新增 docs/development.md（166 行）承接四节并修正漂移计数 |
+| Build 31 | 2026-10-17 | 2026-10-17 | `070492d` | run 39039746519 绿 | BUILD 31 + 签名 tag `beta-build-31` + Release（Latest） |
+
+## 八、轮 5 · 联机服务端打磨（S6–S13）
+
+两路并行，文件边界互斥；跨文件接口由调度方冻结（见下），接线只允许一处（index.mjs 属 N1）。
+
+| 路 | 负责条目 | 独占文件 |
+|---|---|---|
+| N1 | S6 限速扩档（join/skin/profile 三档 + 丢包上报口径扩展）、S7 `/api/skin/` 加固（IP 限频 / 缓存上限与清扫 / 三跳超时 / 域名白名单 / 日志节流）、S10 删房清理残留（玩家档案 + backups + lastBackupAt）、S11 服务端协议版本校验 + WELCOME 回显、S12 心跳热生效；并完成 11 个 `server/*.mjs` 的版本字面量迁移 | `server/index.mjs`、`server/ratelimit.js`、`server/config.js`、`server/protocol.js`、`server/admin.html`、`server/client-sim.mjs`、`server/test-*.mjs`（除 `test-mp.mjs` / `test-dim.mjs`）、新 `server/test-hardening-net.mjs` |
+| N2 | S8 世界落盘节流（房间级脏标记 + 强刷）、S9 回放批量打包（`BLOCK_CHANGE_BATCH` 512 格/条 + `bufferedAmount` 背压）、S11 客户端上报 `PROTOCOL_VERSION`、S13 客户端消息入口空值防御 | `server/room.js`、`src/net/NetworkManager.js`、`server/test-mp.mjs`、`server/test-dim.mjs`、新 `src/net/netMessage.js`、新 `tests/room-persist-replay.mjs`、新 `tests/net-message-guard.mjs` |
+
+**冻结接口（两路共同遵守）**
+
+```js
+// server/protocol.js（N1 新增）
+export const PROTOCOL_VERSION = 1;
+
+// server/room.js（N2 新增/改动）
+save()          // 不变：立即 onSave（结构性变更调用点保持原样）
+saveSoon()      // 仅置 this._worldDirty = true，不落盘（高频方块/容器/掉落路径改用它）
+flushWorld()    // 脏则立即 onSave 并清标记；不脏时空操作（幂等）
+isWorldDirty()  // 布尔（测试用）
+// removePlayer() 内：房间空置（players.size === 0）时 flushWorld()
+
+// server/index.mjs（N1 接线；N2 不得改此文件）
+const worldFlushSweep = setInterval(() => { for (const r of rooms.values()) r.flushWorld(); }, 1000);
+// shutdown()：对每个房间 flushWorld()（store.saveRoom 兜底保留）；clearInterval(worldFlushSweep)
+```
+
+**握手口径**：客户端 `HELLO { name, version: PROTOCOL_VERSION }`；服务端 `Number(msg.version) !== PROTOCOL_VERSION` → `KICKED`（提示版本不一致、请刷新页面）并关闭连接；`version` 缺失（undefined/null）按旧客户端放行，`WELCOME` 带 `legacy: true`；`WELCOME` 恒带 `protocol: PROTOCOL_VERSION`。
+
+**验收标准**：① 改动文件逐个 `node --check`；② 新增套件注册进 `./server/run-all-tests.sh`（由调度方统一加，两路均不得改该脚本）；③ `npm test` 全绿且套件数/断言数不下降；④ 八条发现逐条可验证——限速新档超限丢包并进面板计数、皮肤端点 IP 限频 + 缓存上限清扫 + 三跳超时 + 域名白名单 + 日志节流、删房后档案/备份/内存条目全部清空、落盘节流（突发方块改动不即时落盘、flush 后落盘、关服强刷）、回放以 `BLOCK_CHANGE_BATCH` 分块（>512 格分多条）+ 背压等待、版本不匹配被踢且匹配放行、心跳改配置后在线连接下一轮即生效、`_handle` 对 null/数组/非法 JSON 不抛异常。

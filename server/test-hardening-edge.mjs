@@ -1,6 +1,7 @@
 // test-hardening-edge.mjs -- 批次一服务器加固边界回归（S1 畸形 Host 不崩 / S4 房间名 40 字符口径 / S5 入口无幽灵成员 / 面板 XSS 静态断言）
 // 用法：node server/test-hardening-edge.mjs   （先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,7 +27,7 @@ function connect(name) {
         if (p.waiters[i](m)) p.waiters.splice(i, 1);
       }
     });
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());
       if (m.t === 'welcome') {

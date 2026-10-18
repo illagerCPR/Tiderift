@@ -1,11 +1,12 @@
 // NetworkManager.js -- 局域网联机网络层：连接/重连、消息路由、方块/玩家/掉落物/聊天同步
-import { MSG } from '../../server/protocol.js';
+import { MSG, PROTOCOL_VERSION } from '../../server/protocol.js';
 import { RemotePlayer } from '../entity/RemotePlayer.js';
 import { loadActiveSkin } from '../entity/PlayerSkin.js';
 import { playerColorCss } from './playerColor.js';
 import { createNetStats, pushRttSample } from './netStats.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { getDimension } from '../core/dimensions.js';
+import { parseServerMessage } from './netMessage.js';
 
 const RECONNECT_MAX = 8; // 断线自动重连最大尝试次数
 
@@ -86,7 +87,7 @@ export class NetworkManager {
     ws.onopen = () => {
       this.connected = true;
       this._reconnectAttempt = 0; // 连接成功，重连计数清零
-      this._send(MSG.HELLO, { name: this.name, version: '0.1' });
+      this._send(MSG.HELLO, { name: this.name, version: PROTOCOL_VERSION });
       if (isReconnect) {
         // 重连：世界已在运行，不重启，直接重新加入房间（服务器回放方块/掉落物账本）
         // 必须携带 room 名——曾发空 payload 落到 default 房（房间静默漂移，村民/方块全对不上）
@@ -100,8 +101,9 @@ export class NetworkManager {
       }
     };
     ws.onmessage = (ev) => {
-      let m; try { m = JSON.parse(ev.data); } catch { return; }
-      this._handle(m);
+      // S13：脏包/空值在 netMessage 单点收口（解析失败 / 非对象 / t 非字符串一律丢弃）
+      const m = parseServerMessage(ev.data);
+      if (m) this._handle(m);
     };
     ws.onclose = () => {
       if (this.ws !== ws) return; // 旧 socket 的关闭事件忽略（已被替换/主动关闭）
@@ -242,11 +244,15 @@ export class NetworkManager {
   }
 
   _handle(msg) {
+    // S13：入口二次防御——_handle(null / {} / []) 直接返回，不抛异常
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg) || typeof msg.t !== 'string') return;
     switch (msg.t) {
       case MSG.WELCOME:
         this.selfId = msg.selfId;
         for (const p of (msg.players || [])) this._queueOrAdd(p);
         this.sendSkin(); // Build 21 M2：进房即上报本地皮肤（异步读 prefs，含默认回退）
+        // S11：旧服务端未启用协议版本校验（WELCOME.legacy）时提示一句，不改动连接/重连流程
+        if (msg.legacy === true && this.onStatusChange) this.onStatusChange('connected', '服务器未启用协议版本校验');
         break;
       case MSG.WORLD_INFO:
         this.room = msg.room || this.room;

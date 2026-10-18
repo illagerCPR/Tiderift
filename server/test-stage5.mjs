@@ -1,6 +1,7 @@
 // test-stage5.mjs -- 阶段 5 服务器回归：世界内换房 / 重建世界 / PLAYER_STATE 时间戳
 // 用法：node server/test-stage5.mjs   （先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
@@ -22,7 +23,7 @@ function connect(name) {
         if (p.waiters[i](m)) p.waiters.splice(i, 1);
       }
     });
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());
       if (m.t === 'welcome') {

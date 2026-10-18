@@ -6,6 +6,11 @@ import { MSG } from './protocol.js';
 import { DIMENSIONS, DEFAULT_DIMENSION } from '../src/core/dimensions.js';
 import { safeBiomeScale } from '../src/world/biomes.js';
 
+// S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
+const REPLAY_CHUNK = 512;
+// S9：单连接发送缓冲背压阈值（超过则让出事件循环等排空，不丢账本项）
+const REPLAY_BACKPRESSURE_BYTES = 1024 * 1024;
+
 // 安全整数/浮点转换，防脏包
 function safeInt(v, fallback = 0) {
   const n = Number(v);
@@ -103,6 +108,7 @@ export class Room {
     this.name = String(name).trim() || 'default';
     this.onSave = onSave;
     this.config = config;
+    this._worldDirty = false; // S8：世界账本脏标记（高频路径只标脏，由 flushWorld / 后台扫描落盘）
     this.players = new Map();   // id -> player
     // M4 维度分桶账本：dim -> Map("x,y,z" -> id)；同坐标跨维度互不干扰
     this.dimensionBlocks = new Map();
@@ -215,7 +221,20 @@ export class Room {
   }
 
   // 世界状态变更后落盘（回调由 index.mjs 注入为 store.saveRoom）
-  save() { if (this.onSave) this.onSave(this); }
+  // S8：立即全量落盘（结构性变更用）；全量快照已覆盖待落盘内容，故一并清脏标记
+  save() { this._worldDirty = false; if (this.onSave) this.onSave(this); }
+
+  // S8：高频路径（方块/容器/掉落）只标脏，由 1s 后台扫描或 flushWorld 落盘
+  saveSoon() { this._worldDirty = true; }
+
+  // S8：脏则立即落盘并清标记；不脏时空操作（幂等，供关服强刷/退房强刷复用）
+  flushWorld() {
+    if (!this._worldDirty) return;
+    this._worldDirty = false; // 先清后写：落盘过程中的新写入会重新标脏，不被吞掉
+    if (this.onSave) this.onSave(this);
+  }
+
+  isWorldDirty() { return this._worldDirty; }
 
   // T5：容器物品栈校验（name 限长、count 1-64；非法/数量<1 → null 空槽）
   sanitizeStack(s) {
@@ -301,6 +320,8 @@ export class Room {
     this.broadcast(MSG.PLAYER_LEAVE, { id, name: p.name });
     // Idea-3C：退房立即刷档案（丢包窗口最小化；断线重连同昵称直接恢复）
     this.saveProfiles();
+    // S8：最后一人退房 = 房间清空，脏世界账本立即落盘（不让脏标记随空房悬置）
+    if (this.players.size === 0) this.flushWorld();
     if (this.hostId === id) {
       this.hostId = this.players.size ? this.players.keys().next().value : null;
     }
@@ -381,10 +402,8 @@ export class Room {
       this.sendTo(player, MSG.PLAYER_JOIN, this.joinInfo(p));
     }
     // 回放方块账本：新玩家加入即见世界现状（M4：只回放其所在维度的桶）
-    for (const [key, id] of this.dimBucket(this.dimensionBlocks, player.dim)) {
-      const [x, y, z] = key.split(',').map(Number);
-      this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id, by: 0, d: player.dim });
-    }
+    // S9：打包成 BLOCK_CHANGE_BATCH（512 格/条）+ 发送缓冲背压
+    this.replayBlocks(player);
     // 回放容器账本（T5）：玩家动过的箱子；未动过的箱子两端由确定性生成对齐，无需回放
     for (const [key, items] of this.dimBucket(this.dimensionContainers, player.dim)) {
       const [x, y, z] = key.split(',').map(Number);
@@ -409,6 +428,35 @@ export class Room {
       this.sendTo(player, MSG.SKIN_SET, { id, data: sk.data, model: sk.model });
     }
     console.log(`[+] ${player.name} 加入房间「${this.name}」seed=${this.seed} (${this.players.size}人)`);
+  }
+
+  // S9：方块账本回放——先快照格位列表，再按 512 格分块发 BLOCK_CHANGE_BATCH（{list:[[x,y,z,id]], by:0, d}）
+  // 未超背压阈值时逐块同步推进（首块与既有「加入即见世界」同 tick）；超阈值则 setTimeout 让出事件循环等排空，不丢项
+  replayBlocks(player) {
+    const bucket = this.dimBucket(this.dimensionBlocks, player.dim);
+    const pending = [];
+    for (const key of bucket.keys()) {
+      const [x, y, z] = key.split(',').map(Number);
+      pending.push([key, x, y, z]);
+    }
+    if (!pending.length) return; // 账本为空不发任何消息（保持既有语义）
+    let i = 0;
+    const step = () => {
+      while (i < pending.length) {
+        const ws = player.ws;
+        // 背压：发送缓冲积压超阈值先让出 50ms，再从当前块继续
+        if (ws && ws.bufferedAmount > REPLAY_BACKPRESSURE_BYTES) { setTimeout(step, 50); return; }
+        const list = [];
+        while (i < pending.length && list.length < REPLAY_CHUNK) {
+          const [key, x, y, z] = pending[i++];
+          // 让出期间该格可能已被实时广播改写（那条广播排在本块之前到达），取账本现值避免旧值覆盖新值
+          const live = bucket.get(key);
+          list.push([x, y, z, live === undefined ? 0 : live]);
+        }
+        this.sendTo(player, MSG.BLOCK_CHANGE_BATCH, { list, by: 0, d: player.dim });
+      }
+    };
+    step();
   }
 
   // Idea-3C：档案上报（last-write-wins；只存内存+标脏，10s 扫描节流落盘）
@@ -523,7 +571,7 @@ export class Room {
       blocks.set(`${x},${y},${z}`, id);
     }
     this.broadcastDim(MSG.BLOCK_CHANGE, { x, y, z, id, by: player.id, d: dim }, dim, player.id);
-    this.save();
+    this.saveSoon();
   }
 
   // B26 流体批量：逐格落账本（与单格同规则）后一条批量广播；限速按消息计（1 条）不按格数
@@ -547,7 +595,7 @@ export class Room {
     }
     if (!changes.length) return;
     this.broadcastDim(MSG.BLOCK_CHANGE_BATCH, { list: changes, by: player.id, d: dim }, dim, player.id);
-    this.save();
+    this.saveSoon();
   }
 
   // T5：容器整箱同步（last-write-wins，与方块账本同仲裁策略；M4：按维度分桶 + 同维广播）
@@ -558,7 +606,7 @@ export class Room {
     const dim = player.dim;
     this.dimBucket(this.dimensionContainers, dim).set(`${x},${y},${z}`, items);
     this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: player.id, d: dim }, dim, player.id);
-    this.save();
+    this.saveSoon();
   }
 
   // 掉落物：客户端请求生成 -> 服务器分配唯一 id 并广播（含发起者，各端据此创建同一实体；M4：同维度广播）
@@ -582,7 +630,7 @@ export class Room {
     }
     this.drops.set(id, entry);
     this.broadcastDim(MSG.DROP_SPAWN, back, dim);
-    this.save();
+    this.saveSoon();
     console.log(`[掉落] ${player.name} 生成 ${name}x${count} @(${x},${y},${z}) id=${id} [${dim}]`);
   }
 
@@ -612,7 +660,7 @@ export class Room {
     }
     this.drops.delete(id);
     this.broadcastDim(MSG.DROP_TAKEN, { id, by: player.id, d: player.dim }, player.dim);
-    this.save();
+    this.saveSoon();
   }
 
   // 清理过期掉落物（默认 5 分钟，取配置值），广播移除（by=0 表示过期自然消失；M4：按掉落物维度广播）
@@ -627,7 +675,7 @@ export class Room {
         changed = true;
       }
     }
-    if (changed) this.save();
+    if (changed) this.saveSoon();
   }
 
   // 怪物事件（阶段 2 方案①：服务器只分配 id + 中继，不跑 AI）
@@ -839,7 +887,7 @@ export class Room {
       this.broadcastDim(MSG.DROP_SPAWN, back, dim);
       n++;
     }
-    if (n) this.save();
+    if (n) this.saveSoon();
     console.log(`[死亡] ${player.name} 死亡 @(${x.toFixed(1)},${y.toFixed(1)},${z.toFixed(1)}) 掉落 ${n} 组`);
   }
 

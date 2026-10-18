@@ -2,6 +2,7 @@
 // 用法：node server/test-mp.mjs  （需已启动 node server/index.mjs）
 // 说明：id 从 welcome 动态读取，不依赖绝对 id；房间状态由本脚本自建（先 create_room）
 import WebSocket from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const results = [];
@@ -15,7 +16,7 @@ function connect(name) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(URL);
     ws._queue = [];
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', (d) => ws._queue.push(JSON.parse(d.toString())));
     ws.on('error', reject);
     // 等 welcome 后 resolve，返回 {ws, selfId, queue}
@@ -64,8 +65,10 @@ await sleep(150);
 const C = await connect('Carol');
 C.ws.send(JSON.stringify({ t: 'join_room' }));
 await sleep(250);
-const cBlock = C.queue.find(m => m.t === 'block_change' && m.x === 10 && m.y === 64 && m.z === 20);
-assert('C 加入收到方块账本回放 block_change', !!cBlock && cBlock.id === 1);
+// S9：账本回放改为 block_change_batch 分块（元素形状 [x,y,z,id]）
+const cReplay = C.queue.filter(m => m.t === 'block_change_batch').flatMap(m => m.list || []);
+assert('C 加入收到方块账本回放 block_change_batch(10,64,20)->1',
+  cReplay.some(([x, y, z, id]) => x === 10 && y === 64 && z === 20 && id === 1));
 
 // C 玩家状态 -> A 收到
 C.ws.send(JSON.stringify({ t: 'player_state', x: 5, y: 70, z: 5, yaw: 1.5, pitch: 0.2, onGround: true, flying: false, inWater: false }));
@@ -189,8 +192,12 @@ await sleep(200);
 assert('G 收到 alpha 内 block_change(50,64,50)', !!G.queue.find(m => m.t === 'block_change' && m.x === 50 && m.y === 64 && m.z === 50));
 
 // 房间隔离：默认房间的 E 收不到 alpha 的方块改动；G 收不到默认房间的方块回放
-assert('默认房间 E 未收到 alpha 方块改动', !E.queue.some(m => m.t === 'block_change' && m.x === 50));
-assert('G 未收到默认房间方块(10,64,20)回放', !G.queue.some(m => m.t === 'block_change' && m.x === 10 && m.y === 64 && m.z === 20));
+assert('默认房间 E 未收到 alpha 方块改动',
+  !E.queue.some(m => m.t === 'block_change' && m.x === 50) &&
+  !E.queue.some(m => m.t === 'block_change_batch' && (m.list || []).some(it => it[0] === 50)));
+assert('G 未收到默认房间方块(10,64,20)回放',
+  !G.queue.some(m => (m.t === 'block_change' && m.x === 10 && m.y === 64 && m.z === 20) ||
+    (m.t === 'block_change_batch' && (m.list || []).some(it => it[0] === 10 && it[1] === 64 && it[2] === 20))));
 
 // 加入不存在房间 beta -> 自动创建，首个加入者成为 host
 const H = await connect('Harry');

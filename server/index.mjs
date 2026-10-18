@@ -10,10 +10,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Room } from './room.js';
-import { MSG } from './protocol.js';
+import { MSG, PROTOCOL_VERSION } from './protocol.js';
 import * as store from './store.js';
 import * as config from './config.js';
-import { tierOf, createConnectionLimiters } from './ratelimit.js';
+import { tierOf, createConnectionLimiters, RateLimiter } from './ratelimit.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -171,6 +171,58 @@ const adminHtml = (() => {
 const skinCache = new Map();
 const SKIN_CACHE_TTL = 5 * 60 * 1000;
 
+// S7：缓存条数上限（超出先惰性清扫过期项，仍超限则淘汰最旧条目——Map 插入序即写入序）
+const SKIN_CACHE_MAX = 200;
+const SKIN_FETCH_TIMEOUT_MS = 5000;                 // 三跳 fetch 单次超时（超时 → 502）
+const SKIN_URL_HOST = 'textures.minecraft.net';     // 皮肤 PNG 只允许该域（SSRF 纵深）
+
+// S7：写入缓存并维持上限（重复写入重插到队尾，淘汰时从队首取）
+function skinCacheSet(key, payload) {
+  const now = Date.now();
+  skinCache.delete(key);
+  skinCache.set(key, { ts: now, payload });
+  if (skinCache.size <= SKIN_CACHE_MAX) return;
+  for (const [k, v] of skinCache) if (now - v.ts >= SKIN_CACHE_TTL) skinCache.delete(k);
+  while (skinCache.size > SKIN_CACHE_MAX) skinCache.delete(skinCache.keys().next().value);
+}
+
+// S7：/api/skin/ 按来源 IP 限频（复用 RateLimiter；档位 skinFetch，默认 30/分钟，0=不限，热读配置）
+const skinLimiters = new Map(); // ip -> {limiter, ts}；惰性淘汰 10 分钟未活跃的条目
+function skinLimiterFor(ip) {
+  const now = Date.now();
+  if (skinLimiters.size > 256) {
+    for (const [k, v] of skinLimiters) if (now - v.ts >= 600000) skinLimiters.delete(k);
+  }
+  let entry = skinLimiters.get(ip);
+  if (!entry) {
+    entry = { limiter: new RateLimiter(() => (serverConfig.rateLimits || {}).skinFetch), ts: now };
+    skinLimiters.set(ip, entry);
+  }
+  entry.ts = now;
+  return entry.limiter;
+}
+
+// S7：皮肤拉取日志节流——按 IP 聚合 10s 窗口（同窗口只更新同一条目，不再逐次新增行），
+// 汇总含「请求数 / 缓存命中数 / 失败数 / 最近一次用户名与原因」，保住「谁在拉皮肤」的审计能力。
+const SKIN_FETCH_LOG_WINDOW_MS = 10000;
+const skinFetchStats = new Map(); // ip -> {from, req, hit, fail, last}
+function skinFetchNote(ip, username, result) {
+  const now = Date.now();
+  if (skinFetchStats.size > 256) {
+    for (const [k, v] of skinFetchStats) if (now - v.from >= SKIN_FETCH_LOG_WINDOW_MS) skinFetchStats.delete(k);
+  }
+  let st = skinFetchStats.get(ip);
+  if (!st || now - st.from >= SKIN_FETCH_LOG_WINDOW_MS) {
+    st = { from: now, req: 0, hit: 0, fail: 0, last: '' };
+    skinFetchStats.set(ip, st);
+  }
+  st.req++;
+  if (result.code === 200 && result.note === '缓存') st.hit++;
+  else if (result.code !== 200) st.fail++;
+  st.last = `"${username}" → ${result.code}${result.note ? `（${result.note}）` : ''}`;
+  return `${ip} 拉取皮肤 ${st.req} 次（缓存命中 ${st.hit}，失败 ${st.fail}）最近：${st.last}`;
+}
+
 // 皮肤代理专用 JSON 响应：带 CORS 头（前端 5173 与服务器 3001 跨端口，公开只读数据放行）
 function sendSkinJson(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -191,12 +243,16 @@ async function handleSkinLookup(res, username) {
   }
   const cacheKey = username.toLowerCase();
   const cached = skinCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < SKIN_CACHE_TTL) {
-    sendSkinJson(res, 200, cached.payload);
-    return { code: 200, note: '缓存' };
+  if (cached) {
+    if (Date.now() - cached.ts < SKIN_CACHE_TTL) {
+      sendSkinJson(res, 200, cached.payload);
+      return { code: 200, note: '缓存' };
+    }
+    skinCache.delete(cacheKey); // S7：过期项顺手清理（此前只判 TTL、永不清理，Map 只增不减）
   }
   try {
-    const profRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`);
+    const profRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`,
+      { signal: AbortSignal.timeout(SKIN_FETCH_TIMEOUT_MS) });
     if (profRes.status === 204 || profRes.status === 404) {
       sendSkinJson(res, 404, { error: '未找到该正版用户名' });
       return { code: 404, note: '用户名不存在' };
@@ -204,7 +260,8 @@ async function handleSkinLookup(res, username) {
     if (!profRes.ok) throw new Error(`mojang profile HTTP ${profRes.status}`);
     const prof = await profRes.json();
     if (!prof || !prof.id) { sendSkinJson(res, 404, { error: '未找到该正版用户名' }); return { code: 404, note: '用户名不存在' }; }
-    const sessRes = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${prof.id}`);
+    const sessRes = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${prof.id}`,
+      { signal: AbortSignal.timeout(SKIN_FETCH_TIMEOUT_MS) });
     if (!sessRes.ok) throw new Error(`sessionserver HTTP ${sessRes.status}`);
     const sess = await sessRes.json();
     const prop = (sess.properties || []).find((x) => x.name === 'textures');
@@ -213,16 +270,29 @@ async function handleSkinLookup(res, username) {
     const skinUrl = tex.textures && tex.textures.SKIN && tex.textures.SKIN.url;
     if (!skinUrl) { sendSkinJson(res, 404, { error: '该账号没有皮肤 URL' }); return { code: 404, note: '无皮肤 URL' }; }
     const model = (tex.textures.SKIN.metadata && tex.textures.SKIN.metadata.model === 'slim') ? 'slim' : 'classic';
-    const imgRes = await fetch(skinUrl);
+    // S7：皮肤 PNG 只认 textures.minecraft.net（Mojang 资料可被伪造，白名单是 SSRF 纵深）。
+    // Mojang 该字段至今给的是 http://textures.minecraft.net/...（同域同时支持 https），故 http 输入
+    // 自动升级为 https 再拉取——出站请求恒为 https，既不开天窗，也不让真实皮肤全部 502。
+    let skinFetchUrl = '';
+    try {
+      const u = new URL(skinUrl);
+      if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname === SKIN_URL_HOST) skinFetchUrl = u.href.replace(/^http:/, 'https:');
+    } catch { skinFetchUrl = ''; }
+    if (!skinFetchUrl) {
+      sendSkinJson(res, 502, { error: '皮肤地址域名非法（仅允许 https://' + SKIN_URL_HOST + '）' });
+      return { code: 502, note: '皮肤地址域名非法' };
+    }
+    const imgRes = await fetch(skinFetchUrl, { signal: AbortSignal.timeout(SKIN_FETCH_TIMEOUT_MS) });
     if (!imgRes.ok) throw new Error(`皮肤文件 HTTP ${imgRes.status}`);
     const buf = Buffer.from(await imgRes.arrayBuffer());
     const payload = { data: `data:image/png;base64,${buf.toString('base64')}`, model, source: 'mojang', username };
-    skinCache.set(cacheKey, { ts: Date.now(), payload });
+    skinCacheSet(cacheKey, payload);
     sendSkinJson(res, 200, payload);
     return { code: 200, note: `mojang/${model}` };
   } catch (e) {
-    sendSkinJson(res, 502, { error: `皮肤代理失败：${e.message}` });
-    return { code: 502, note: e.message };
+    const reason = (e && e.name === 'TimeoutError') ? `上游超时（${SKIN_FETCH_TIMEOUT_MS}ms）` : ((e && e.message) || String(e));
+    sendSkinJson(res, 502, { error: `皮肤代理失败：${reason}` });
+    return { code: 502, note: reason };
   }
 }
 
@@ -243,10 +313,33 @@ function authState(req) {
 }
 
 // 阶段6 管理操作日志（内存环形缓冲，最近 200 条，/api/logs 查询）
+// S7：第三参数 throttleKey 非空时按 <op>|<key> 聚合——同一 10s 窗口内的重复调用就地更新同一条汇总
+// （不新增行），避免 /api/skin/ 这类高频入口刷爆环形缓冲；detail 由调用方累加计数后渲染。
+const ADMIN_LOG_MAX = 200;
+const ADMIN_LOG_THROTTLE_MS = 10000;
 const adminLogs = [];
-function logAdmin(op, detail) {
-  adminLogs.push({ time: Date.now(), op, detail });
-  if (adminLogs.length > 200) adminLogs.shift();
+const _adminLogThrottled = new Map(); // <op>|<key> -> { entry, from }
+function logAdmin(op, detail, throttleKey = null) {
+  const now = Date.now();
+  if (throttleKey) {
+    const k = op + '|' + throttleKey;
+    if (_adminLogThrottled.size > 256) {
+      for (const [kk, v] of _adminLogThrottled) if (now - v.from >= ADMIN_LOG_THROTTLE_MS) _adminLogThrottled.delete(kk);
+    }
+    const prev = _adminLogThrottled.get(k);
+    if (prev && now - prev.from < ADMIN_LOG_THROTTLE_MS) {
+      prev.entry.time = now;
+      prev.entry.detail = detail;
+      return;
+    }
+    const entry = { time: now, op, detail };
+    adminLogs.push(entry);
+    if (adminLogs.length > ADMIN_LOG_MAX) adminLogs.shift();
+    _adminLogThrottled.set(k, { entry, from: now });
+    return;
+  }
+  adminLogs.push({ time: now, op, detail });
+  if (adminLogs.length > ADMIN_LOG_MAX) adminLogs.shift();
 }
 
 // 管理账号对外稳定标识：token 的 SHA-256 前 8 位（明文口令不出现在列表/日志，rotate/revoke 按 id 定位）
@@ -281,8 +374,17 @@ async function handleHttpRequest(req, res) {
   if (req.method === 'GET' && p.startsWith('/api/skin/')) {
     const username = decodeURIComponent(p.slice('/api/skin/'.length)).trim();
     const ip = (req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
+    // S7：按来源 IP 限频（skinFetch 档，默认 30/分钟，0=不限）；超限 429 + Retry-After
+    if (!skinLimiterFor(ip).allow()) {
+      const limit = Number((serverConfig.rateLimits || {}).skinFetch) || 0;
+      const retryAfter = String(Math.max(1, Math.ceil(limit > 0 ? 60000 / limit : 60)));
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': retryAfter });
+      res.end(JSON.stringify({ error: '皮肤代理请求过于频繁，请稍后重试' }));
+      logAdmin('skin-fetch', skinFetchNote(ip, username, { code: 429, note: 'IP 限频' }), ip);
+      return;
+    }
     const r = await handleSkinLookup(res, username);
-    logAdmin('skin-fetch', `${ip} 拉取皮肤 "${username}" → ${r.code}${r.note ? `（${r.note}）` : ''}`);
+    logAdmin('skin-fetch', skinFetchNote(ip, username, r), ip); // S7：按 IP 10s 聚合节流
     return;
   }
 
@@ -535,9 +637,12 @@ async function handleHttpRequest(req, res) {
         if (action === 'delete') {
           for (const id of [...room.players.keys()]) room.kickPlayer(id, '房间已被服务器管理员删除');
           store.deleteRoomFile(roomName);
+          store.deletePlayerProfiles(roomName); // S10：玩家档案文件（否则同名重建会「复活」旧档案）
+          store.pruneBackups(roomName, 0);      // S10：该房间全部备份
+          lastBackupAt.delete(roomName);        // S10：自动备份节流时间戳（内存残留）
           rooms.delete(roomName);
-          logAdmin('delete-room', `删除房间「${roomName}」（世界存档已移除）`);
-          console.log(`[管理] 删除房间「${roomName}」（世界存档已移除）`);
+          logAdmin('delete-room', `删除房间「${roomName}」（世界存档/玩家档案/备份已移除）`);
+          console.log(`[管理] 删除房间「${roomName}」（世界存档/玩家档案/备份已移除）`);
           sendJson(res, 200, { ok: true });
           return;
         }
@@ -628,8 +733,12 @@ function runAutoBackupOnce() {
 }
 const backupSweep = setInterval(runAutoBackupOnce, 60000);
 
+// S8 接线（N2 在 room.js 落地脏标记）：世界账本 1s 强刷——高频方块/容器/掉落改动只标脏，
+// 由本扫描统一落盘；退房清空与关服另有立即刷路径（flushWorld 幂等，不脏时无操作）。
+const worldFlushSweep = setInterval(() => { for (const r of rooms.values()) r.flushWorld(); }, 1000);
+
 // Idea-4C：限速丢包聚合日志（10s 一批增量，防刷爆 200 条环形缓冲）
-const _rateReported = new WeakMap(); // player -> {chat,block,state} 已上报快照
+const _rateReported = new WeakMap(); // player -> 已上报的 dropped 全档快照
 const rateReportSweep = setInterval(() => {
   for (const r of rooms.values()) {
     for (const p of r.players.values()) {
@@ -637,7 +746,7 @@ const rateReportSweep = setInterval(() => {
       if (!d || !Object.keys(d).length) continue;
       const seen = _rateReported.get(p) || {};
       const parts = [];
-      for (const k of ['chat', 'block', 'state']) {
+      for (const k of Object.keys(d)) { // S6：遍历全部档位（chat/block/state/join/skin/profile），新增档位无需再改此处
         const delta = (d[k] || 0) - (seen[k] || 0);
         if (delta > 0) parts.push(`${k}+${delta}`);
       }
@@ -652,13 +761,15 @@ const rateReportSweep = setInterval(() => {
 function shutdown() {
   console.log('正在保存所有房间世界...');
   for (const r of rooms.values()) {
-    store.saveRoom(r);
-    r.saveProfiles(); // Idea-3C：退出前刷全部脏档案
+    r.flushWorld();    // S8：先把脏账本落盘（幂等；不脏时无操作）
+    store.saveRoom(r); // 兜底：未走脏标记的存量快照仍完整落盘
+    r.saveProfiles();  // Idea-3C：退出前刷全部脏档案
   }
   clearInterval(dropSweep);
   clearInterval(profileSweep);
   clearInterval(backupSweep);
   clearInterval(rateReportSweep);
+  clearInterval(worldFlushSweep);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);
@@ -678,18 +789,29 @@ function send(ws, data) {
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
 }
 
+// S12：心跳周期活读——自管理 setTimeout 链 + 200ms 轮询步长，每轮现读 serverConfig.heartbeatMs
+// （管理面板改配置对在线连接最迟一个步长后生效）；到点才发 ping，未回 pong 则下一轮到点 terminate。
+const HEARTBEAT_POLL_MS = 200;
+function heartbeatDelay() {
+  const ms = Number(serverConfig.heartbeatMs);
+  return Number.isFinite(ms) && ms > 0 ? ms : 15000;
+}
+
 wss.on('connection', (ws, req) => {
   const addr = req.socket.remoteAddress;
   console.log(`[+] 连接: ${addr}`);
   let player = null; // { id, ws, name, room? }；创建/加入房间后才进入某房间
 
-  // 心跳：每 heartbeatMs（可配置，默认 15s）发应用层 ping，超时未收到 JSON pong 则断开
   let alive = true;
-  const hb = setInterval(() => {
+  let lastPingAt = Date.now();
+  let hbTimer = setTimeout(function heartbeatStep() {
+    if (Date.now() - lastPingAt < heartbeatDelay()) { hbTimer = setTimeout(heartbeatStep, HEARTBEAT_POLL_MS); return; }
     if (!alive) { ws.terminate(); return; }
     alive = false;
-    send(ws, { t: MSG.PING, seq: Date.now() });
-  }, serverConfig.heartbeatMs);
+    lastPingAt = Date.now();
+    send(ws, { t: MSG.PING, seq: lastPingAt });
+    hbTimer = setTimeout(heartbeatStep, HEARTBEAT_POLL_MS);
+  }, HEARTBEAT_POLL_MS);
 
   ws.on('message', (raw) => {
     let msg;
@@ -702,10 +824,20 @@ wss.on('connection', (ws, req) => {
     if (!player) {
       // 首条必须是 hello；此时尚未分配房间（welcome 不带玩家列表，进房后由 joinRoom 回放）
       if (msg.t === MSG.HELLO) {
+        // S11：协议版本校验——version 缺省（undefined/null）按旧客户端放行并回 legacy 标记；
+        // 其余必须等于 PROTOCOL_VERSION，否则 KICKED + 断开（客户端据此提示刷新页面、停止重连）。
+        const rawVersion = msg.version;
+        const legacy = rawVersion === undefined || rawVersion === null;
+        if (!legacy && Number(rawVersion) !== PROTOCOL_VERSION) {
+          send(ws, { t: MSG.KICKED, reason: `协议版本不一致（服务器 v${PROTOCOL_VERSION}，客户端 v${String(rawVersion)}），请刷新页面后重试` });
+          console.log(`[拒绝] 协议版本不一致: ${String(msg.name || '玩家').slice(0, 16)} v=${String(rawVersion)}`);
+          setTimeout(() => { try { ws.close(); } catch {} }, 50);
+          return;
+        }
         player = { id: nextPlayerId++, ws, name: String(msg.name || '玩家').slice(0, 16) };
         player.rate = createConnectionLimiters(serverConfig); // Idea-4C：连接级限速器（阈值活读 config）
-        send(ws, { t: MSG.WELCOME, selfId: player.id, players: [] });
-        console.log(`[*] ${player.name} 已连接 (id=${player.id})`);
+        send(ws, { t: MSG.WELCOME, selfId: player.id, players: [], protocol: PROTOCOL_VERSION, legacy });
+        console.log(`[*] ${player.name} 已连接 (id=${player.id})${legacy ? '（旧客户端：未上报协议版本）' : ''}`);
       }
       return;
     }
@@ -761,7 +893,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    clearInterval(hb);
+    clearTimeout(hbTimer); // S12：连接关闭清理心跳定时器（不泄漏）
     if (player && player.room) player.room.removePlayer(player.id);
     console.log(`[-] 断开: ${addr}`);
   });

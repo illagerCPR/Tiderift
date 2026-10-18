@@ -40,6 +40,10 @@ export function tierOf(msgType, MSG) {
   if (msgType === MSG.BLOCK_SET) return 'block';
   if (msgType === MSG.BLOCK_SET_BATCH) return 'block'; // B26：批量按 1 条计（不按格数，防流动模拟误伤限速）
   if (msgType === MSG.PLAYER_STATE) return 'state';
+  // S6：重操作档位——每条 create/join/switch 都触发一次整账本回放
+  if (msgType === MSG.CREATE_ROOM || msgType === MSG.JOIN_ROOM || msgType === MSG.SWITCH_ROOM) return 'join';
+  if (msgType === MSG.SKIN_SET) return 'skin';         // 16KB 皮肤数据向全房广播
+  if (msgType === MSG.PROFILE_SAVE) return 'profile';  // 整档字段校验（+ 节流落盘）
   return null;
 }
 
@@ -50,5 +54,8 @@ export function createConnectionLimiters(config) {
     chat: new RateLimiter(() => limits().chat),
     block: new RateLimiter(() => limits().block),
     state: new RateLimiter(() => limits().state),
+    join: new RateLimiter(() => limits().join),
+    skin: new RateLimiter(() => limits().skin),
+    profile: new RateLimiter(() => limits().profile),
   };
 }

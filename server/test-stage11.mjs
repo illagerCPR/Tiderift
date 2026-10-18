@@ -1,6 +1,7 @@
 // test-stage11.mjs -- 阶段 11 服务器回归：房间白名单 / 管理账号 op-viewer 角色分级 / 房间 op 名单 / netStats 抖动纯函数
 // 用法：node server/test-stage11.mjs   （先启动 server/index.mjs，端口 3001；跑批前清空 server/world/ 与 server/config.json）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 import { createNetStats, pushRttSample, targetInterpDelay } from '../src/net/netStats.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
@@ -23,7 +24,7 @@ function connect(name) {
         if (p.waiters[i](m)) p.waiters.splice(i, 1);
       }
     });
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());
       if (m.t === 'welcome') {

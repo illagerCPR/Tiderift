@@ -1,6 +1,7 @@
 // test-profile.mjs -- Idea-3C 服务器回归：玩家档案（上报收录 / 进房下发 / 脏包拒绝 / 管理清理 / 落盘往返）
 // 用法：node server/test-profile.mjs   （先启动 server/index.mjs，端口 3001；跑批前清空 server/world/ 与 server/config.json）
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from './protocol.js';
 import * as store from './store.js';
 import { sanitizePlayerProfile } from './room.js';
 import fs from 'node:fs';
@@ -28,7 +29,7 @@ function connect(name) {
         if (p.waiters[i](m)) p.waiters.splice(i, 1);
       }
     });
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: '0.1' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION })));
     ws.on('message', function h(raw) {
       const m = JSON.parse(raw.toString());
       if (m.t === 'welcome') {

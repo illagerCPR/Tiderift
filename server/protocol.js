@@ -1,6 +1,10 @@
 // protocol.js -- 局域网联机消息类型常量（纯常量，客户端浏览器与服务器共用）
 // 消息统一为 { t: '<type>', ...fields }，JSON over WebSocket
 
+// S11：协议版本号——客户端在 HELLO 里上报，服务端不匹配即 KICKED（提示刷新页面）。
+// 任何改变两端消息语义的改动都要递增此常量（纯新增消息类型不必）。
+export const PROTOCOL_VERSION = 1;
+
 export const MSG = {
   // 握手与房间
   HELLO: 'hello',

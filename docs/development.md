@@ -149,11 +149,12 @@ Tiderift/
 | `node server/test-idea4.mjs` | 房间设置开关 / 限速 / 备份 |
 | `node server/test-skinlog.mjs` | 皮肤代理拉取写管理日志 |
 | `node server/test-hardening-edge.mjs` | 服务器加固边界（畸形 Host / 房间名口径 / 入口幽灵成员 / 面板 XSS） |
+| `node server/test-hardening-net.mjs` | 协议版本协商 / 限速扩档 / 皮肤代理限频与日志聚合 / 删房清理 / 心跳热生效 |
 | `node server/test-hardening-store.mjs` | 服务端加固：畸形快照不崩服 / 原子落盘 / hostId 守卫（无需服务器） |
 
 ### tests/ 侧套件
 
-`tests/` 下有大量不依赖服务器的纯 node 套件，覆盖地形与结构生成确定性、生物群系规模、维度与传送门、战利品与交易表、i18n 键集对齐（i18n-parity）、资源释放守卫（leak-guards）、版本钉值（version-pin）等，由 `run-all-tests.sh` 统一调度；具体清单同样以脚本输出为准。
+`tests/` 下有大量不依赖服务器的纯 node 套件，覆盖地形与结构生成确定性、生物群系规模、维度与传送门、战利品与交易表、i18n 键集对齐（i18n-parity）、资源释放守卫（leak-guards）、版本钉值（version-pin）、世界落盘节流与账本回放打包（room-persist-replay）、客户端消息入口防御（net-message-guard）等，由 `run-all-tests.sh` 统一调度；具体清单同样以脚本输出为准。
 
 ### 注意事项
 
