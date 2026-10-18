@@ -83,7 +83,8 @@ Tiderift/
 │   └── run-all-tests.sh  # 一键跑批（CI 同款入口；tests 侧套件清单见脚本内 PURE_NODE_SUITES 数组）
 ├── tests/                # 不依赖服务器的纯 node 回归套件（地形/结构/维度/群系/本地化等确定性断言）
 │   ├── harness.mjs       # tests 侧唯一 runner 框架（断言 / 汇总 / 退出收口）
-│   └── framework-guard.mjs # 元断言：两侧 runner 样板唯一化（无第二份样板、套件都 import 框架）
+│   ├── game-behavior.mjs # Game.js node 级行为回归（F3 拆分安全网：boot/帧循环/射线链/挖掘/生命周期/契约）
+│   └── lib/game-env.mjs  # 共享 node 假环境（DOM/WebGL Proxy/Worker 桩），放子目录以避开套件扫描
 ├── docs/
 │   ├── development.md                    # 本文档
 │   ├── lan-multiplayer-design.md         # 局域网联机设计文档（协议表 + 分阶段路线）
@@ -141,7 +142,7 @@ Tiderift/
 | `tests/` | `tests/harness.mjs` | `import { ok, pass, fail, assert, check, configure, finish } from './harness.mjs'`；`assert(name, cond, extra)` 累积式逐条打印、末尾 `finish(label)` 结算退出；`ok(cond, msg)` 是 fail-fast 且成功默认静默（迁移前逐条打印的套件在顶部 `configure({ verbose: true })`） |
 | `server/` | `server/test-lib.mjs` | `import { assert, ok, pass, fail, configure, counts, finish } from './test-lib.mjs'`；`configure({ style })` 保持各套件既有输出风格；socket 关闭态下的套件用 `finish({ natural: true })` 走 `process.exitCode`（Windows libuv 下直接 exit 会崩） |
 
-`tests/framework-guard.mjs` 是静态元断言：两侧除框架文件外不得出现 `function ok|assert|check|fail|pass` 定义、不得出现复制粘贴的 `console.error('FAIL: …)` 样板，且每个 `tests/*.mjs` / `server/test-*.mjs` 都必须 import 本侧框架。
+`tests/framework-guard.mjs` 是静态元断言：两侧除框架文件外不得出现 `function ok|assert|check|fail|pass` 定义、不得出现复制粘贴的 `console.error('FAIL: …)` 样板，且每个 `tests/*.mjs` / `server/test-*.mjs` 都必须 import 本侧框架。它按**单层**扫描 `tests/` 顶层，因此共享环境模块（如 Game.js 行为回归网用的 `tests/lib/game-env.mjs`）放子目录即可，不会被要求 import 框架。
 
 **新增一个套件**：新建 `tests/<名>.mjs`（或 `server/test-<名>.mjs`）→ import 本侧框架 → 在 `server/run-all-tests.sh` 的 `PURE_NODE_SUITES` 数组（tests 侧）或 server 侧 for 循环清单里加一行/一项。两处清单就是唯一注册点。
 
@@ -170,7 +171,7 @@ Tiderift/
 
 ### tests/ 侧套件
 
-`tests/` 下有大量不依赖服务器的纯 node 套件，覆盖地形与结构生成确定性、生物群系规模、维度与传送门、战利品与交易表、i18n 键集对齐（i18n-parity）、资源释放守卫（leak-guards）、版本钉值（version-pin）、世界落盘节流与账本回放打包（room-persist-replay）、客户端消息入口防御（net-message-guard）、CW-1 区块边界稳定态收敛（cw1-mesh-stability）、`src/ui` + `src/audio` import 冒烟（ui-audio-smoke）、runner 样板唯一化元断言（framework-guard）等，由 `run-all-tests.sh` 统一调度；具体清单同样以脚本输出为准。
+`tests/` 下有大量不依赖服务器的纯 node 套件，覆盖地形与结构生成确定性、生物群系规模、维度与传送门、战利品与交易表、i18n 键集对齐（i18n-parity）、资源释放守卫（leak-guards）、版本钉值（version-pin）、世界落盘节流与账本回放打包（room-persist-replay）、客户端消息入口防御（net-message-guard）、CW-1 区块边界稳定态收敛（cw1-mesh-stability）、`src/ui` + `src/audio` import 冒烟（ui-audio-smoke）、`src/player/Game.js` node 级行为回归（game-behavior + 假环境 `tests/lib/game-env.mjs`）、runner 样板唯一化元断言（framework-guard）等，由 `run-all-tests.sh` 统一调度；具体清单同样以脚本输出为准。
 
 ### 注意事项
 

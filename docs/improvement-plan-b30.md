@@ -27,7 +27,7 @@
 | 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 已完成（`4520a7b`，CI run 39091785891 绿） |
 | 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（`d908532`，CI run 39120118156 绿） |
 | 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 已完成（`6f5f3ec`，CI run 39122476650 绿） |
-| 8 | F3 Game.js 拆分（先只读可行性评估，确认后逐域迁移） | F3 | 待启动 |
+| 8 | F3 Game.js 拆分（门面委托形态；步 0 回归网已入库，逐域迁移进行中） | F3 | 进行中（评估完成，证据 `.run/round8-{A,B,C}.md`） |
 | 9 | 既有缺陷 H1：准星指向「放置邻格落在玩家自身 AABB 内」的方块时右键被吞（轮 6 发现，非回归） | H1 | 已排期（用户 2026-10-18 定轮 9） |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
 
@@ -206,7 +206,55 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 
 **证据要求**：每路给出改动清单、\`node --check\` 输出、迁移前后逐套件 PASS 行数对照表、定向探针输出与断言计数、未覆盖风险点。
 
-## 十一、轮 9 · 既有缺陷 H1（准星指向自身重叠方块时右键被吞）
+## 十一、轮 8 · F3 Game.js 拆分（可行性评估 + 迁移方案）
+
+**评估方式**：三路只读评估并行（A 结构与边界 / B 接缝与验证手段 / C 外部不变量），硬约束＝只读（各自收尾自证 `git status --porcelain` 为空），证据落 `.run/round8-{A,B,C}.md`（gitignored）。调度方独立复核：复跑 B 的 node 探针 step7–14、用两种正则重数方法数、逐字核对 `ray-sphere`/`leak-guards` 断言原文。
+
+**实测事实（HEAD `43cbda4`）**
+
+| 项 | 实测 | 审计口径（基线 `e7b9a17`） |
+|---|---|---|
+| 行数 / 方法数 / 构造器字段 | 3769 / **119** / 59 | 3779 / 117 / — |
+| `start` / `update` / `handleMouseInput` | 272-583 / 856-1178 / 1532-1954 | 252-580 / 855-1181 / 1523-1963 |
+| 弹射物块 | 1957-2095 + Boss 弹射物 2101-2263 | ~1992-2253 |
+| 天域 + 终局 | 2267-2522（**夹层 2526-2652 是脚步/召唤，不属天域**） | ~2253-2763 |
+| 信标 / 传送门 / 末影龙 | 2661-2752 / 2756-2960 + `_resolveArrivalY`(3320-3336) / 2964-3028 | 混在 ~2253-3038 |
+
+- 六个可迁移块合计 920 行 = 24.4%；审计「117 方法」是基线口径（轮 6 新增 `_anyInputBlockingUI@200`、`_frameRay@1482`，未删任何方法）。**引用行号一律回源码实测，不得沿用审计数字。**
+
+**结论一：审计的迁移顺序应推翻。** `InteractionController`（423 行单方法 + 29 条域外出边 + `ray-sphere:145` 借原型实调）应**排最后**；实测 `controls` 出现在 `handleMouseInput` 27 段中的 26 段，方法体内 `controls.mouse*` 置位 36 处对 `return` 27 处**不配对**——切分前必须先把「点击已消费」协议显式化。天域块必须**按方法清单切**，不能按审计行区间切。
+
+**结论二：迁移前必须先有回归网。** 现状 67 套件里 **0 个构造 Game**（仅 `ray-sphere:16` 借原型调两个方法），三个巨型方法运行时行为零覆盖；13 个套件约 110 条断言锚的是「代码长什么样」而非「做什么」。
+
+**结论三：形态 = 门面委托**（用户批准）。Game 上保留**同名方法**（签名不变）作为薄门面委托新模块，外部依赖面（NetworkManager / CommandPanel / BeaconScreen / `window.game` / tests 绊线）保持原样可用 → 现有绊线与静默守卫继续有效，每步可回滚、可单独验证。
+
+**步 0（已交付）**：`tests/lib/game-env.mjs`（526 行；放 `tests/lib/` 子目录以避开 `framework-guard` 的单层套件扫描）+ `tests/game-behavior.mjs`（252 行 / **38 断言** / 7.5s）+ `server/run-all-tests.sh:57` 注册。覆盖：A boot（用 `running` 判定，因 `start()` 内部吞异常）、B 定步长帧循环、C 真实瞄准链路 → 创造瞬破、D 生存挖掘（真实挖掘路径，30 帧挖穿）、E 重开生命周期收口、F 同 seed 地形确定性、G 九条**无人守契约**（`applyAetherDusk`/`_miningActive`/`_getBeaconPower`/主菜单期字段/原型方法可用性）、H 帧耗时宽松上界。三条反证均已验证（`update` 早退 → 9/38 FAIL；`applyAetherDusk` 改名 → 1/38 FAIL；`_disposeWorld` 的 `arrows` 清理被删 → 4/38 FAIL），还原后 `git status src/` 为空。
+
+**node 假环境的边界（不得据此宣称"行为已全覆盖"）**：渲染层**零覆盖**（WebGL 是 Proxy，`renderer.render()` 不绘制）；Worker 是进程内仿真（忽略 transfer、不分离 buffer）；无 pointer lock（ESC 暂停/死亡屏/观战切目标不可测）；音频/2D 画布/Image 解码为桩；localStorage 为内存桩；LAN、非主世界维度、怪物战斗、存档往返未覆盖。
+
+**迁移步骤（一步一域一提交，每步全绿）**
+
+| 步 | 域 | 风险锚点 | 状态 |
+|---|---|---|---|
+| 1 | 召唤（L12）+ 滑翔/气流（L9） | 零锚定小域，首刀 | **已完成**：新建 `Summoning.js`(102) / `GlideWind.js`(132)；Game.js 3769 → 3643（+20/−146）；`game-behavior` 38 → 55 断言；全量跑批 ALL PASS，逐套件 `: OK` 行与基线完全一致 |
+| 2 | EndgameSystem | — | 待做 |
+| 3 | ProjectileSystem | `leak-guards:160/161/163-164` 四条断言需同步 | 待做 |
+| 4 | BeaconSystem | `leak-guards:162`、`BeaconScreen:49/60` | 待做 |
+| 5 | PortalsSystem | 先定「到达回调」接口（`_afterPortalArrival` 被双向调用） | 待做 |
+| 6 | 放置 / 容器 | `build27:195,198,199` + `build28:260-263,270,271` 同步 | 待做 |
+| 7 | AetherFinale | 锚定最密（`endgame-*` 24 处）+ 7 个外部调用点 | 待做 |
+| 8 | InteractionController | 最后；前置＝显式化点击消费协议 | 待做 |
+
+- 步 1 生命周期判定＝**构造器共享型**（控制器零状态、无资源可收口；`world`/`mobManager`/`inventory`/`hud` 一律在调用点经 `this.game` 现取，不留构造期快照）；内部调用点**一律走门面**（调用面零 diff）；`_trySummonWither` 的「头层判定 + 形状派发」约 14 行**刻意留在门面**（`build28-block-textures.mjs:266-269` 字面钉在 Game.js 文本上）。
+- 反证已做：子代理侧四段（`GLIDE_LIFT` / `GLIDE_DEPLOY_VY` / 凋灵早退 / `GLIDE_DRAG`）＋调度方独立两段（`Summoning.commitWitherSummon` 早退 → I4/I5/I6 FAIL；`_disposeWorld` 的 `arrows` 清理被删 → 4/38 FAIL），还原后 MD5 逐字节一致、`git status src/` 空。子代理自查中还抓到并修掉一条**假钉子**（恒真式在 `GLIDE_LIFT` 6→7 时不报错）。
+
+**不动**：L1 世界/网格、L3 物理、L17 维度切换、L2 装配中枢（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI` 等跨域基础设施）。
+
+**每步验收骨架**：① 先为该域加**行为级**钉子（现状必须全绿）；② 反证钉子可证伪（改坏 → FAIL → MD5 逐字节还原）；③ 搬家 + 门面，判定生命周期归属（构造器共享 / `start()` 新建 / 无状态工具，新建型必须在 `_disposeWorld` 收口）；④ 改动文件逐个 `node --check`；⑤ 全量 `npm test` 全绿并与基线 `.run/baseline-round8.log` 逐套件对照（PASS 行数不得丢失）；⑥ `tests/game-behavior.mjs` 断言数只增不减。
+
+**拆分不变量（必须保持）**：`_frameRay`/`_anyInputBlockingUI` 留在 `Game.prototype`（`ray-sphere:145/164/165`）；`this.arrows`/`this.witherSkulls`/`this._clearBeaconState()` 留在 `_disposeWorld()`…`async start(` 区间内各恰一次（`leak-guards:160-164`）；`applyAetherDusk` 对 NetworkManager 可达（`NetworkManager:264/388` 的 `typeof` 静默守卫，零覆盖，现由 `game-behavior` G7 守）；`_miningActive`/`_getBeaconPower` 保持可达；主菜单期字段（`networkMode`/`net`/`playerModel`/`hand`/`renderer`/`controls`）必须在 `new Game()` 后即存在（SkinScreen 在 `start()` 之前就读它们）。
+
+## 十二、轮 9 · 既有缺陷 H1（准星指向自身重叠方块时右键被吞）
 
 来源：轮 6 实施中发现（见上文「轮 6 实施中发现」），\`git show HEAD:src/player/Game.js\` 同区结构一致 → 轮前既有行为，非回归。
 
