@@ -26,7 +26,7 @@
 | 4 | README 出仓（用户向化） | E3 | 已完成（`2f99b3f`） |
 | 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 已完成（`4520a7b`，CI run 39091785891 绿） |
 | 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（`d908532`，CI run 39120118156 绿） |
-| 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 进行中 |
+| 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 已完成（`6f5f3ec`，CI run 39122476650 绿） |
 | 8 | F3 Game.js 拆分（先只读可行性评估，确认后逐域迁移） | F3 | 待启动 |
 | 9 | 既有缺陷 H1：准星指向「放置邻格落在玩家自身 AABB 内」的方块时右键被吞（轮 6 发现，非回归） | H1 | 已排期（用户 2026-10-18 定轮 9） |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
@@ -95,6 +95,8 @@
 | 5 | 2026-10-18 | 2026-10-18 | `4520a7b`（本轮含文档） | run 39091785891 绿 | 两路并行（N1 服务端加固 5 条 / N2 落盘节流+回放打包+客户端防御）；调度方独立黑盒探针 22/22（写盘 200→3 次、SIGTERM 强刷、600 格回放 512+88 分块、删房清理、心跳 2006ms 热生效、皮肤限频 429 与日志 35→1）；浏览器端到端冒烟通过（0 TypeError）；新增三套件 51/28/18 已并入跑批；文档同步 AGENTS.md / docs/development.md / docs/agent-notes/multiplayer.md |
 
 | 6 | 2026-10-18 | 2026-10-18 | `d908532`（文档另提交） | run 39120118156 绿 | 两波四路（第一波 P/Q/S 并行，第二波 R）；F5 四屏光标层收编 CursorOverlay（leak-guards 47/47）；F6 球体判别式统一 raySphereHit（MobManager 两处 + 远端玩家，消除每怪每帧 new Vector3）；F7 modifiedBlocks 分桶索引（40k 账本 169 区块重放 2356ms→10ms，169×65536 格逐字节等价）；F8 dispose 复用 _removeMobResources（唯一清理实现 + 幂等）；F9 眼高/方块中心/移速常量集中；F10 帧射线缓存 + Boss 列表零分配；F11 _anyInputBlockingUI 唯一清单（六类界面阻断挖掘/攻击/弓蓄力）；F12 红石/流体待处理队列键化；新增三套件 tests/ray-sphere、tests/world-mod-index、tests/mob-ray-select 并入跑批 |
+
+| 7 | 2026-10-18 | 2026-10-18 | `6f5f3ec`（本轮含文档） | run 39122476650 绿 | 三路并行 + 第二波一路；E4 run-all-tests.sh 477→124 行（PURE_NODE_SUITES 清单数组 + for 循环，清单即唯一注册点）；E5 两侧唯一 runner 框架（tests/harness.mjs 覆盖 46 套件 / server/test-lib.mjs 覆盖 16 套件），断言调用点数量顺序文案逐字不变、逐套件 PASS 行 943→949、日志 51.9KB→52.1KB；复审发现并返工一次（首版 ok() 无条件打印使日志涨到 1.30MB → 改 configure({ verbose }) 逐套件还原输出口径）；E6 新增 tests/cw1-mesh-stability.mjs（CW-1 稳定态收敛行为级钉值 34 断言，调度方独立反证：注释 World.js 反向标脏 → 6/34 FAIL）+ tests/ui-audio-smoke.mjs（src/ui 24 + src/audio 1 全量 import + 50 条跨模块具名导出核对，88 断言）+ tests/framework-guard.mjs（runner 唯一化元断言 8 断言）；E8 .nvmrc(24) + 根/server engines ">=18"（依据全局 fetch / AbortSignal.timeout 与 Vite 5 范围）+ CI node-version-file；E12 CI 全量 node --check（197 文件 0 失败）；E9 docs/TODO.md 状态对账 159→52 行（交付项归档、保留未排期 U-1）；E13 test-mp.mjs / build22-fixes.mjs / client-sim.mjs 三处陈旧注释 + docs/bug.md 补 CW 前缀续用约定；验收：npm test 全绿（67 套件段）、逐套件日志与轮前基线对照无断言丢失、73 改动文件 node --check 全过 |
 
 ## 八、轮 5 · 联机服务端打磨（S6–S13）
 
