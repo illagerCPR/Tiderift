@@ -10,12 +10,7 @@
 //   ⑥ 接线绊线：update 雾段之后调用（最后写入者）/ 命令面板调试口 / BUILD 不 bump
 import { FINALE_TIDE_SEGMENTS, FINALE_TIDE_DURATION, finaleEnvelope, finalePulse } from '../src/world/finale-tide.js';
 import { readFileSync } from 'fs';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 段配置完整性 ──
 const DIMS = ['aether', 'nether', 'overworld', 'end'];
@@ -81,5 +76,4 @@ ok(gameSrc.includes('_finaleParticleTick(seg, p, t, dt)'), '四段粒子发射�
 ok(gameSrc.includes("BlockRegistry.getId('water')"), '逆雨段水下采样在场（雨只在海上）');
 const cpSrc = readFileSync('./src/ui/CommandPanel.js', 'utf8');
 ok(cpSrc.includes('_startFinaleTide()') && cpSrc.includes('_stopFinaleTide()'), '命令面板调试口在场（F3 正式触发链前置）');
-
-console.log(`endgame-tide: ${passed} assertions passed`);
+finish('endgame-tide');

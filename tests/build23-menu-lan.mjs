@@ -11,12 +11,8 @@ import http from 'node:http';
 import {
   normalizeLanHost, lanWsUrl, probeLanServer, LAN_PORT, LAN_HOST_KEY, DEFAULT_LAN_HOST,
 } from '../src/net/lanStatus.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -96,5 +92,4 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
     }
   }
 }
-
-console.log(`build23-menu-lan: ${passed} assertions ALL PASS`);
+finish('build23-menu-lan');

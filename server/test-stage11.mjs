@@ -3,15 +3,12 @@
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
 import { createNetStats, pushRttSample, targetInterpDelay } from '../src/net/netStats.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -257,6 +254,6 @@ let VIEWER_TOKEN = null;
   assert('收尾清除鉴权账号', clear.status === 200 && (clear.json.config.adminAccounts || []).length === 0);
 }
 
-const failed = results.filter(([, ok]) => !ok);
-console.log(`\n阶段 11 回归：${results.length - failed.length}/${results.length} 通过`);
-if (failed.length) { console.log('失败项：'); for (const [name] of failed) console.log('  - ' + name); process.exit(1); }
+const { total, passed } = counts();
+console.log(`\n阶段 11 回归：${passed}/${total} 通过`);
+finish();

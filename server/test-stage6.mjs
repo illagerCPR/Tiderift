@@ -2,15 +2,12 @@
 // 用法：node server/test-stage6.mjs   （先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -163,6 +160,6 @@ for (const name of ['s6-held', 's6-death']) {
   await fetch(API + '/room/' + name + '/delete', { method: 'POST' }).catch(() => {});
 }
 
-const failCount = results.filter((r) => !r[1]).length;
-console.log(`---\n${results.length - failCount}/${results.length} PASS`);
-process.exitCode = failCount ? 1 : 0;
+const { total, passed } = counts();
+console.log(`---\n${passed}/${total} PASS`);
+finish({ natural: true });

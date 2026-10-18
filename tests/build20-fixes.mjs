@@ -26,12 +26,8 @@ import { MobManager } from '../src/entity/MobManager.js';
 import { Player } from '../src/player/Player.js';
 import { Raycast } from '../src/player/Raycast.js';
 import { PARTS } from '../src/entity/RemotePlayer.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 
 // blocks 追加列表取格：后写覆盖先写（与 applyBlocks 语义一致），返回最终方块 id
@@ -271,5 +267,4 @@ ok(BlockRegistry.getNameById(99999) === null, 'getNameById 未注册 id 返回 n
     '换维透传字段保留（单机换维 loadData 合成携带该字段）');
   ok(srcOf('../src/core/SaveSystem.js').includes('aetherDusk: !!game.aetherDusk'), '存档仍持久化复潮状态');
 }
-
-console.log(`build20-fixes: ${passed} passed`);
+finish('build20-fixes');

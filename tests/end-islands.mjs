@@ -12,13 +12,9 @@ import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { EndGenerator, HIGHLANDS_MIN_R } from '../src/world/dimensions/end.js';
 import '../src/blocks/BlockDefs.js';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 const ES = BlockRegistry.getId('end_stone');
 
@@ -107,5 +103,4 @@ for (const seed of SEEDS) {
   const ms = performance.now() - t0;
   ok(ms < 30, `[end] 单区块生成耗时异常: ${ms.toFixed(1)}ms`);
 }
-
-console.log(`末地外岛锚点场回归: 全部通过（${passed} 断言 × ${SEEDS.length} seeds）`);
+finish(`末地外岛锚点场回归（${SEEDS.length} seeds）`);

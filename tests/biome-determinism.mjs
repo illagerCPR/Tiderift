@@ -12,14 +12,12 @@ import { Biomes, BiomeConfig, BiomeNames } from '../src/world/biomes.js';
 import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js';
+import { pass, fail, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 const SEEDS = [42, 20250903, 777];
 const SCAN = 512; // 每 seed 扫 512×512 列
 const STEP = 2;   // 采样步长（覆盖 256×256 有效格，足够统计）
-
-let passed = 0;
-function ok(msg) { passed++; console.log('PASS ' + msg); }
-function fail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 // ① 同 seed 双次一致 + ③ 群系占比统计
 const COUNTS = {}; // biome -> count
@@ -67,7 +65,7 @@ const elapsed = Date.now() - t0;
       fail(`顺序无关破坏 (${x},${z})`);
     }
   }
-  ok('顺序无关：500 乱序点重复求值一致');
+  pass('顺序无关：500 乱序点重复求值一致');
 }
 
 // ③ 群系在场性 + 占比区间（三 seed 合并）
@@ -89,14 +87,14 @@ for (const [b, lo, hi] of EXPECT) {
   const p = pct(b);
   if (!COUNTS[b]) fail(`群系 ${BiomeConfig[b].name} 未出现`);
   if (p < lo || p > hi) fail(`群系 ${BiomeConfig[b].name} 占比 ${p.toFixed(1)}% 超出 [${lo},${hi}]%`);
-  ok(`群系 ${BiomeConfig[b].name} 在场，占比 ${p.toFixed(1)}%`);
+  pass(`群系 ${BiomeConfig[b].name} 在场，占比 ${p.toFixed(1)}%`);
 }
 
 // ③b 沼泽水洼率（零散水塘是沼泽辨识核心；过低=无水塘，过高=成湖）
 {
   const rate = SWAMP_STATS.pond / Math.max(1, SWAMP_STATS.n) * 100;
   if (rate < 5 || rate > 60) fail(`沼泽水洼率 ${rate.toFixed(1)}% 超出 [5,60]%`);
-  ok(`沼泽水洼率 ${rate.toFixed(1)}%（${SWAMP_STATS.pond}/${SWAMP_STATS.n} 列）`);
+  pass(`沼泽水洼率 ${rate.toFixed(1)}%（${SWAMP_STATS.pond}/${SWAMP_STATS.n} 列）`);
 }
 
 // ③c 沼泽区块生成健全性：水洼底=粘土、水面有睡莲、群系命名表完备
@@ -126,11 +124,11 @@ for (const [b, lo, hi] of EXPECT) {
     }
   }
   if (clayCount === 0) fail('沼泽区块未生成粘土水底');
-  ok(`沼泽区块粘土水底在场（${clayCount} 格 / ${chunksMade} 区块）`);
+  pass(`沼泽区块粘土水底在场（${clayCount} 格 / ${chunksMade} 区块）`);
   if (lilyCount === 0) fail('沼泽区块未生成睡莲');
-  ok(`睡莲在场（${lilyCount} 格 / ${chunksMade} 区块，扫 ${blocksScanned} 非空方块）`);
+  pass(`睡莲在场（${lilyCount} 格 / ${chunksMade} 区块，扫 ${blocksScanned} 非空方块）`);
   if (!BiomeNames[Biomes.SWAMP]) fail('SWAMP 缺少中文名');
-  ok(`群系名表完备（${BiomeNames[Biomes.SWAMP]}）`);
+  pass(`群系名表完备（${BiomeNames[Biomes.SWAMP]}）`);
 }
 
 // ③d B3 区块生成健全性：菌丝体地表 + 巨型蘑菇 + 向日葵花海
@@ -161,19 +159,19 @@ for (const [b, lo, hi] of EXPECT) {
   const mush = scan(findChunks(Biomes.MUSHROOM_FIELDS, 8));
   if (!mush['mycelium']) fail('蘑菇岛区块未生成菌丝体地表');
   if (!mush['mushroom_stem'] || !mush['mushroom_cap_red'] && !mush['mushroom_cap_brown']) fail('蘑菇岛区块未生成巨型蘑菇');
-  ok(`蘑菇岛健全：菌丝体 ${mush['mycelium']}、菌柄 ${mush['mushroom_stem']}、红盖 ${mush['mushroom_cap_red'] || 0}、棕盖 ${mush['mushroom_cap_brown'] || 0}、小蘑菇 ${(mush['red_mushroom'] || 0) + (mush['brown_mushroom'] || 0)}`);
+  pass(`蘑菇岛健全：菌丝体 ${mush['mycelium']}、菌柄 ${mush['mushroom_stem']}、红盖 ${mush['mushroom_cap_red'] || 0}、棕盖 ${mush['mushroom_cap_brown'] || 0}、小蘑菇 ${(mush['red_mushroom'] || 0) + (mush['brown_mushroom'] || 0)}`);
   const sf = scan(findChunks(Biomes.SUNFLOWER_PLAINS, 6));
   if (!sf['sunflower']) fail('向日葵平原区块未生成向日葵');
-  ok(`向日葵平原健全：向日葵 ${sf['sunflower']} 格`);
+  pass(`向日葵平原健全：向日葵 ${sf['sunflower']} 格`);
 }
 
 // ④ 高山海拔锚点
 const mountainAvg = PEAKS.mountainHSum / PEAKS.mountainN;
 const plainsAvg = PEAKS.plainsHSum / Math.max(1, PEAKS.plainsN);
 if (PEAKS.maxMountainH <= 100) fail(`高山峰顶最高 ${PEAKS.maxMountainH}，未超过 100`);
-ok(`高山峰顶最高 ${PEAKS.maxMountainH}`);
+pass(`高山峰顶最高 ${PEAKS.maxMountainH}`);
 if (mountainAvg < plainsAvg + 15) fail(`高山均高 ${mountainAvg.toFixed(1)} 未显著高于平原 ${plainsAvg.toFixed(1)}`);
-ok(`高山均高 ${mountainAvg.toFixed(1)} > 平原均高 ${plainsAvg.toFixed(1)} + 15`);
+pass(`高山均高 ${mountainAvg.toFixed(1)} > 平原均高 ${plainsAvg.toFixed(1)} + 15`);
 
 // ⑤ 相邻列连续性（非高山：|dh|≤12；高山对允许陡峭，≤30）
 {
@@ -190,11 +188,10 @@ ok(`高山均高 ${mountainAvg.toFixed(1)} > 平原均高 ${plainsAvg.toFixed(1)
   }
   if (worstNormal > 12) fail(`非高山相邻列最大高差 ${worstNormal} > 12`);
   if (worstMountain > 30) fail(`高山相邻列最大高差 ${worstMountain} > 30`);
-  ok(`相邻列连续性：非高山最大高差 ${worstNormal}，高山 ${worstMountain}（陡峭属预期）`);
+  pass(`相邻列连续性：非高山最大高差 ${worstNormal}，高山 ${worstMountain}（陡峭属预期）`);
 }
 
 // ⑥ 耗时预算
 if (elapsed > 30000) fail(`三 seed × ${SCAN}² 扫描耗时 ${elapsed}ms 超预算`);
-ok(`三 seed × ${SCAN}² 扫描耗时 ${elapsed}ms`);
-
-console.log(`biome-determinism: ${passed} 项通过`);
+pass(`三 seed × ${SCAN}² 扫描耗时 ${elapsed}ms`);
+finish('biome-determinism');

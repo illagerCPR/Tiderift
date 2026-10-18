@@ -1,4 +1,4 @@
-// client-sim.mjs -- 模拟第二玩家客户端（临时联机验证，配合浏览器 host）
+// client-sim.mjs -- 模拟第二玩家客户端（手工联机验证工具，需与浏览器 host 配合跑；不注册进 run-all-tests.sh）
 // 流程：hello -> join_room -> 发 player_state/chat/block_set
 //       然后等待浏览器 host 放方块(60,72,60) 的广播回显，验证反向同步
 import WebSocket from 'ws';

@@ -10,16 +10,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 // 命名避开全局类（const URL 会遮蔽全局 URL 构造器，new URL 在 try 内静默炸掉的教训）
 const WS_URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -324,6 +321,6 @@ for (const rn of [ROOM, ROOM_DEF, ROOM_OTHER]) {
 await api('POST', '/config', { backupIntervalMinutes: 0, backupKeep: 10, rateLimits: { chat: 30, block: 900, state: 1800 }, roomSettings: {} });
 A.ws.close(); B.ws.close(); C.ws.close();
 
-const failed = results.filter(([, ok]) => !ok).length;
-console.log(`\n结果: ${results.length - failed}/${results.length} 通过`);
-process.exit(failed ? 1 : 0);
+const { total, passed } = counts();
+console.log(`\n结果: ${passed}/${total} 通过`);
+finish();

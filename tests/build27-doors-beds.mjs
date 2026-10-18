@@ -14,12 +14,8 @@ import { RedstoneSystem } from '../src/core/RedstoneSystem.js';
 import { doorId, trapdoorId, bedId, cellBox, DOOR_THICK, BED_HEIGHT } from '../src/core/blockShape.js';
 import { solveVillage } from '../src/world/structures/village.js';
 import { BlockSVGDefinitions } from '../src/blocks/BlockDefs.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 function near(a, b, eps = 1e-4) { return Math.abs(a - b) < eps; }
 
@@ -224,5 +220,4 @@ function near(a, b, eps = 1e-4) { return Math.abs(a - b) < eps; }
   ok(en.includes("'Beds refuse to rest in this dimension — BOOM!'"), 'en：维度爆炸提示');
   ok(en.includes("'Your bed is missing or was lost. Returning to world spawn'"), 'en：床失效提示');
 }
-
-console.log(`build27-doors-beds: ${passed} assertions passed`);
+finish('build27-doors-beds');

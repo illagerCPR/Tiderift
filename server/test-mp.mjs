@@ -1,16 +1,11 @@
-// test-mp.mjs -- 局域网服务器协议端到端验证脚本（阶段 0~3 回归，临时，测完删除）
+// test-mp.mjs -- 局域网服务器协议端到端验证脚本（阶段 0~3 回归，正式回归套件）
 // 用法：node server/test-mp.mjs  （需已启动 node server/index.mjs）
 // 说明：id 从 welcome 动态读取，不依赖绝对 id；房间状态由本脚本自建（先 create_room）
 import WebSocket from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { assert, finish, counts } from './test-lib.mjs';
 
 const URL = 'ws://127.0.0.1:3001/ws';
-const results = [];
-
-function assert(name, cond) {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -219,6 +214,6 @@ assert('F 收到 /rooms 回复(含 alpha)', !!F.queue.find(m => m.t === 'chat' &
 A.ws.close(); E.ws.close(); F.ws.close(); G.ws.close(); H.ws.close();
 await sleep(100);
 
-const failCount = results.filter(r => !r[1]).length;
-console.log(`---\n${results.length - failCount}/${results.length} PASS`);
-process.exit(failCount ? 1 : 0);
+const { total, passed } = counts();
+console.log(`---\n${passed}/${total} PASS`);
+finish();

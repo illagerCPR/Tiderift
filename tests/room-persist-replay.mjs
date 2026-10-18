@@ -1,11 +1,7 @@
 // room-persist-replay.mjs -- S8 世界落盘节流 + S9 回放批量打包/背压（纯 node，不依赖服务器进程）
 import { Room } from '../server/room.js';
+import { assert, finish } from './harness.mjs';
 
-const results = [];
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 假连接：记录 send 载荷（readyState=1 供 sendTo 放行）；bufferedAmount 可调以驱动背压分支
@@ -135,7 +131,4 @@ const bpBatches = slow.ws.sent.filter((m) => m.t === 'block_change_batch');
 assert('缓冲排空后全部块送达（3 条 / 1200 格）',
   bpBatches.length === 3 && bpBatches.reduce((n, b) => n + b.list.length, 0) === 1200,
   `${bpBatches.length}条/${bpBatches.reduce((n, b) => n + b.list.length, 0)}格`);
-
-const failed = results.filter(([, pass]) => !pass).length;
-console.log(`---\n${results.length - failed}/${results.length} PASS`);
-process.exit(failed ? 1 : 0);
+finish('room-persist-replay');

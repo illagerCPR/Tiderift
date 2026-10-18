@@ -6,14 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Room } from './room.js';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { assert, finish, counts } from './test-lib.mjs';
 
 const URL = 'ws://127.0.0.1:3001/ws';
-const results = [];
-
-function assert(name, cond) {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -192,6 +187,6 @@ assert('快照含 dimensionBlocks.overworld 且有 B 的方块',
 }
 
 // ── 汇总 ───────────────────────────────────────────────────────────────
-const failed = results.filter(([, ok]) => !ok);
-console.log(failed.length ? `维度联机回归: ${results.length - failed.length}/${results.length} 通过（FAILED）` : `维度联机回归: ${results.length}/${results.length} 通过`);
-process.exit(failed.length ? 1 : 0);
+const { total, passed } = counts();
+console.log(passed < total ? `维度联机回归: ${passed}/${total} 通过（FAILED）` : `维度联机回归: ${passed}/${total} 通过`);
+finish();

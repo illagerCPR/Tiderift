@@ -12,12 +12,8 @@ import * as THREE from 'three';
 import { partRects, SKIN_STORAGE_KEY, DEFAULT_SKIN_URLS } from '../src/entity/PlayerSkin.js';
 import { PARTS, buildParts, RemotePlayer } from '../src/entity/RemotePlayer.js';
 import { LocalPlayerModel } from '../src/entity/LocalPlayerModel.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 function inBounds(r) { return r.x >= 0 && r.y >= 0 && r.x + r.w <= 64 && r.y + r.h <= 64; }
 function noOverlap(a, b) {
@@ -219,5 +215,4 @@ function noOverlap(a, b) {
   ok(ss.includes('https://minotar.net/skin/'), '单机回退第三方镜像');
   ok(ss.includes("prefs.source = 'username'"), '拉取成功标记来源');
 }
-
-console.log(`build21-skins: ${passed} passed`);
+finish('build21-skins');

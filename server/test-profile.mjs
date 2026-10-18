@@ -8,15 +8,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -221,6 +218,6 @@ store.deleteRoomFile(room);
 store.deletePlayerProfiles(room);
 store.deleteRoomFile(room.replace('profile-test-', 'profile-test-')); // 幂等兜底
 
-const failed = results.filter(([, ok]) => !ok);
-console.log(`\n=== test-profile: ${results.length - failed.length}/${results.length} 通过 ===`);
-process.exit(failed.length ? 1 : 0);
+const { total, passed } = counts();
+console.log(`\n=== test-profile: ${passed}/${total} 通过 ===`);
+finish();

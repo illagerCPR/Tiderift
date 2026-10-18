@@ -32,15 +32,10 @@ import { TerrainGenerator } from '../src/world/terrain.js';
 import { AetherGenerator } from '../src/world/dimensions/aether.js';
 import { NetherGenerator } from '../src/world/dimensions/nether.js';
 import { EndGenerator } from '../src/world/dimensions/end.js';
+import { ok, finish } from './harness.mjs';
 
 const PACKS = { 'zh-TW': zhTW, en, fr, de, ja, ko, ar, ru, es, pt };
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-let passed = 0;
-
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 // ── 收集键源 ──
 const staticKeys = new Set();
@@ -115,5 +110,4 @@ for (const loc of Object.keys(PACKS)) {
   }
   for (const [k, n] of seen) ok(n === 1, `[${loc}] 重复键 ×${n}: ${k}`);
 }
-
-console.log(`i18n-parity: OK (${passed} assertions; master=${master.size} static=${staticKeys.size} dynamic=${dynamicKeys.size})`);
+finish(`i18n-parity (master=${master.size} static=${staticKeys.size} dynamic=${dynamicKeys.size})`);

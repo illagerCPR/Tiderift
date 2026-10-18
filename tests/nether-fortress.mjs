@@ -12,14 +12,10 @@ import { NetherGenerator } from '../src/world/dimensions/nether.js';
 import { TerrainGenerator } from '../src/world/terrain.js';
 import { chestLoot } from '../src/world/loot.js';
 import '../src/blocks/BlockDefs.js';
+import { ok, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 const SEEDS = [42, 20250903];
-let pass = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  pass++;
-  console.log('PASS ' + msg);
-}
 
 const BRICK_ID = BlockRegistry.getId('nether_bricks');
 const CHEST_ID = BlockRegistry.getId('chest');
@@ -93,5 +89,4 @@ for (const seed of SEEDS) {
   const v = ov.structureManager.ensureRecord('village', 1, 1);
   ok(v === null || v.name === 'village', '主世界村庄 ensureRecord 行为不变（null 或 village）');
 }
-
-console.log(`下界要塞回归: 全部通过（${pass} 断言 × ${SEEDS.length} seeds + 通用 3）`);
+finish(`下界要塞回归（${SEEDS.length} seeds）`);

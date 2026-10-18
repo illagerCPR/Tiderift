@@ -15,13 +15,9 @@ import { RedstoneSystem } from '../src/core/RedstoneSystem.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js'; // 副作用导入：方块注册表填充
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 const same = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+import { ok, finish } from './harness.mjs';
 
 // 空地形 World（node 直跑）：生成器换全空气，区块内容只来自账本与 setBlock
 function makeWorld(seed = 20261017, dimension = 'overworld') {
@@ -300,5 +296,4 @@ const rnd = () => ((lcg = (lcg * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
   const saveSrc = srcOf('../src/core/SaveSystem.js');
   ok(saveSrc.includes('Object.fromEntries'), '存档序列化仍走 entries 迭代（账本对外形态不变）');
 }
-
-console.log(`world-mod-index: ${passed} assertions passed`);
+finish('world-mod-index');

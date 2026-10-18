@@ -2,15 +2,12 @@
 // 用法：node server/test-stage5.mjs   （先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -147,7 +144,7 @@ for (const name of ['s5-room1', 's5-room2', 's5-reset', 's5-state']) {
   await fetch(API + '/room/' + name + '/delete', { method: 'POST' }).catch(() => {});
 }
 
-const failCount = results.filter((r) => !r[1]).length;
-console.log(`---\n${results.length - failCount}/${results.length} PASS`);
-// 不用 process.exit()：Windows libuv 在 socket 关闭态直接 exit 会触发断言，改用 exitCode 自然退出
-process.exitCode = failCount ? 1 : 0;
+const { total, passed } = counts();
+console.log(`---\n${passed}/${total} PASS`);
+// 不用强制退出：Windows libuv 在 socket 关闭态直接退出会触发断言，改用 exitCode 自然退出
+finish({ natural: true });

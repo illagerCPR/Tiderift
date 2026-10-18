@@ -6,18 +6,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROTOCOL_VERSION } from './protocol.js';
 import * as store from './store.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL_WS = 'ws://127.0.0.1:3001/ws';
 const BASE = 'http://127.0.0.1:3001';
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const tag = Date.now().toString(36);
 const suiteStart = Date.now();
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log((cond ? 'PASS' : 'FAIL') + '  ' + name + ' ' + extra);
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -282,6 +279,6 @@ console.log('服务器加固（网络层）回归 ================');
 // 皮肤 IP 令牌桶是跨套件共享的进程内状态：留足补充时间，避免后续套件（test-skinlog）连吃 429
 await sleep(5000);
 
-const failed = results.filter(([, ok]) => !ok);
-console.log('\n服务器加固（网络层）回归：' + (results.length - failed.length) + '/' + results.length + ' 通过');
-if (failed.length) { console.log('失败项：'); for (const [name] of failed) console.log('  - ' + name); process.exit(1); }
+const { total, passed } = counts();
+console.log('\n服务器加固（网络层）回归：' + passed + '/' + total + ' 通过');
+finish();

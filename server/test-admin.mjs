@@ -3,15 +3,12 @@
 // 依赖 ws（server/package.json 已声明）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { ok, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'admin' });
 
 const WS_URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-
-let pass = 0, fail = 0;
-function ok(name, cond, extra = '') {
-  if (cond) { pass++; console.log(`  ✓ ${name}`); }
-  else { fail++; console.log(`  ✗ ${name} ${extra}`); }
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -229,5 +226,6 @@ for (const name of ['cap-room', 'kick-room', 'drop-room', 'del-room', 'bcast-roo
   await fetch(API + '/room/' + name + '/delete', { method: 'POST' }).catch(() => {});
 }
 
-console.log(`\n结果: ${pass}/${pass + fail} PASS`);
-process.exit(fail ? 1 : 0);
+const { total, passed } = counts();
+console.log(`\n结果: ${passed}/${total} PASS`);
+finish();

@@ -2,15 +2,12 @@
 // 用法：node server/test-stage10.mjs   （先启动 server/index.mjs，端口 3001；跑批前清空 server/world/ 与 server/config.json）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const API = 'http://127.0.0.1:3001/api';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -232,6 +229,6 @@ const HOTBAR = [
   await sleep(120);
 }
 
-const pass = results.filter((r) => r[1]).length;
-console.log(`\n阶段 10 回归：${pass}/${results.length} 通过`);
-process.exit(pass === results.length ? 0 : 1);
+const { total, passed } = counts();
+console.log(`\n阶段 10 回归：${passed}/${total} 通过`);
+finish();

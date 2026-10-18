@@ -11,12 +11,8 @@ import { Biomes } from '../src/world/biomes.js';
 import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 
 // ── ① LAN 默认服务器设置 ──
@@ -110,5 +106,4 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
   const dispBody = game.slice(dispIdx, dispIdx + 1500);
   ok(dispBody.includes('chunk.dirty = false'), '派发时清 dirty（快照吸收当前状态）');
 }
-
-console.log(`PASS build24-fixes: ${passed} 断言`);
+finish('build24-fixes');

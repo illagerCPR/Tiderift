@@ -18,13 +18,9 @@ import { STELE_CHAPTERS as steleChapters } from '../src/world/steles.js';
 import '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
 import '../src/world/structures/catalog.js';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 const TYPES = ['aether_temple', 'aether_tower', 'aether_ship', 'aether_well', 'aether_gate'];
 
@@ -187,5 +183,4 @@ for (const seed of SEEDS) {
   ok(steleY2 < 0, 'decorate=false 探针不置碑（递归防护）');
   ok(gen2.structureManager.steles.size === 0, 'decorate=false 探针不注册章节');
 }
-
-console.log(`天域结构回归: 全部通过（${passed} 断言 × ${SEEDS.length} seeds）`);
+finish(`天域结构回归（${SEEDS.length} seeds）`);

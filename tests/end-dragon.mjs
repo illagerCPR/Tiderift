@@ -16,13 +16,9 @@ import { Mob } from '../src/entity/Mob.js';
 import { MobTypes, generateMobSkinSVGs } from '../src/entity/MobTextures.js';
 import { MobManager } from '../src/entity/MobManager.js';
 import * as THREE from 'three';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 // ① 类型注册
 const dragon = MobTypes.dragon;
@@ -190,5 +186,4 @@ function updateAI(mob, dt, player) {
   mob.attackCooldown -= dt;
   mob.update(dt, player, { isDay: () => false, isNight: () => true }, { collide: () => {} }, null);
 }
-
-console.log(`末影龙 Boss 回归: 全部通过（${passed} 断言）`);
+finish('末影龙 Boss 回归');

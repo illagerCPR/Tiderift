@@ -14,12 +14,8 @@ import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { BlockSVGDefinitions } from '../src/blocks/BlockDefs.js';
 import { RedstoneSystem } from '../src/core/RedstoneSystem.js';
 import { facingId, furnaceLitId } from '../src/core/blockShape.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 const id = (n) => BlockRegistry.getId(n);
 const def = (n) => BlockRegistry.getById(id(n));
@@ -317,5 +313,4 @@ const def = (n) => BlockRegistry.getById(id(n));
   ok(legacySites === 0, `7 个渲染点均不再自带旧取纹链（残留 ${legacySites}）`);
   ok(!srcOf('../src/ui/Hotbar.js').includes('const texName = block.side || block.top'), 'Hotbar 旧图标链已废除');
 }
-
-console.log(`build28-block-textures: ${passed} assertions passed`);
+finish('build28-block-textures');

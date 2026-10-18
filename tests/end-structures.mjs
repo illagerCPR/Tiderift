@@ -31,13 +31,9 @@ import { pt } from '../src/i18n/locales/pt.js';
 import '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
 import '../src/world/structures/catalog.js';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 const sig = (r) => r.blocks.map((b) => b.join(',')).join('|') + '#' + JSON.stringify(r.meta);
 const id = (n) => BlockRegistry.getId(n);
@@ -157,5 +153,4 @@ ok(HIGHLANDS_MIN_R === 28, `高原分界半径不变 (${HIGHLANDS_MIN_R})`);
 for (const [loc, pack] of Object.entries({ 'zh-TW': zhTW, en, fr, de, ja, ko, ar, ru, es, pt })) {
   ok(Object.prototype.hasOwnProperty.call(pack, '拾遗者石环'), `[${loc}] 盲区键在场: 拾遗者石环`);
 }
-
-console.log(`end-structures: ${passed} assertions passed`);
+finish('end-structures');

@@ -20,13 +20,9 @@ import { Biomes } from '../src/world/biomes.js';
 import '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
 import '../src/world/structures/catalog.js';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 const sig = (r) => r.blocks.map(b => b.join(',')).join('|') + '#' + JSON.stringify(r.meta);
 
@@ -162,5 +158,4 @@ for (const seed of SEEDS) {
     ok(sm.structureNameAt(sho.ax, sho.az) === '要塞', `要塞 bbox 判定正常 (${sm.structureNameAt(sho.ax, sho.az)})`);
   }
 }
-
-console.log(`overworld-structures: ${passed} assertions passed`);
+finish('overworld-structures');

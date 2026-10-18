@@ -6,15 +6,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const BASE = 'http://127.0.0.1:3001';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -173,6 +170,6 @@ console.log('服务器加固边界回归 ================');
 }
 
 await sleep(100);
-const failed = results.filter(([, ok]) => !ok);
-console.log(`\n服务器加固边界回归：${results.length - failed.length}/${results.length} 通过`);
-if (failed.length) { console.log('失败项：'); for (const [name] of failed) console.log('  - ' + name); process.exit(1); }
+const { total, passed } = counts();
+console.log(`\n服务器加固边界回归：${passed}/${total} 通过`);
+finish();

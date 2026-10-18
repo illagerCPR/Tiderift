@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assert, finish, counts } from './test-lib.mjs';
 
 const API = 'http://127.0.0.1:3001/api';
 const SKIN = 'http://127.0.0.1:3001/api/skin/';
@@ -27,12 +28,6 @@ const api = async (p) => {
   return { status: res.status, data: await res.json().catch(() => ({})) };
 };
 
-let failed = 0;
-function assert(name, cond) {
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
-  if (!cond) failed = 1;
-}
-
 // 1. 非法格式用户名（2 位）→ 400，代理出口即拒
 const bad = await fetch(SKIN + 'xx');
 assert('非法格式用户名返回 400', bad.status === 400);
@@ -53,4 +48,4 @@ assert('10s 窗口内重复拉取聚合为一条（不逐条新增）', hits.len
 assert('汇总含请求数（≥2 次）', !!hits[0] && /拉取皮肤 [2-9]\d* 次/.test(hits[0].detail));
 assert('汇总含失败数且保留最近原因（结果码 400）', !!hits[0] && /失败 [1-9]\d*/.test(hits[0].detail) && hits[0].detail.includes('"xx"') && hits[0].detail.includes('400'));
 
-process.exit(failed);
+finish();

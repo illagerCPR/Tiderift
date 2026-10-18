@@ -16,12 +16,8 @@ import { ItemRegistry } from '../src/core/ItemRegistry.js';
 import '../src/items/ItemDefs.js'; // 副作用导入：物品注册表填充（漏了 getByName 全空）
 import { BlockSVGDefinitions } from '../src/blocks/BlockDefs.js';
 import { isTechnicalBlock, isIsoBlock } from '../src/core/ItemCategories.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 const def = (n) => BlockRegistry.getById(BlockRegistry.getId(n));
 
@@ -150,5 +146,4 @@ for (const p of jsFiles) {
 }
 ok(legacyCount === 1, `旧取纹链仅剩 BlockIcon 兜底一处（当前 ${legacyCount}）`);
 ok(srcOf('../server/run-all-tests.sh').includes('build29-rename-icons'), 'run-all-tests.sh 已登记本套件');
-
-console.log(`build29-rename-icons: ${passed} assertions passed`);
+finish('build29-rename-icons');

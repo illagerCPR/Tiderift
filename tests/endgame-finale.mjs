@@ -9,12 +9,7 @@
 //   ⑤ 发版：BUILD 17→18（终局篇统一发版）
 import { finaleListenGate } from '../src/world/finale-tide.js';
 import { readFileSync } from 'fs';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 听潮门控真值表 ──
 // (chapterId, done, offered, windowActive) → read | trigger | swallow
@@ -87,5 +82,4 @@ const invSrc = readFileSync('./src/ui/InventoryScreen.js', 'utf8');
 ok(invSrc.includes('this.game.world.finaleDone'), '纹章槽门控 finaleDone（仅通关显示）');
 ok(invSrc.includes("s && s.name === 'primordial_emblem'"), '佩戴需背包持有纹章（不可凭空）');
 ok(invSrc.includes('this.player.flying = false; // 取下即落地'), '取下即落地（防悬空）');
-
-console.log(`endgame-finale: ${passed} assertions passed`);
+finish('endgame-finale');

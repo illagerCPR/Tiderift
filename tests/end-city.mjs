@@ -19,13 +19,9 @@ import { MobTypes, generateMobSkinSVGs } from '../src/entity/MobTextures.js';
 import '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
 import '../src/world/structures/catalog.js';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 // ① 方块注册
 for (const name of ['purpur_block', 'purpur_pillar', 'end_stone_bricks', 'chorus_plant', 'chorus_flower']) {
@@ -165,5 +161,4 @@ for (const seed of SEEDS) {
     ok(slots.every(s => s === null || resolvable(s.name)), `${t} 表含未注册物品`);
   }
 }
-
-console.log(`末地城结构回归: 全部通过（${passed} 断言 × ${SEEDS.length} seeds）`);
+finish(`末地城结构回归（${SEEDS.length} seeds）`);

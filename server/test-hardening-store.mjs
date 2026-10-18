@@ -9,16 +9,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Room } from './room.js';
 import * as store from './store.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'bracket' });
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const serverWorld = path.join(SERVER_DIR, 'world');
 const probeName = `hardening-probe-${process.pid}`;
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-hardening-'));
-const results = [];
-function assert(name, cond, extra = '') {
-  results.push(!!cond);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? `  [${extra}]` : ''}`);
-}
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
@@ -177,6 +175,6 @@ try {
   if (fs.readdirSync(serverWorld).length === 0) fs.rmdirSync(serverWorld); // 仅空目录才删，绝不动他人文件
 } catch { /* 清理尽力而为 */ }
 
-const failCount = results.filter((x) => !x).length;
-console.log(`---\n${results.length - failCount}/${results.length} PASS`);
-process.exit(failCount ? 1 : 0);
+const { total, passed } = counts();
+console.log(`---\n${passed}/${total} PASS`);
+finish();

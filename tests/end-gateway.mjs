@@ -14,12 +14,7 @@ import {
   portalBlockId, DIM_PORTAL_KINDS,
 } from '../src/core/Portals.js';
 import '../src/blocks/BlockDefs.js';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 const GW = BlockRegistry.getId('end_gateway');
 const BED = BlockRegistry.getId('bedrock');
@@ -132,5 +127,4 @@ for (let dx = -1; dx <= 3; dx++) {
   // 折跃门幂等门控（Game._ensureGateways 同款）：账本已有 GW → 全跳过
   ok([...w3.modifiedBlocks.values()].some(id => id === GW) === false || true, 'gateway 扫描');
 }
-
-console.log(`龙败奖励链回归: 全部通过（${passed} 断言）`);
+finish('龙败奖励链回归');

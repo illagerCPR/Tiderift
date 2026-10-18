@@ -11,12 +11,7 @@ import { BlockSVGDefinitions } from '../src/blocks/BlockDefs.js';
 import { ItemSVGDefinitions } from '../src/items/ItemDefs.js';
 import { getItemCategory } from '../src/core/ItemCategories.js';
 import { STELE_CHAPTERS } from '../src/world/steles.js';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 苔纹石碑 ──
 const stele = BlockRegistry.getByName('moss_stele');
@@ -72,5 +67,4 @@ for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
   ok(ch.lines.every((l) => typeof l === 'string' && l.length > 0), `行文非空: ${id}`);
   ok(!id.includes(','), `章节 id 不含 ',': ${id}`);
 }
-
-console.log(`overworld-steles: ${passed} assertions passed`);
+finish('overworld-steles');

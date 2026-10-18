@@ -15,12 +15,8 @@ import { readFileSync } from 'fs';
 import { raySphereHit } from '../src/player/Raycast.js';
 import { Game } from '../src/player/Game.js';
 import { PLAYER_EYE_HEIGHT } from '../src/player/constants.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 const near = (a, b, eps) => Math.abs(a - b) <= eps;
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 
@@ -168,5 +164,4 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
   ok(gameSrc.split('_anyInputBlockingUI() {').length === 2, 'F11 阻断 UI 清单只有一处定义');
   ok((gameSrc.match(/this\._anyInputBlockingUI\(\)/g) || []).length >= 4, 'F11 清单被四处调用点消费');
 }
-
-console.log('ray-sphere: ' + passed + ' assertions passed');
+finish('ray-sphere');

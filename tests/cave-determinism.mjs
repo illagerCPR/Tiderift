@@ -10,12 +10,12 @@ import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { SEA_LEVEL } from '../src/core/Chunk.js';
 import '../src/blocks/BlockDefs.js';
+import { pass, fail, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 const SEED = 20250903;
 const R = 6; // 13×13 区块
 const LAVA = BlockRegistry.getId('lava');
-
-function fail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 function digest(chunks) {
   let h1 = 0x811c9dc5, h2 = 0x01000193, total = 0;
@@ -51,7 +51,7 @@ const da = digest(a.chunks), db = digest(b.chunks);
 if (da.total !== db.total || da.h1 !== db.h1 || da.h2 !== db.h2) {
   fail(`含洞穴双次生成不一致: ${JSON.stringify(da)} vs ${JSON.stringify(db)}`);
 }
-console.log(`PASS ① 确定性: ${da.total} 字节两次一致（含洞穴雕刻）`);
+pass(`① 确定性: ${da.total} 字节两次一致（含洞穴雕刻）`);
 
 // ── ②③④ 密度 / 保护 / 性能 ───────────────────────────────────────────
 let cave = 0, solid = 0, mouthCols = 0, cols = 0, deepAir = 0;
@@ -89,8 +89,7 @@ if (mouthCols / cols > 0.06) fail(`露头率过高: ${(mouthCols / cols * 100).t
 if (deepAir > 0) fail(`基岩保护层出现 ${deepAir} 个空气格`);
 const perChunkMs = tGen / ((2 * R + 1) ** 2);
 if (perChunkMs > 25) fail(`单区块生成 ${perChunkMs.toFixed(1)}ms 超预算`);
-console.log(`PASS ② 密度: 空腔占比 ${(ratio * 100).toFixed(1)}%，露头 ${(mouthCols / cols * 100).toFixed(2)}% 列`);
-console.log('PASS ③ 保护: 基岩层完整、水面列 5 格壳无破口');
-console.log(`PASS ④ 性能: 单区块平均 ${perChunkMs.toFixed(1)}ms（含洞穴场采样与雕刻）`);
-
-console.log('洞穴生成回归: 全部通过');
+pass(`② 密度: 空腔占比 ${(ratio * 100).toFixed(1)}%，露头 ${(mouthCols / cols * 100).toFixed(2)}% 列`);
+pass('③ 保护: 基岩层完整、水面列 5 格壳无破口');
+pass(`④ 性能: 单区块平均 ${perChunkMs.toFixed(1)}ms（含洞穴场采样与雕刻）`);
+finish('洞穴生成回归');

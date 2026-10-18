@@ -6,14 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
+import { assert, finish, counts } from './test-lib.mjs';
 
 const URL = 'ws://127.0.0.1:3001/ws';
-const results = [];
-
-function assert(name, cond) {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -122,6 +117,6 @@ assert('不带 tradeSeed 的 mob_spawn 不产生该字段', !!bZ && bZ.tradeSeed
 for (const c of [A, B, C, D]) { try { c.ws.close(); } catch {} }
 await sleep(150);
 
-const failed = results.filter(r => !r[1]).length;
-console.log(`\nT5 服务器回归: ${results.length - failed}/${results.length} 通过`);
-process.exit(failed ? 1 : 0);
+const { total, passed } = counts();
+console.log(`\nT5 服务器回归: ${passed}/${total} 通过`);
+finish();

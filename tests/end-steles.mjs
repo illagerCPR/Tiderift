@@ -11,12 +11,7 @@ import { BlockSVGDefinitions } from '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
 import { getItemCategory } from '../src/core/ItemCategories.js';
 import { STELE_CHAPTERS } from '../src/world/steles.js';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 界纹石碑 ──
 const stele = BlockRegistry.getByName('end_stele');
@@ -76,5 +71,4 @@ for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
   ok(!id.includes(','), `章节 id 不含 ',': ${id}`);
   ok(VALID_DIMS.includes(ch.dim), `dim 字段合法: ${id} (${ch.dim})`);
 }
-
-console.log(`end-steles: ${passed} assertions passed`);
+finish('end-steles');

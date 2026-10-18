@@ -18,13 +18,9 @@ import { STELE_CHAPTERS as steleChapters } from '../src/world/steles.js';
 import '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
 import '../src/world/structures/catalog.js';
+import { ok, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 
 // ① 维度作用域
 {
@@ -149,5 +145,4 @@ for (const seed of SEEDS) {
   ok(names.includes('mourn_tear'), `mourn_tear FORCED 未必出 (${names.join(',')})`);
   ok(a.filter(Boolean).filter(i => i.name === 'mourn_tear').every(i => i.count >= 1 && i.count <= 2), 'mourn_tear 数量 1-2');
 }
-
-console.log(`nether-structures: ${passed} assertions passed`);
+finish('nether-structures');

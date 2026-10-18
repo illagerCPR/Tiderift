@@ -7,6 +7,7 @@ import {
 } from '../src/core/Portals.js';
 import { matchRecipe } from '../src/core/Crafting.js';
 import '../src/items/ItemDefs.js';
+import { assert, finish } from './harness.mjs';
 
 function fakeWorld() {
   const blocks = new Map();
@@ -29,9 +30,6 @@ function fakeWorld() {
     },
   };
 }
-
-let fails = 0;
-const assert = (name, cond) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`); if (!cond) fails++; };
 
 const OBS = BlockRegistry.getId('obsidian');
 const GLOW = BlockRegistry.getId('glowstone');
@@ -257,6 +255,4 @@ const AP = BlockRegistry.getId('aether_portal');
   }
   assert('⑮ 真实下界 8 落点：站位通行+portal 在场+门厅有开口', ok === spots.length);
 }
-
-console.log(fails ? `FAILED: ${fails}` : 'Portals 逻辑单测全部通过');
-process.exit(fails ? 1 : 0);
+finish('Portals 逻辑单测');

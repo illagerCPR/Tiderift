@@ -11,6 +11,7 @@ import { Chunk, CHUNK_HEIGHT } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { DIMENSIONS } from '../src/core/dimensions.js';
 import '../src/blocks/BlockDefs.js';
+import { fail, finish } from './harness.mjs';
 
 const SEEDS = [42, 20250903];
 const REGION = 3; // 区块范围 [-3,3]，7×7
@@ -20,8 +21,6 @@ const EXPECT_BLOCKS = {
   end: ['end_stone', 'obsidian', 'bedrock', 'end_crystal'], // 柱顶=基岩底座+末影水晶（M2 起替代荧石）
   aether: ['grass_block', 'dirt', 'stone'],
 };
-
-function fail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 function chunkDigest(c) {
   let h1 = 0x811c9dc5, h2 = 0x01000193;
@@ -223,4 +222,4 @@ for (const def of Object.values(DIMENSIONS)) {
 }
 
 if (dimsTested === 0) fail('注册表中没有任何已实现维度（dimensions.js 完整性）');
-console.log(`维度生成确定性回归: 全部通过（${dimsTested} 个维度 × ${SEEDS.length} seeds）`);
+finish(`维度生成确定性回归（${dimsTested} 个维度 × ${SEEDS.length} seeds）`);

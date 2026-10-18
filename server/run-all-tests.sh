@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-all-tests.sh -- 一键回归：结构确定性（无需服务器）→ 清状态 → 起真实服务器 → 跑全部套件 → 停服（套件清单以本脚本内注册块为准，勿写死数量）
+# run-all-tests.sh -- 一键回归：纯 node 套件（无需服务器）→ 清状态 → 起真实服务器 → 跑全部套件 → 停服（套件清单以本脚本内数组/循环为准，勿写死数量）
 # 任何套件失败则整体退出 1；CI 与本地共用同一入口（本地须在 3001 空闲时执行）
 
 set -u
@@ -7,421 +7,68 @@ set -u
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-# 结构生成确定性回归（纯 node，不依赖服务器；放最前避免占用 3001 端口检查）
-echo "=== structure-determinism ==="
-if node tests/structure-determinism.mjs; then
-    echo "structure-determinism: OK"
-else
-    echo "structure-determinism: FAILED"
-    exit 1
-fi
+# ── 纯 node 套件（不依赖服务器，先跑；清单即下面的数组，新增套件只加一行）──
+PURE_NODE_SUITES=(
+    structure-determinism      # 结构生成确定性回归（纯 node，不依赖服务器；放最前避免占用 3001 端口检查）
+    loot-determinism           # T5 战利品/交易表确定性回归（纯 node）
+    cave-determinism           # W3 洞穴生成回归（纯 node）
+    biome-determinism          # 主世界群系回归（纯 node：确定性/在场占比/高山海拔锚点/相邻列连续性）
+    dimension-determinism      # 维度地形生成回归（纯 node：下界等已实现维度的确定性/顺序无关/出生点安全）
+    biome-scale-determinism    # 生物群系规模档位回归（纯 node：small 与旧版逐字节一致/档位单调放大/清洗兜底）
+    portals-unit               # 传送门逻辑回归（纯 node：框校验/填充/拆门清波/自动返程门/账本搜门）
+    nether-fortress            # 下界要塞结构回归（纯 node：维度作用域/记录自洽/布局确定性/区块落地/战利品表）
+    nether-mobs                # 下界怪物回归（纯 node：类型注册/模型一致/生成表分布/中立悬浮标记）
+    nether-steles              # 下界烬火纪基石（世界观批次 N1：ember_stele/mourn_tear/方块 lore/碑文跨维度 dim 完备）
+    nether-structures          # 潮火之炉（世界观批次 N2：选址确定性/落地/三向注册/要塞碑位/FORCED 哀潮之泪）
+    overworld-steles           # 主世界雨土纪基石（世界观批次 W1：moss_stele/page_rain/凋灵骷髅头 lore/雨土纪 3 章）
+    overworld-structures       # 潮冢（世界观批次 W2：河段锚点选址/显式水填/三向注册/陆地零命中/FORCED 雨潮残页）
+    end-islands                # 末地外岛锚点场回归（纯 node：群系在场/密度带宽/锚点确定性/群系方块同源）
+    end-steles                 # 末地·无潮彼岸基石（世界观批次 E1：界纹石碑注册/彼岸碑文 2 章/拾遗者体系 lore/龙留白纪律）
+    end-structures             # 拾遗者石环 + 主岛守望界碑（世界观批次 E2：密度预案/高原门控/三向注册/对拍/守望碑位/不变量绊线）
+    endgame-content            # 终局篇 F1 候潮基石（原初祭坛/原初纹章注册、龙蛋 lore、i18n 盲区键、接线绊线）
+    endgame-tide               # 终局篇 F2 四界同潮演出管线（段配置/包络确定性/还原纯度绊线/零持久化）
+    endgame-finale             # 终局篇 F3 听潮仪式（门控真值表/状态序列化/协议链路/龙影绊线/BUILD 18）
+    whale-barrow               # 鲸骨冢篇 K1（鲸骨块注册/归云章/solve 确定性/选址拒绝/箱表/探索列表绊线）
+    build20-fixes              # 终局演出全维度/永昼泄漏修复）
+    build21-skins              # 修复 B 挂点/皮肤管线接线/i18n 新键）
+    build22-fixes              # Build 22 修复批次（overlay 双层对齐/第一人称手臂缩小/实体体素光染色/皮肤拉取日志绊线/i18n 改版）
+    build23-menu-lan           # Build 23（皮肤面板输入框自适应加宽/鉴权账号收尾清理/主界面 LAN 状态组件）
+    build24-fixes              # Build 24 wip（LAN 默认服务器设置/积雪针叶林树修复；不 bump BUILD）
+    build25-fixes              # Build 25 回归（纯 node：树让位/村庄麦田/单机位多群系全景）
+    build26-fluid              # Build 26 流体模拟回归（纯 node：等级往返/扩散/消退/水岩浆生成/批量通道）
+    build27-doors-beds         # Build 27 床/门形制回归（纯 node：状态 ID 家族/白名单透传/红石切换/几何/碰撞/村庄配对/迁移）
+    build28-block-textures     # B28 方块材质（定向面/多面纠偏 + 状态家族）回归（纯 node）
+    build29-rename-icons       # B29 更名 Tiderift（Beta 版本格式/logo/引用面）+ 创造栏技术方块过滤 + 等轴图标回归（纯 node）
+    build30-water-exit-air     # B30 水中上岸助推 + 氧气原版口径回归（纯 node：物理场景仿真/助推门限/陆上台阶保持/氧气 15 秒/溺水 2HP/s/接线绊线）
+    end-dragon                 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
+    end-gateway                # 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
+    end-city                   # 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）
+    aether-structures          # 天域三结构回归（纯 node：维度作用域/选址漏斗/落地/箱子三向/loot/确定性）
+    aether-mobs                # 天域生物回归（纯 node：类型注册/模型/生成表分布/悬浮被动标记）
+    aether-content             # 天域叙事基石回归（纯 node：方块/物品注册/分类/碑文章节表/石碑注册表/id 追加纪律）
+    aether-boss                # 守誓巨像回归（纯 node：注册/状态机/齐射震地回调/图腾配方）
+    i18n-parity                # 语言包三重校验（纯 node：10 包键集对齐/占位符对齐/静态∪动态键覆盖审计/重复键扫描）
+    leak-guards                # 资源释放回归守卫（纯 node：unloadChunk 三 mesh 释放 / InventoryScreen dispose 接线 / _disposeWorld 单点收口）
+    version-pin                # 版本钉值唯一来源（纯 node：BUILD/VERSION_LABEL 断言 + tests/ 无第二处 BUILD 钉值的元断言）
+    framework-guard            # runner 样板唯一性元断言（纯 node：tests/ 与 server/ 各自只有一份框架，无复制粘贴断言样板）
+    room-persist-replay        # 落盘节流 + 账本回放打包（纯 node：Room 直接实例化，不依赖服务器进程）
+    net-message-guard          # 客户端消息入口防御（纯 node：parseServerMessage 脏输入 + _handle 空值不抛）
+    ray-sphere                 # 共享球体射线纯函数（纯 node：命中/未命中/背向/相切/非单位方向口径 + 帧射线缓存与 UI 阻断清单唯一性）
+    world-mod-index            # 修改方块账本分桶索引与热路径坐标键（纯 node：索引一致性 + 与旧全量扫描实现等价性对照）
+    mob-ray-select             # 怪物球体射线选择 + dispose 复用 + Boss 列表（纯 node：与改前逐字实现随机对拍 + 源码唯一性断言）
+    cw1-mesh-stability         # CW-1 区块边界稳定态收敛（纯 node：缺邻居构建 → 反向标脏 → 重建与参照构建逐顶点一致）
+    ui-audio-smoke             # src/ui + src/audio import 冒烟（纯 node：最小 DOM 壳下全量 import + 跨模块具名导出核对）
+)
 
-# T5 战利品/交易表确定性回归（纯 node）
-echo "=== loot-determinism ==="
-if node tests/loot-determinism.mjs; then
-    echo "loot-determinism: OK"
-else
-    echo "loot-determinism: FAILED"
-    exit 1
-fi
-
-# W3 洞穴生成回归（纯 node）
-echo "=== cave-determinism ==="
-if node tests/cave-determinism.mjs; then
-    echo "cave-determinism: OK"
-else
-    echo "cave-determinism: FAILED"
-    exit 1
-fi
-
-# 主世界群系回归（纯 node：确定性/在场占比/高山海拔锚点/相邻列连续性）
-echo "=== biome-determinism ==="
-if node tests/biome-determinism.mjs; then
-    echo "biome-determinism: OK"
-else
-    echo "biome-determinism: FAILED"
-    exit 1
-fi
-
-# 维度地形生成回归（纯 node：下界等已实现维度的确定性/顺序无关/出生点安全）
-echo "=== dimension-determinism ==="
-if node tests/dimension-determinism.mjs; then
-    echo "dimension-determinism: OK"
-else
-    echo "dimension-determinism: FAILED"
-    exit 1
-fi
-
-# 生物群系规模档位回归（纯 node：small 与旧版逐字节一致/档位单调放大/清洗兜底）
-echo "=== biome-scale-determinism ==="
-if node tests/biome-scale-determinism.mjs; then
-    echo "biome-scale-determinism: OK"
-else
-    echo "biome-scale-determinism: FAILED"
-    exit 1
-fi
-
-# 传送门逻辑回归（纯 node：框校验/填充/拆门清波/自动返程门/账本搜门）
-echo "=== portals-unit ==="
-if node tests/portals-unit.mjs; then
-    echo "portals-unit: OK"
-else
-    echo "portals-unit: FAILED"
-    exit 1
-fi
-
-# 下界要塞结构回归（纯 node：维度作用域/记录自洽/布局确定性/区块落地/战利品表）
-echo "=== nether-fortress ==="
-if node tests/nether-fortress.mjs; then
-    echo "nether-fortress: OK"
-else
-    echo "nether-fortress: FAILED"
-    exit 1
-fi
-
-# 下界怪物回归（纯 node：类型注册/模型一致/生成表分布/中立悬浮标记）
-echo "=== nether-mobs ==="
-if node tests/nether-mobs.mjs; then
-    echo "nether-mobs: OK"
-else
-    echo "nether-mobs: FAILED"
-    exit 1
-fi
-
-# 下界烬火纪基石（世界观批次 N1：ember_stele/mourn_tear/方块 lore/碑文跨维度 dim 完备）
-echo "=== nether-steles ==="
-if node tests/nether-steles.mjs; then
-    echo "nether-steles: OK"
-else
-    echo "nether-steles: FAILED"
-    exit 1
-fi
-
-# 潮火之炉（世界观批次 N2：选址确定性/落地/三向注册/要塞碑位/FORCED 哀潮之泪）
-echo "=== nether-structures ==="
-if node tests/nether-structures.mjs; then
-    echo "nether-structures: OK"
-else
-    echo "nether-structures: FAILED"
-    exit 1
-fi
-
-# 主世界雨土纪基石（世界观批次 W1：moss_stele/page_rain/凋灵骷髅头 lore/雨土纪 3 章）
-echo "=== overworld-steles ==="
-if node tests/overworld-steles.mjs; then
-    echo "overworld-steles: OK"
-else
-    echo "overworld-steles: FAILED"
-    exit 1
-fi
-
-# 潮冢（世界观批次 W2：河段锚点选址/显式水填/三向注册/陆地零命中/FORCED 雨潮残页）
-echo "=== overworld-structures ==="
-if node tests/overworld-structures.mjs; then
-    echo "overworld-structures: OK"
-else
-    echo "overworld-structures: FAILED"
-    exit 1
-fi
-
-# 末地外岛锚点场回归（纯 node：群系在场/密度带宽/锚点确定性/群系方块同源）
-echo "=== end-islands ==="
-if node tests/end-islands.mjs; then
-    echo "end-islands: OK"
-else
-    echo "end-islands: FAILED"
-    exit 1
-fi
-
-# 末地·无潮彼岸基石（世界观批次 E1：界纹石碑注册/彼岸碑文 2 章/拾遗者体系 lore/龙留白纪律）
-echo "=== end-steles ==="
-if node tests/end-steles.mjs; then
-    echo "end-steles: OK"
-else
-    echo "end-steles: FAILED"
-    exit 1
-fi
-
-# 拾遗者石环 + 主岛守望界碑（世界观批次 E2：密度预案/高原门控/三向注册/对拍/守望碑位/不变量绊线）
-echo "=== end-structures ==="
-if node tests/end-structures.mjs; then
-    echo "end-structures: OK"
-else
-    echo "end-structures: FAILED"
-    exit 1
-fi
-
-# 终局篇 F1 候潮基石（原初祭坛/原初纹章注册、龙蛋 lore、i18n 盲区键、接线绊线）
-echo "=== endgame-content ==="
-if node tests/endgame-content.mjs; then
-    echo "endgame-content: OK"
-else
-    echo "endgame-content: FAILED"
-    exit 1
-fi
-
-# 终局篇 F2 四界同潮演出管线（段配置/包络确定性/还原纯度绊线/零持久化）
-echo "=== endgame-tide ==="
-if node tests/endgame-tide.mjs; then
-    echo "endgame-tide: OK"
-else
-    echo "endgame-tide: FAILED"
-    exit 1
-fi
-
-# 终局篇 F3 听潮仪式（门控真值表/状态序列化/协议链路/龙影绊线/BUILD 18）
-echo "=== endgame-finale ==="
-if node tests/endgame-finale.mjs; then
-    echo "endgame-finale: OK"
-else
-    echo "endgame-finale: FAILED"
-    exit 1
-fi
-
-# 鲸骨冢篇 K1（鲸骨块注册/归云章/solve 确定性/选址拒绝/箱表/探索列表绊线）
-echo "=== whale-barrow ==="
-if node tests/whale-barrow.mjs; then
-    echo "whale-barrow: OK"
-else
-    echo "whale-barrow: FAILED"
-    exit 1
-fi
-
-# Build 20 修复与改进（石碑四格/折跃门传送门式/中键取物/创造不激怒/F5 视角 F6 保存/
-# 终局演出全维度/永昼泄漏修复）
-echo "=== build20-fixes ==="
-if node tests/build20-fixes.mjs; then
-    echo "build20-fixes: OK"
-else
-    echo "build20-fixes: FAILED"
-    exit 1
-fi
-
-# Build 21 M1 玩家皮肤（partRects 双模型区域表/原版比例布局/修复 A 俯仰符号/
-# 修复 B 挂点/皮肤管线接线/i18n 新键）
-echo "=== build21-skins ==="
-if node tests/build21-skins.mjs; then
-    echo "build21-skins: OK"
-else
-    echo "build21-skins: FAILED"
-    exit 1
-fi
-
-# Build 22 修复批次（overlay 双层对齐/第一人称手臂缩小/实体体素光染色/皮肤拉取日志绊线/i18n 改版）
-echo "=== build22-fixes ==="
-if node tests/build22-fixes.mjs; then
-    echo "build22-fixes: OK"
-else
-    echo "build22-fixes: FAILED"
-    exit 1
-fi
-
-# Build 23（皮肤面板输入框自适应加宽/鉴权账号收尾清理/主界面 LAN 状态组件）
-echo "=== build23-menu-lan ==="
-if node tests/build23-menu-lan.mjs; then
-    echo "build23-menu-lan: OK"
-else
-    echo "build23-menu-lan: FAILED"
-    exit 1
-fi
-
-# Build 24 wip（LAN 默认服务器设置/积雪针叶林树修复；不 bump BUILD）
-echo "=== build24-fixes ==="
-if node tests/build24-fixes.mjs; then
-    echo "build24-fixes: OK"
-else
-    echo "build24-fixes: FAILED"
-    exit 1
-fi
-
-# Build 25 回归（纯 node：树让位/村庄麦田/单机位多群系全景）
-echo "=== build25-fixes ==="
-if node tests/build25-fixes.mjs; then
-    echo "build25-fixes: OK"
-else
-    echo "build25-fixes: FAILED"
-    exit 1
-fi
-
-# Build 26 流体模拟回归（纯 node：等级往返/扩散/消退/水岩浆生成/批量通道）
-echo "=== build26-fluid ==="
-if node tests/build26-fluid.mjs; then
-    echo "build26-fluid: OK"
-else
-    echo "build26-fluid: FAILED"
-    exit 1
-fi
-
-# Build 27 床/门形制回归（纯 node：状态 ID 家族/白名单透传/红石切换/几何/碰撞/村庄配对/迁移）
-echo "=== build27-doors-beds ==="
-if node tests/build27-doors-beds.mjs; then
-    echo "build27-doors-beds: OK"
-else
-    echo "build27-doors-beds: FAILED"
-    exit 1
-fi
-
-# B28 方块材质（定向面/多面纠偏 + 状态家族）回归（纯 node）
-echo "=== build28-block-textures ==="
-if node tests/build28-block-textures.mjs; then
-    echo "build28-block-textures: OK"
-else
-    echo "build28-block-textures: FAILED"
-    exit 1
-fi
-
-# B29 更名 Tiderift（Beta 版本格式/logo/引用面）+ 创造栏技术方块过滤 + 等轴图标回归（纯 node）
-echo "=== build29-rename-icons ==="
-if node tests/build29-rename-icons.mjs; then
-    echo "build29-rename-icons: OK"
-else
-    echo "build29-rename-icons: FAILED"
-    exit 1
-fi
-
-# B30 水中上岸助推 + 氧气原版口径回归（纯 node：物理场景仿真/助推门限/陆上台阶保持/氧气 15 秒/溺水 2HP/s/接线绊线）
-echo "=== build30-water-exit-air ==="
-if node tests/build30-water-exit-air.mjs; then
-    echo "build30-water-exit-air: OK"
-else
-    echo "build30-water-exit-air: FAILED"
-    exit 1
-fi
-
-# 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
-echo "=== end-dragon ==="
-if node tests/end-dragon.mjs; then
-    echo "end-dragon: OK"
-else
-    echo "end-dragon: FAILED"
-    exit 1
-fi
-
-# 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
-echo "=== end-gateway ==="
-if node tests/end-gateway.mjs; then
-    echo "end-gateway: OK"
-else
-    echo "end-gateway: FAILED"
-    exit 1
-fi
-
-# 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）
-echo "=== end-city ==="
-if node tests/end-city.mjs; then
-    echo "end-city: OK"
-else
-    echo "end-city: FAILED"
-    exit 1
-fi
-
-# 天域三结构回归（纯 node：维度作用域/选址漏斗/落地/箱子三向/loot/确定性）
-echo "=== aether-structures ==="
-if node tests/aether-structures.mjs; then
-    echo "aether-structures: OK"
-else
-    echo "aether-structures: FAILED"
-    exit 1
-fi
-
-# 天域生物回归（纯 node：类型注册/模型/生成表分布/悬浮被动标记）
-echo "=== aether-mobs ==="
-if node tests/aether-mobs.mjs; then
-    echo "aether-mobs: OK"
-else
-    echo "aether-mobs: FAILED"
-    exit 1
-fi
-
-# 天域叙事基石回归（纯 node：方块/物品注册/分类/碑文章节表/石碑注册表/id 追加纪律）
-echo "=== aether-content ==="
-if node tests/aether-content.mjs; then
-    echo "aether-content: OK"
-else
-    echo "aether-content: FAILED"
-    exit 1
-fi
-
-# 守誓巨像回归（纯 node：注册/状态机/齐射震地回调/图腾配方）
-echo "=== aether-boss ==="
-if node tests/aether-boss.mjs; then
-    echo "aether-boss: OK"
-else
-    echo "aether-boss: FAILED"
-    exit 1
-fi
-
-# 语言包三重校验（纯 node：10 包键集对齐/占位符对齐/静态∪动态键覆盖审计/重复键扫描）
-echo "=== i18n-parity ==="
-if node tests/i18n-parity.mjs; then
-    echo "i18n-parity: OK"
-else
-    echo "i18n-parity: FAILED"
-    exit 1
-fi
-
-# 资源释放回归守卫（纯 node：unloadChunk 三 mesh 释放 / InventoryScreen dispose 接线 / _disposeWorld 单点收口）
-echo "=== leak-guards ==="
-if node tests/leak-guards.mjs; then
-    echo "leak-guards: OK"
-else
-    echo "leak-guards: FAILED"
-    exit 1
-fi
-
-# 版本钉值唯一来源（纯 node：BUILD/VERSION_LABEL 断言 + tests/ 无第二处 BUILD 钉值的元断言）
-echo "=== version-pin ==="
-if node tests/version-pin.mjs; then
-    echo "version-pin: OK"
-else
-    echo "version-pin: FAILED"
-    exit 1
-fi
-
-# 落盘节流 + 账本回放打包（纯 node：Room 直接实例化，不依赖服务器进程）
-echo "=== room-persist-replay ==="
-if node tests/room-persist-replay.mjs; then
-    echo "room-persist-replay: OK"
-else
-    echo "room-persist-replay: FAILED"
-    exit 1
-fi
-
-# 客户端消息入口防御（纯 node：parseServerMessage 脏输入 + _handle 空值不抛）
-echo "=== net-message-guard ==="
-if node tests/net-message-guard.mjs; then
-    echo "net-message-guard: OK"
-else
-    echo "net-message-guard: FAILED"
-    exit 1
-fi
-
-# 共享球体射线纯函数（纯 node：命中/未命中/背向/相切/非单位方向口径 + 帧射线缓存与 UI 阻断清单唯一性）
-echo "=== ray-sphere ==="
-if node tests/ray-sphere.mjs; then
-    echo "ray-sphere: OK"
-else
-    echo "ray-sphere: FAILED"
-    exit 1
-fi
-
-# 修改方块账本分桶索引与热路径坐标键（纯 node：索引一致性 + 与旧全量扫描实现等价性对照）
-echo "=== world-mod-index ==="
-if node tests/world-mod-index.mjs; then
-    echo "world-mod-index: OK"
-else
-    echo "world-mod-index: FAILED"
-    exit 1
-fi
-
-# 怪物球体射线选择 + dispose 复用 + Boss 列表（纯 node：与改前逐字实现随机对拍 + 源码唯一性断言）
-echo "=== mob-ray-select ==="
-if node tests/mob-ray-select.mjs; then
-    echo "mob-ray-select: OK"
-else
-    echo "mob-ray-select: FAILED"
-    exit 1
-fi
+for t in "${PURE_NODE_SUITES[@]}"; do
+    echo "=== $t ==="
+    if node "tests/$t.mjs"; then
+        echo "$t: OK"
+    else
+        echo "$t: FAILED"
+        exit 1
+    fi
+done
 
 # 测试非幂等：先确认 3001 空闲，再清空运行时数据保证干净状态
 if (exec 3<>/dev/tcp/127.0.0.1/3001) 2>/dev/null; then

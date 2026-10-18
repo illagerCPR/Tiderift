@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -32,6 +32,16 @@ jobs:
       - name: Install server dependencies
         run: npm ci --no-fund --no-audit
         working-directory: server
+
+      - name: Syntax check all JS sources (node --check)
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+            count=$((count + 1))
+          done < <(find src server tests -type f \( -name '*.js' -o -name '*.mjs' \) -not -path '*/node_modules/*' -print0)
+          echo "node --check passed: $count files"
 
       - name: Build frontend
         run: npm run build

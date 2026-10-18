@@ -17,16 +17,8 @@ import { MobManager } from '../src/entity/MobManager.js';
 import { BossBar } from '../src/ui/BossBar.js';
 import { BLOCK_CENTER } from '../src/player/constants.js';
 import { tName } from '../src/i18n/name.js';
+import { softOk as ok, finish } from './harness.mjs';
 
-let passed = 0;
-const failures = [];
-function ok(cond, msg) {
-  passed++;
-  if (!cond) {
-    failures.push(msg);
-    console.error('FAIL: ' + msg);
-  }
-}
 const near = (a, b, eps) => Math.abs(a - b) <= eps;
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 function countOf(text, needle) { return text.split(needle).length - 1; }
@@ -524,13 +516,4 @@ const mmSrc = srcOf('../src/entity/MobManager.js');
 }
 
 // ── 汇总 ──
-const failed = failures.length;
-const total = passed;
-if (failed === 0) {
-  console.log('mob-ray-select: ' + total + ' 断言全部通过');
-  console.log('RESULT: ALL PASS — ' + total + '/' + total);
-} else {
-  console.log('mob-ray-select: ' + (total - failed) + '/' + total + ' 断言通过，' + failed + ' 失败');
-  console.log('RESULT: FAIL — ' + failed + '/' + total + ' assertions failed');
-  process.exitCode = 1;
-}
+finish('mob-ray-select');

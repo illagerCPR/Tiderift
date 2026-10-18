@@ -6,13 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { Room } from './room.js';
 import * as store from './store.js';
+import { assert, finish, counts } from './test-lib.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-world-'));
-const results = [];
-function assert(name, cond) {
-  results.push(!!cond);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
-}
 
 // 造一个房间并写入若干状态（onSave 用临时目录）
 const room = new Room('测试世界', (r) => store.saveRoom(r, dir));
@@ -55,6 +51,6 @@ assert('空房间名回退 default', store.roomFileName('') === 'default');
 assert('中文房间名保留', store.roomFileName('测试世界') === '测试世界');
 
 fs.rmSync(dir, { recursive: true, force: true });
-const failCount = results.filter((x) => !x).length;
-console.log(`---\n${results.length - failCount}/${results.length} PASS`);
-process.exit(failCount ? 1 : 0);
+const { total, passed } = counts();
+console.log(`---\n${passed}/${total} PASS`);
+finish();

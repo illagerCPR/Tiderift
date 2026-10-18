@@ -11,6 +11,8 @@ import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { registerStructureType } from '../src/world/structures/StructureManager.js';
 import { fillBox } from '../src/world/structures/StructureKit.js';
 import '../src/blocks/BlockDefs.js';
+import { pass, fail, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 const SEED = 20250903;
 const REGION = 16; // 区块范围 [-16,16]，33×33=1089 块（cell=16 的锚点抖动跨 16 区块，区域须盖满候选）
@@ -73,8 +75,6 @@ function readBlock(chunks, wx, wy, wz) {
   return c.get(wx - cx * 16, wy, wz - cz * 16);
 }
 
-function fail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
-
 // ── ① 同 seed 双次生成字节一致 ─────────────────────────────────────────
 const a = genRegion('forward');
 const b = genRegion('forward');
@@ -82,7 +82,7 @@ const da = regionDigest(a.chunks), db = regionDigest(b.chunks);
 if (da.total !== db.total || da.h1 !== db.h1 || da.h2 !== db.h2) {
   fail(`双次生成不一致: ${JSON.stringify(da)} vs ${JSON.stringify(db)}`);
 }
-console.log(`PASS ① 确定性: ${da.total} 字节, 两次一致`);
+pass(`① 确定性: ${da.total} 字节, 两次一致`);
 
 // ── ② 生成顺序无关 ─────────────────────────────────────────────────────
 const r = genRegion('reverse');
@@ -90,7 +90,7 @@ const dr = regionDigest(r.chunks);
 if (dr.total !== da.total || dr.h1 !== da.h1 || dr.h2 !== da.h2) {
   fail(`顺序相关: 正序 ${JSON.stringify(da)} vs 逆序 ${JSON.stringify(dr)}`);
 }
-console.log('PASS ② 顺序无关: 正序/逆序字节一致');
+pass('② 顺序无关: 正序/逆序字节一致');
 
 // ── ③ 跨区块结构连续 ───────────────────────────────────────────────────
 const worldMin = -REGION * 16, worldMax = REGION * 16 + 15;
@@ -110,7 +110,7 @@ for (const rec of recs) {
     checked++;
   }
 }
-console.log(`PASS ③ 跨区块连续: ${recs.length} 个锚点平台逐列检查 ${checked} 列无断裂`);
+pass(`③ 跨区块连续: ${recs.length} 个锚点平台逐列检查 ${checked} 列无断裂`);
 
 // ── ④ 单区块生成耗时预算 ───────────────────────────────────────────────
 {
@@ -120,7 +120,6 @@ console.log(`PASS ③ 跨区块连续: ${recs.length} 个锚点平台逐列检�
   gen.generateChunk(c);
   const ms = performance.now() - t0;
   if (ms > 200) fail(`单区块生成耗时异常: ${ms.toFixed(1)}ms`);
-  console.log(`PASS ④ 性能: 单区块生成 ${ms.toFixed(1)}ms（含测试结构扫描）`);
+  pass(`④ 性能: 单区块生成 ${ms.toFixed(1)}ms（含测试结构扫描）`);
 }
-
-console.log('结构生成确定性回归: 全部通过');
+finish('结构生成确定性回归');

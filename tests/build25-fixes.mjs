@@ -10,12 +10,8 @@ import { TerrainGenerator } from '../src/world/terrain.js';
 import { Chunk } from '../src/core/Chunk.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 
 // ── ① 树让位结构 ──
@@ -157,5 +153,4 @@ function farmWaterAt(at, nameOf, rec) {
     ok(settings.includes(k), `完整档子项默认全开: ${k.split(':')[0]}`);
   }
 }
-
-console.log(`PASS build25-fixes: ${passed} 断言`);
+finish('build25-fixes');

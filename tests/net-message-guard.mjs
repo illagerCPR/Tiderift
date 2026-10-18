@@ -3,13 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseServerMessage } from '../src/net/netMessage.js';
+import { assert, finish } from './harness.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const results = [];
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 // ① parseServerMessage：脏包/空值/非对象/无字符串 t 一律 null
 const REJECTS = ['null', '[]', '1', '"x"', '{}', '{"t":1}', '{bad json', '', 'true', 'null null', '[{"t":"chat"}]'];
@@ -54,7 +50,4 @@ assert('onmessage 内无裸 JSON.parse 残留', !/ws\.onmessage[\s\S]{0,240}?JSO
 // ⑤ S11：客户端握手上报 PROTOCOL_VERSION（不得回落到字面量版本号）
 assert('HELLO 上报 version: PROTOCOL_VERSION', src.includes('version: PROTOCOL_VERSION'));
 assert('HELLO 无字面量 version: \'0.1\'', !src.includes("version: '0.1'"));
-
-const failed = results.filter(([, pass]) => !pass).length;
-console.log(`---\n${results.length - failed}/${results.length} PASS`);
-process.exit(failed ? 1 : 0);
+finish('net-message-guard');

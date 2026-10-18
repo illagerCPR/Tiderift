@@ -12,12 +12,7 @@ import { BlockSVGDefinitions } from '../src/blocks/BlockDefs.js';
 import { ItemSVGDefinitions } from '../src/items/ItemDefs.js';
 import { getItemCategory } from '../src/core/ItemCategories.js';
 import { STELE_CHAPTERS, STELE_BLANK } from '../src/world/steles.js';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 烬纹石碑 ──
 const stele = BlockRegistry.getByName('ember_stele');
@@ -70,5 +65,4 @@ ok(STELE_BLANK && typeof STELE_BLANK.title === 'string' && Array.isArray(STELE_B
 for (const id of Object.keys(STELE_CHAPTERS)) {
   ok(!id.includes(','), `章节 id 不含 ','（注册表键格式安全）: ${id}`);
 }
-
-console.log(`nether-steles: ${passed} assertions passed`);
+finish('nether-steles');

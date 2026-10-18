@@ -3,13 +3,8 @@ import { MobTypes, generateMobSkinSVGs } from '../src/entity/MobTextures.js';
 import { Mob } from '../src/entity/Mob.js';
 import { pickNetherSpawn } from '../src/entity/MobManager.js';
 import { World } from '../src/core/World.js';
-
-let pass = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  pass++;
-  console.log('PASS ' + msg);
-}
+import { ok, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 // ① 类型注册与模型一致性
 for (const name of ['zombified_piglin', 'wither_skeleton', 'blaze', 'mourn_howler']) {
@@ -83,5 +78,4 @@ for (const name of Object.keys(MobTypes)) {
   const m = new Mob(name, world);
   ok(m.typeName === name && m.maxHealth > 0 && m.width > 0 && m.height > 0, `Mob(${name}) 可构造且属性齐全`);
 }
-
-console.log(`下界怪物回归: 全部通过（${pass} 断言）`);
+finish('下界怪物回归');

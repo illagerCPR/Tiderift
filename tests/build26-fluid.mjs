@@ -11,12 +11,8 @@ import '../src/blocks/BlockDefs.js';
 import { FluidSim, fluidInfo, fluidIdAt, WATER_MAX_FLOW, LAVA_MAX_FLOW } from '../src/core/FluidSim.js';
 import { NetworkManager } from '../src/net/NetworkManager.js';
 import { MSG } from '../server/protocol.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 
 const ID = {
@@ -291,5 +287,4 @@ const lvlAt = (world, x, y, z) => {
   ok(duringValue === false || duringValue === true, '模拟写入路径可控');
   ok(world.fluidSim.writing === false, '模拟空闲时 writing 复位');
 }
-
-console.log(`build26-fluid: ${passed} assertions passed`);
+finish('build26-fluid');

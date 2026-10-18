@@ -11,14 +11,14 @@ import { ItemRegistry } from '../src/core/ItemRegistry.js';
 import { chestLoot, villagerTrades } from '../src/world/loot.js';
 import '../src/blocks/BlockDefs.js';
 import '../src/items/ItemDefs.js';
+import { pass, fail, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 const SEED = 20250903;
 const CHEST_ID = BlockRegistry.getId('chest');
 const TABLE_NAMES = new Set([
   'village_house', 'village_big', 'stronghold_hub', 'stronghold_library', 'stronghold_storage',
 ]);
-
-function fail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 function nameExists(name) {
   return !!(ItemRegistry.getByName(name) || BlockRegistry.getByName(name));
@@ -40,7 +40,7 @@ for (const table of TABLE_NAMES) {
 const c1 = chestLoot(SEED, 'stronghold_storage', 100, 20, 100);
 const c2 = chestLoot(SEED, 'stronghold_storage', 101, 20, 100);
 if (JSON.stringify(c1) === JSON.stringify(c2)) fail('相邻坐标战利品完全相同（坐标未参与种子）');
-console.log('PASS ① chestLoot: 5 张表确定性一致、27 槽、物品/数量合法、相邻坐标去相关');
+pass('① chestLoot: 5 张表确定性一致、27 槽、物品/数量合法、相邻坐标去相关');
 
 // ── ② villagerTrades 确定性与结构 ─────────────────────────────────────
 {
@@ -57,7 +57,7 @@ console.log('PASS ① chestLoot: 5 张表确定性一致、27 槽、物品/数�
   const diverge = new Set();
   for (let i = 0; i < 24; i++) diverge.add(JSON.stringify(villagerTrades(SEED, 1000 + i)));
   if (diverge.size < 20) fail(`24 个 tradeSeed 只产生 ${diverge.size} 种交易表（去相关性不足）`);
-  console.log(`PASS ② villagerTrades: 确定性一致、6 条合法、24 seed 产生 ${diverge.size} 种表`);
+  pass(`② villagerTrades: 确定性一致、6 条合法、24 seed 产生 ${diverge.size} 种表`);
 }
 
 // ── ③/④ 结构箱子注册：坐标=chest 方块、表名合法、两端一致 ────────────
@@ -99,7 +99,7 @@ const vals1 = [...r1.sm.chests.entries()].sort((a, b) => a[0].localeCompare(b[0]
 const vals2 = [...r2.sm.chests.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(e => e.join('=')).join('|');
 if (keys1 !== keys2 || vals1 !== vals2) fail('两端独立求解的 chests 注册表不一致');
 if (r1.sm.chests.size !== chestCount) fail(`注册表 ${r1.sm.chests.size} 项 ≠ 声明总数 ${chestCount}`);
-console.log(`PASS ③④ 结构箱子: ${r1.found.length} 个结构、${chestCount} 个箱子坐标/表名/方块三向一致，两端注册表逐项一致`);
+pass(`③④ 结构箱子: ${r1.found.length} 个结构、${chestCount} 个箱子坐标/表名/方块三向一致，两端注册表逐项一致`);
 
 // ── ⑤ W2:建筑归属查询与要塞环带点 ─────────────────────────────────────
 {
@@ -120,7 +120,6 @@ console.log(`PASS ③④ 结构箱子: ${r1.found.length} 个结构、${chestCou
     const hit = pts.some(p => Math.abs(p.x - rec.ax) <= 8 && Math.abs(p.z - rec.az) <= 8);
     if (!hit) fail(`要塞锚点 (${rec.ax},${rec.az}) 不在 ringPoints 内（公式漂移）`);
   }
-  console.log(`PASS ⑤ 建筑归属: structureNameAt 正确、ringPoints 3 点与 ${strongholds.length} 座要塞锚点一致`);
+  pass(`⑤ 建筑归属: structureNameAt 正确、ringPoints 3 点与 ${strongholds.length} 座要塞锚点一致`);
 }
-
-console.log('T5 战利品确定性回归: 全部通过');
+finish('T5 战利品确定性回归');

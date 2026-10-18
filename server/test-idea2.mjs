@@ -2,14 +2,11 @@
 // 用法：node server/test-idea2.mjs   （先启动 server/index.mjs，端口 3001；跑批前清空 server/world/ 与 server/config.json）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
+import { assert, finish, counts, configure } from './test-lib.mjs';
+
+configure({ style: 'spaced' });
 
 const URL = 'ws://127.0.0.1:3001/ws';
-const results = [];
-
-function assert(name, cond, extra = '') {
-  results.push([name, !!cond]);
-  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
-}
 
 function connect(name) {
   return new Promise((resolve, reject) => {
@@ -150,6 +147,6 @@ function waitFor(p, pred, timeout = 3000) {
   a.ws.close(); b.ws.close();
 }
 
-const failed = results.filter(([, ok]) => !ok);
-console.log(`\nIdea-2 回归：${results.length - failed.length}/${results.length} 通过`);
-if (failed.length) { console.log('失败项：'); for (const [name] of failed) console.log('  - ' + name); process.exit(1); }
+const { total, passed } = counts();
+console.log(`\nIdea-2 回归：${passed}/${total} 通过`);
+finish();

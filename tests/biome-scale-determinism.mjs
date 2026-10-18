@@ -8,14 +8,10 @@ import { TerrainGenerator } from '../src/world/terrain.js';
 import { Chunk } from '../src/core/Chunk.js';
 import { BIOME_SCALES, DEFAULT_BIOME_SCALE, safeBiomeScale } from '../src/world/biomes.js';
 import '../src/blocks/BlockDefs.js';
+import { check, finish } from './harness.mjs';
 
 const SEED = 42;
 const SAMPLE_STEP_X = 7, SAMPLE_STEP_Z = 11, SAMPLE_RANGE = 2000;
-let pass = 0, fail = 0;
-function check(name, ok, detail = '') {
-  if (ok) { pass++; console.log(`  ✓ ${name}${detail ? ' — ' + detail : ''}`); }
-  else { fail++; console.error(`  ✗ ${name}${detail ? ' — ' + detail : ''}`); }
-}
 
 // 采样网格：固定步长覆盖 ±2000（覆盖群系特征周期的多倍，避免小窗口假阴性）
 function sampleBiomes(gen) {
@@ -93,6 +89,4 @@ console.log('=== biome-scale-determinism ===');
   const ms = performance.now() - t0;
   check('④b 采样耗时预算', ms < 3000, `${ms.toFixed(0)}ms / ${sampleBiomes(new TerrainGenerator(SEED, 'huge')).length} 点（阈值 3000ms）`);
 }
-
-console.log(`=== 结果: ${pass} 通过, ${fail} 失败 ===`);
-process.exit(fail > 0 ? 1 : 0);
+finish('biome-scale-determinism');

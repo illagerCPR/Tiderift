@@ -7,7 +7,7 @@
 
 ## 环境要求
 
-- Node.js 18+（开发用 24 验证）
+- Node.js 18+（根与 `server/package.json` 的 `engines.node` 均为 `>=18`，下限来自 server 侧用到的全局 `fetch` 与 `AbortSignal.timeout`（Node 17.3+）；Vite 5 自身声明 `^18.0.0 || >=20.0.0`，19.x 属未验证的过渡版本，实际使用 18 / 20 / 22 / 24）。开发与 CI 固定使用 Node 24，版本源为根目录 `.nvmrc`（CI 经 `node-version-file` 读取，不再硬编码）。
 - npm
 - bash：`start.sh` 与 `server/run-all-tests.sh` 都是 bash 脚本；Windows 原生 cmd / PowerShell 下无 bash 会直接失败，需在 Git Bash / WSL 中执行（或手动 `bash server/run-all-tests.sh`）。
 
@@ -79,8 +79,11 @@ Tiderift/
 │   ├── protocol.js       # 消息类型常量（浏览器与服务器共用）
 │   ├── client-sim.mjs    # 双端验证模拟客户端
 │   ├── test-*.mjs        # server 侧回归测试套件（清单以 run-all-tests.sh 为准）
-│   └── run-all-tests.sh  # 一键跑批（CI 同款入口）
+│   ├── test-lib.mjs      # server 侧唯一 runner 框架（断言 / 汇总 / 退出收口）
+│   └── run-all-tests.sh  # 一键跑批（CI 同款入口；tests 侧套件清单见脚本内 PURE_NODE_SUITES 数组）
 ├── tests/                # 不依赖服务器的纯 node 回归套件（地形/结构/维度/群系/本地化等确定性断言）
+│   ├── harness.mjs       # tests 侧唯一 runner 框架（断言 / 汇总 / 退出收口）
+│   └── framework-guard.mjs # 元断言：两侧 runner 样板唯一化（无第二份样板、套件都 import 框架）
 ├── docs/
 │   ├── development.md                    # 本文档
 │   ├── lan-multiplayer-design.md         # 局域网联机设计文档（协议表 + 分阶段路线）
@@ -103,7 +106,7 @@ Tiderift/
 │       ├── rendering-lighting.md         # 渲染 / 光照 / 材质 / 网格构建 / UI 图标链
 │       ├── multiplayer.md                # 联机协议 / 插值 / 面板 / 玩家档案 / 房间开关
 │       └── ui-misc.md                    # 菜单 / 粒子 / UI / 音频 / 更名引用面
-├── .github/workflows/ci.yml  # CI：build + 全套件
+├── .github/workflows/ci.yml  # CI：全量 node --check + build + 全套件
 ├── start.cmd             # 开发/联机服务器启停脚本（Windows）
 ├── start.sh              # 开发/联机服务器启停脚本（Linux/macOS，对标 start.cmd）
 └── .gitignore
@@ -128,6 +131,19 @@ Tiderift/
 ```
 
 等价于 `npm test`；任一套件失败整体退出 1，跑前须 3001 空闲，脚本会在跑批前后清理测试世界与鉴权账号。**套件清单与计数以脚本输出为准，本文档不维护数量**（`tests/` 侧套件在起服前先跑，server 侧套件在 3001 就绪后逐个跑，最后停服）。
+
+### 共享 runner 框架
+
+两侧套件各自只有**一份** runner 框架，套件里禁止再写本地断言样板或 `process.exit`：
+
+| 侧 | 框架 | 约定 |
+|---|---|---|
+| `tests/` | `tests/harness.mjs` | `import { ok, pass, fail, assert, check, configure, finish } from './harness.mjs'`；`assert(name, cond, extra)` 累积式逐条打印、末尾 `finish(label)` 结算退出；`ok(cond, msg)` 是 fail-fast 且成功默认静默（迁移前逐条打印的套件在顶部 `configure({ verbose: true })`） |
+| `server/` | `server/test-lib.mjs` | `import { assert, ok, pass, fail, configure, counts, finish } from './test-lib.mjs'`；`configure({ style })` 保持各套件既有输出风格；socket 关闭态下的套件用 `finish({ natural: true })` 走 `process.exitCode`（Windows libuv 下直接 exit 会崩） |
+
+`tests/framework-guard.mjs` 是静态元断言：两侧除框架文件外不得出现 `function ok|assert|check|fail|pass` 定义、不得出现复制粘贴的 `console.error('FAIL: …)` 样板，且每个 `tests/*.mjs` / `server/test-*.mjs` 都必须 import 本侧框架。
+
+**新增一个套件**：新建 `tests/<名>.mjs`（或 `server/test-<名>.mjs`）→ import 本侧框架 → 在 `server/run-all-tests.sh` 的 `PURE_NODE_SUITES` 数组（tests 侧）或 server 侧 for 循环清单里加一行/一项。两处清单就是唯一注册点。
 
 ### server 侧套件
 
@@ -154,7 +170,7 @@ Tiderift/
 
 ### tests/ 侧套件
 
-`tests/` 下有大量不依赖服务器的纯 node 套件，覆盖地形与结构生成确定性、生物群系规模、维度与传送门、战利品与交易表、i18n 键集对齐（i18n-parity）、资源释放守卫（leak-guards）、版本钉值（version-pin）、世界落盘节流与账本回放打包（room-persist-replay）、客户端消息入口防御（net-message-guard）等，由 `run-all-tests.sh` 统一调度；具体清单同样以脚本输出为准。
+`tests/` 下有大量不依赖服务器的纯 node 套件，覆盖地形与结构生成确定性、生物群系规模、维度与传送门、战利品与交易表、i18n 键集对齐（i18n-parity）、资源释放守卫（leak-guards）、版本钉值（version-pin）、世界落盘节流与账本回放打包（room-persist-replay）、客户端消息入口防御（net-message-guard）、CW-1 区块边界稳定态收敛（cw1-mesh-stability）、`src/ui` + `src/audio` import 冒烟（ui-audio-smoke）、runner 样板唯一化元断言（framework-guard）等，由 `run-all-tests.sh` 统一调度；具体清单同样以脚本输出为准。
 
 ### 注意事项
 
@@ -162,6 +178,6 @@ Tiderift/
 
 ### CI
 
-`.github/workflows/ci.yml`：push 到 master / PR / 手动触发时，在 Node 24 上 `npm ci`（前端与 server 各一次）→ `npm run build` → `./server/run-all-tests.sh`。CI 不写死套件与断言数量；`node --check` 级的语法问题由 build 与套件加载覆盖。
+`.github/workflows/ci.yml`：push 到 master / PR / 手动触发时，在 `.nvmrc` 指定的 Node（当前 24）上 `npm ci`（前端与 server 各一次）→ 对 `src/`、`server/`、`tests/` 下全部 `.js` / `.mjs` 跑一遍 `node --check`（语法级全量兜底，任一文件失败即整步失败）→ `npm run build` → `./server/run-all-tests.sh`。CI 不写死套件与断言数量。
 
 批次踩坑备忘见 `docs/agent-notes/`（按主题分文件，改动对应子系统前先读）；局域网联机设计见 `docs/lan-multiplayer-design.md`。

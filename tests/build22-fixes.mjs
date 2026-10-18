@@ -7,18 +7,14 @@
 //     + 怪物/本地玩家/远端玩家/第一人称手臂四处接线绊线
 //   ④ 服务器皮肤拉取管理日志：handleSkinLookup 返回 {code,note} + 路由 logAdmin('skin-fetch') 绊线
 //   ⑤ i18n「Minecraft®: Java Edition档案用户名」10 包在场（旧键清除）
-//   ⑥ BUILD = 23
+//   ⑥ BUILD 号随批次递增，唯一来源 src/version.js（E13：本注释不再钉数字，防漂移）
 import { readFileSync } from 'fs';
 import * as THREE from 'three';
 import { applySkinToRig, partRects } from '../src/entity/PlayerSkin.js';
 import { buildParts } from '../src/entity/RemotePlayer.js';
 import { sampleEntityLight, applyEntityLight } from '../src/render/entityLight.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -198,5 +194,4 @@ function buildRig(model) {
   ok(srcOf('../src/ui/SkinScreen.js').includes("t('Minecraft®: Java Edition档案用户名')"),
     'SkinScreen 占位符引用新键');
 }
-
-console.log(`build22-fixes: ${passed} assertions ALL PASS`);
+finish('build22-fixes');

@@ -12,13 +12,8 @@ import { updateColossusAI } from '../src/entity/StormColossusAI.js';
 import { World } from '../src/core/World.js';
 import { matchRecipe } from '../src/core/Crafting.js';
 import { NAME_I18N } from '../src/i18n/names.js';
-
-let pass = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  pass++;
-  console.log('PASS ' + msg);
-}
+import { ok, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 const world = new World(42, 'aether');
 const player = { position: new THREE.Vector3(0.5, 97, 0.5), dead: false, hurt: () => false };
@@ -116,5 +111,4 @@ ok(boss.colossusState === 'storm', '血线回升不回退阶段（只进不退�
   ok(out && (out.name || out) === 'storm_totem' || (out && out.name === 'storm_totem'),
     `风暴图腾配方匹配（实测 ${JSON.stringify(out)}）`);
 }
-
-console.log(`守誓巨像回归: 全部通过（${pass} 断言）`);
+finish('守誓巨像回归');

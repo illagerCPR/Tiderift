@@ -15,12 +15,7 @@ import { getAllRecipes } from '../src/core/Crafting.js';
 import { STELE_CHAPTERS } from '../src/world/steles.js';
 import { NAME_I18N } from '../src/i18n/names.js';
 import { readFileSync } from 'fs';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 原初祭坛 ──
 const altar = BlockRegistry.getByName('primordial_altar');
@@ -103,5 +98,4 @@ const waitText = JSON.stringify(waiting);
 ok(!waitText.includes('龙') && !waitText.includes('一整片海'), '候潮章不写龙、不写终章内容（终章走纹章 lore，不变量 7）');
 ok(waitText.includes('潮的出生地'), '候潮章承载去向引导（去潮的出生地听完断句）');
 ok(emblem.lore.every((l) => l.length > 0) && egg.lore.every((l) => l.length > 0), 'lore 行文非空（行文纪律兜底）');
-
-console.log(`endgame-content: ${passed} assertions passed`);
+finish('endgame-content');

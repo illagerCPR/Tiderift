@@ -14,12 +14,8 @@ import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import '../src/blocks/BlockDefs.js'; // 副作用导入：方块注册表填充
 import { Physics } from '../src/player/Physics.js';
 import { updateAirSupply, AIR_MAX_TICKS, DROWN_INTERVAL, DROWN_DAMAGE } from '../src/core/AirSupply.js';
+import { ok, finish } from './harness.mjs';
 
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
 function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-8'); }
 const approx = (a, b, eps) => Math.abs(a - b) <= eps;
 
@@ -203,5 +199,4 @@ function makeEntity(x, y, z, vx = 0, vy = 0, vz = 0) {
   ok(airSrc.includes("entity.airTicks -= dt * 20"), '耗氧按 20 tick/s 折算');
   ok(airSrc.includes('AIR_REGEN_PER_SEC'), '回氧速度常量在位');
 }
-
-console.log(`build30-water-exit-air: ${passed} assertions passed`);
+finish('build30-water-exit-air');

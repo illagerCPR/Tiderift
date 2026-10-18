@@ -26,8 +26,9 @@
 | 4 | README 出仓（用户向化） | E3 | 已完成（`2f99b3f`） |
 | 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 已完成（`4520a7b`，CI run 39091785891 绿） |
 | 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（`d908532`，CI run 39120118156 绿） |
-| 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 待启动 |
+| 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 进行中 |
 | 8 | F3 Game.js 拆分（先只读可行性评估，确认后逐域迁移） | F3 | 待启动 |
+| 9 | 既有缺陷 H1：准星指向「放置邻格落在玩家自身 AABB 内」的方块时右键被吞（轮 6 发现，非回归） | H1 | 已排期（用户 2026-10-18 定轮 9） |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
 
 ## 三、轮 1：服务器安全加固（S1–S5）
@@ -172,3 +173,43 @@ export function raySphereHit(ox, oy, oz, dx, dy, dz, cx, cy, cz, radius) // → 
 - 手持非方块（弓 / 末影之眼）且准星所指方块的「放置邻格」落在玩家自身 AABB 内时，右键会被 `Game.handleMouseInput` 的放置重叠守卫静默吞掉——`src/player/Game.js` 约 1884-1895 行的守卫条件只判 `sel && hit`，在 `BlockRegistry.getByName(sel.name)` 判断（1897 行）**之前**就 `return`，于是永远走不到 1938 行的弓蓄力分支。表现为「盯着脚边方块时弓无法蓄力 / 末影之眼掷不出」。
 - 归属：`git show HEAD:src/player/Game.js` 同区结构一致 → **轮前既有行为，非本轮回归**；按范围纪律本轮未改（最小修复＝把重叠检查移进 `if (blockDef)` 分支内，仅对真正要放置的方块生效）。
 - 证据：浏览器变体对照（`.run/round6-f11-diag2.mjs`）——`selectedBlock` 非空时同一 `handleMouseInput` 调用不进入蓄力；置空后立刻进入（无异常、无右键消费）。
+
+## 十、轮 7 · 工程与覆盖（E4 E5 E6 E8 E9 E12 E13）
+
+三路并行（含调度方两路），第二波单路补覆盖；文件边界互斥，同一文件只有一名写入者。
+
+| 路 | 负责条目 | 独占文件 |
+|---|---|---|
+| A | E5 tests 侧共享框架：新建 \`tests/harness.mjs\`，46 个 \`tests/*.mjs\` 全部迁移（删各自 runner 与退出样板）；E13 \`tests/build22-fixes.mjs:10\` 头注释 BUILD 号漂移 | \`tests/*.mjs\`（不含 \`tests/framework-guard.mjs\` 与第二波新增文件） |
+| B | E5 server 侧共享框架：新建 \`server/test-lib.mjs\`，16 个 \`server/test-*.mjs\` 全部迁移；E13 \`server/test-mp.mjs:1\`「临时，测完删除」陈旧注释 | \`server/test-*.mjs\`、新建 \`server/test-lib.mjs\` |
+| C | E8 Node 版本契约机器化（\`.nvmrc\` + \`engines\` + CI 对齐 + 文档声称对齐）、E12 CI 全量 \`node --check\`、E9 \`docs/TODO.md\` 状态对账、E13 \`docs/bug.md\` CW 前缀续用约定 | 新建 \`.nvmrc\`、\`package.json\`、\`server/package.json\`、\`.github/workflows/ci.yml\`、\`docs/TODO.md\`、\`docs/bug.md\`、\`README.md\`、\`docs/development.md\` |
+| 调度 | E4 \`server/run-all-tests.sh\` tests 侧 46 个复制粘贴 if 块改显式清单数组 + for 循环；新套件注册；新建 \`tests/framework-guard.mjs\`（「全仓无第二份 runner 样板」元断言） | \`server/run-all-tests.sh\`、新建 \`tests/framework-guard.mjs\` |
+| D（第二波） | E6 覆盖空白：CW-1「稳定态顶点数 === 强制重建」行为级钉值；\`src/ui\` 23 文件 + \`src/audio\` 全量 import 冒烟 | 新建 \`tests/cw1-mesh-stability.mjs\`、\`tests/ui-audio-smoke.mjs\` |
+
+**冻结接口（A 产出 \`tests/harness.mjs\`，D 直接消费；签名与语义不得变）**
+
+\`\`\`js
+export function ok(cond, msg)                    // 成功计数 +1 并打印 PASS <msg>；失败打印 FAIL: <msg> 后 exit(1)（沿用 36 个文件的 fail-fast 语义）
+export function pass(msg)                        // 只记一条成功（biome-determinism 的 ok(msg) 单参形态）
+export function fail(msg)                        // 打印 FAIL: <msg> 后 exit(1)
+export function assert(name, cond, extra = '')   // 累积式，打印 PASS|FAIL  <name> <extra>，失败不中断
+export const check = assert                      // 旧名别名（biome-scale-determinism）
+export function finish(label = '')               // 打印摘要（<label>: <n> assertions ALL PASS / FAILED）并按累积失败数 exit
+\`\`\`
+
+- 语义红线：\`ok\` 与 \`pass\` 保持「失败即中断」，\`assert\`/\`check\` 保持「累积 + \`finish()\` 结算」，与迁移前逐文件语义一一对应；**断言条数不得减少**（每个断言仍须输出一行 PASS）。
+- 允许新增计数访问器，但上述六个导出名与语义是契约；\`server/test-lib.mjs\` 可独立实现（不要求跨目录复用），同一目录内不得再有第二份 runner 样板。
+
+**验收标准**：① 改动文件逐个 \`node --check\`；② \`./server/run-all-tests.sh\` 全绿，且**逐套件 PASS 行数不低于轮前基线**（基线 \`.run/baseline-round7.log\`）；③ \`tests/framework-guard.mjs\` 通过：\`tests/\` 与 \`server/\` 内除框架文件外无 \`function ok|assert|check|fail\` 定义、无逐文件退出样板；④ \`server/run-all-tests.sh\` tests 侧只剩 for 循环 + 清单数组一处，脚本行数由 477 降至约 280；⑤ \`.nvmrc\` = 24、根与 server \`engines.node\` 一致、CI \`setup-node\` 读 \`.nvmrc\`、README 与 \`docs/development.md\` 的 Node 声称与实际一致；⑥ CI 新增全量 \`node --check\` 步骤且本地实测 0 失败；⑦ \`docs/TODO.md\` 与 AGENTS.md 对账后无「已交付却仍列为待办」的条目；⑧ CW-1 行为级钉值可反证（故意破坏稳定态判定时该套件必须 FAIL）；⑨ \`src/ui\`/\`src/audio\` 全部模块在最小 DOM 壳下成功 import，模块被删或导出被改名时冒烟套件 FAIL。
+
+**证据要求**：每路给出改动清单、\`node --check\` 输出、迁移前后逐套件 PASS 行数对照表、定向探针输出与断言计数、未覆盖风险点。
+
+## 十一、轮 9 · 既有缺陷 H1（准星指向自身重叠方块时右键被吞）
+
+来源：轮 6 实施中发现（见上文「轮 6 实施中发现」），\`git show HEAD:src/player/Game.js\` 同区结构一致 → 轮前既有行为，非回归。
+
+**范围**：\`src/player/Game.js\` 的 \`handleMouseInput\` 右键分支——放置重叠守卫（约 1884-1895 行）当前在判定「准星方块是否可放置」之前就对 \`sel && hit\` 早退，导致手持弓 / 末影之眼等非方块物品时，只要准星所指方块的放置邻格落在玩家自身 AABB 内，右键就被静默吞掉（弓无法蓄力、末影之眼掷不出）。
+
+**最小修复方向**：把重叠检查移入 \`if (blockDef)\` 分支（仅对真正要放置的方块生效），非方块物品继续走后续分支。
+
+**验收标准**：① 复现用例先红后绿：轮 6 变体对照探针（\`.run/round6-f11-diag2.mjs\` 同款手法）在修复前可复现「右键被吞」，修复后同一用例进入蓄力；② 放置路径零回归：贴身放方块仍被拒（重叠守卫对真正的方块放置仍然生效），正常放置不受影响；③ 弓蓄力 / 末影之眼 / 食物 / 工作台 / 红石 / 容器交互全部分支逐一走查并给出对照；④ \`npm test\` 全绿（新增回归套件并入跑批）。

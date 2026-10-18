@@ -14,12 +14,7 @@ import { getItemCategory } from '../src/core/ItemCategories.js';
 import { STELE_CHAPTERS, STELE_BLANK } from '../src/world/steles.js';
 import { StructureManager } from '../src/world/structures/StructureManager.js';
 import { setAetherDuskProfile, DIMENSIONS } from '../src/core/dimensions.js';
-
-let passed = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  passed++;
-}
+import { ok, finish } from './harness.mjs';
 
 // ── ① 方块 ──
 const BLOCKS = {
@@ -134,5 +129,4 @@ const { NAME_I18N } = await import('../src/i18n/names.js');
 const missingNames = Object.keys(MobTypes).filter((k) => !Array.isArray(NAME_I18N[k]) || NAME_I18N[k].length !== 11);
 ok(missingNames.length === 0, `MobTypes 全员 names.js 11 列覆盖（缺: ${missingNames.join(',') || '无'}）`);
 ok(NAME_I18N.cloud_lamb && NAME_I18N.gale_hawk && NAME_I18N.tide_echo, 'K2 补全三行: cloud_lamb/gale_hawk/tide_echo');
-
-console.log(`aether-content: OK (${passed} assertions)`);
+finish('aether-content');

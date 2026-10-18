@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Tiderift 局域网联机房间服务器",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node index.mjs"
   },

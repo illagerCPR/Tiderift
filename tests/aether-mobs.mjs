@@ -4,13 +4,8 @@ import { MobTypes, generateMobSkinSVGs } from '../src/entity/MobTextures.js';
 import { Mob } from '../src/entity/Mob.js';
 import { pickAetherSpawnV2, MobManager } from '../src/entity/MobManager.js';
 import { World } from '../src/core/World.js';
-
-let pass = 0;
-function ok(cond, msg) {
-  if (!cond) { console.error('FAIL: ' + msg); process.exit(1); }
-  pass++;
-  console.log('PASS ' + msg);
-}
+import { ok, finish, configure } from './harness.mjs';
+configure({ verbose: true });
 
 // ① 类型注册与模型一致性
 for (const name of ['wisp', 'aether_guard', 'cloud_lamb', 'gale_hawk', 'tide_echo']) {
@@ -144,5 +139,4 @@ ok(MobTypes.villager.passive === true, '村民 passive 标记仍在（威胁过�
   ok(guard.aggro === false, '非潮鸣生物不受影响');
   mgr.dispose?.();
 }
-
-console.log(`天域生物回归: 全部通过（${pass} 断言）`);
+finish('天域生物回归');
