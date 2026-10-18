@@ -7,6 +7,7 @@ import { ItemRegistry } from '../core/ItemRegistry.js';
 import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
 import { getDisplayName } from './itemName.js';
+import { CursorOverlay } from './CursorOverlay.js';
 
 export class FurnaceScreen {
   constructor(game) {
@@ -31,59 +32,23 @@ export class FurnaceScreen {
     this.el.addEventListener('click', (e) => { if (e.target === this.el) this.hide(); });
 
     this.cursorItem = null;
-    this.cursorEl = document.createElement('div');
-    this.cursorEl.style.cssText = `
-      position: fixed; width: 44px; height: 44px; pointer-events: none;
-      z-index: 100; display: none; image-rendering: pixelated;
-    `;
-    document.body.appendChild(this.cursorEl);
-
-    this.tooltip = document.createElement('div');
-    this.tooltip.style.cssText = `
-      position: fixed; padding: 4px 8px; background: rgba(10,10,10,0.92);
-      color: #fff; font-family: monospace; font-size: 13px; z-index: 200;
-      pointer-events: none; display: none; border: 1px solid rgba(255,255,255,0.3);
-      text-shadow: 1px 1px 0 #000; max-width: 220px;
-    `;
-    document.body.appendChild(this.tooltip);
-
-    this._onMouseMove = (e) => {
-      if (this.cursorItem) {
-        this.cursorEl.style.left = (e.clientX - 22) + 'px';
-        this.cursorEl.style.top = (e.clientY - 22) + 'px';
-      }
-      if (!this.visible) { this.tooltip.style.display = 'none'; return; }
-      if (this._hoverEl && this._hoverEl.contains(e.target)) {
-        this.tooltip.style.left = (e.clientX + 14) + 'px';
-        this.tooltip.style.top = (e.clientY + 14) + 'px';
-      }
-    };
-    this._onContextMenu = (e) => { if (this.visible) e.preventDefault(); };
-    document.addEventListener('mousemove', this._onMouseMove);
-    document.addEventListener('contextmenu', this._onContextMenu);
+    // 光标层（手持物品图标 + 悬浮提示 + document 级监听）统一由组合件承担
+    this._disposed = false;
+    this.cursor = new CursorOverlay({
+      isVisible: () => this.visible,
+      getCursorItem: () => this.cursorItem,
+      drawIcon: (canvas, name) => this.drawIcon(canvas, name),
+      blockContextMenu: true,
+      onHover: (name) => { this._hoverName = name; }, // R/U 配方查询目标
+    });
   }
 
+  // 释放：光标层（组合件内的监听器与节点）与面板节点一并摘除（幂等）
   dispose() {
-    document.removeEventListener('mousemove', this._onMouseMove);
-    document.removeEventListener('contextmenu', this._onContextMenu);
+    if (this._disposed) return;
+    this._disposed = true;
+    this.cursor.dispose();
     this.el.remove();
-    this.cursorEl.remove();
-    this.tooltip.remove();
-  }
-
-  _bindHover(slot, name) {
-    slot.onmouseenter = () => {
-      if (!name) { this.tooltip.style.display = 'none'; this._hoverName = null; return; }
-      this.tooltip.textContent = getDisplayName(name);
-      this.tooltip.style.display = 'block';
-      this._hoverEl = slot;
-      this._hoverName = name; // R/U 配方查询目标
-    };
-    slot.onmouseleave = () => {
-      this.tooltip.style.display = 'none';
-      this._hoverEl = null;
-      this._hoverName = null;
-    };
   }
 
   show(x, y, z) {
@@ -105,9 +70,7 @@ export class FurnaceScreen {
     this.returnCursorItem();
     this.visible = false;
     this.el.style.display = 'none';
-    this.tooltip.style.display = 'none';
-    this._hoverEl = null;
-    this._hoverName = null;
+    this.cursor.clearHover();
     if (this.game.controls) this.game.controls.enabled = true;
     this.pos = null;
     this.st = null;
@@ -117,8 +80,7 @@ export class FurnaceScreen {
     if (this.cursorItem) {
       this.game.inventory.add(this.cursorItem.name, this.cursorItem.count, this.cursorItem.data);
       this.cursorItem = null;
-      this.cursorEl.style.display = 'none';
-      this.cursorEl.innerHTML = '';
+      this.cursor.setItem(null);
       this.game.hotbar.update();
     }
   }
@@ -248,12 +210,12 @@ export class FurnaceScreen {
       const slotIdx = 9 + i;
       this._renderInvSlot(el, this.game.inventory.slots[slotIdx]);
       this.bindSlotEvents(el, 'inv', slotIdx);
-      this._bindHover(el, this.game.inventory.slots[slotIdx] ? this.game.inventory.slots[slotIdx].name : null);
+      this.cursor.bindHover(el, this.game.inventory.slots[slotIdx] ? this.game.inventory.slots[slotIdx].name : null);
     });
     this.panel.querySelectorAll('[data-slot^="hotbar-"]').forEach((el, i) => {
       this._renderInvSlot(el, this.game.inventory.slots[i]);
       this.bindSlotEvents(el, 'inv', i);
-      this._bindHover(el, this.game.inventory.slots[i] ? this.game.inventory.slots[i].name : null);
+      this.cursor.bindHover(el, this.game.inventory.slots[i] ? this.game.inventory.slots[i].name : null);
     });
   }
 
@@ -263,7 +225,7 @@ export class FurnaceScreen {
     this._slotSigs[el.dataset.slot] = sig;
     if (stack) this.fillSlotEl(el, stack.name, stack.count);
     else el.innerHTML = '';
-    this._bindHover(el, stack ? stack.name : null);
+    this.cursor.bindHover(el, stack ? stack.name : null);
   }
 
   _renderInvSlot(el, stack) {
@@ -358,24 +320,7 @@ export class FurnaceScreen {
   }
 
   updateCursorEl() {
-    if (this.cursorItem) {
-      this.cursorEl.style.display = 'block';
-      this.cursorEl.innerHTML = '';
-      const canvas = document.createElement('canvas');
-      canvas.width = 32; canvas.height = 32;
-      canvas.style.cssText = 'width: 32px; height: 32px;';
-      this.cursorEl.appendChild(canvas);
-      this.drawIcon(canvas, this.cursorItem.name);
-      if (this.cursorItem.count > 1) {
-        const c = document.createElement('div');
-        c.textContent = this.cursorItem.count;
-        c.style.cssText = 'position: absolute; right: 2px; bottom: 0; color: #fff; font-size: 14px; font-weight: bold; text-shadow: 1px 1px 0 #000;';
-        this.cursorEl.appendChild(c);
-      }
-    } else {
-      this.cursorEl.style.display = 'none';
-      this.cursorEl.innerHTML = '';
-    }
+    this.cursor.setItem(this.cursorItem);
   }
 
   // 每帧刷新（Game.update 在界面可见时调用）：进度条 + 槽位内容

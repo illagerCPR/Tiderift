@@ -4,7 +4,7 @@
 import { ItemRegistry } from '../core/ItemRegistry.js';
 import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
-import { getDisplayName } from './itemName.js';
+import { CursorOverlay } from './CursorOverlay.js';
 
 export class ChestScreen {
   constructor(game) {
@@ -30,60 +30,23 @@ export class ChestScreen {
     this.el.addEventListener('click', (e) => { if (e.target === this.el) this.hide(); });
 
     this.cursorItem = null;
-    this.cursorEl = document.createElement('div');
-    this.cursorEl.style.cssText = `
-      position: fixed; width: 44px; height: 44px; pointer-events: none;
-      z-index: 100; display: none; image-rendering: pixelated;
-    `;
-    document.body.appendChild(this.cursorEl);
-
-    this.tooltip = document.createElement('div');
-    this.tooltip.style.cssText = `
-      position: fixed; padding: 4px 8px; background: rgba(10,10,10,0.92);
-      color: #fff; font-family: monospace; font-size: 13px; z-index: 200;
-      pointer-events: none; display: none; border: 1px solid rgba(255,255,255,0.3);
-      text-shadow: 1px 1px 0 #000; max-width: 220px;
-    `;
-    document.body.appendChild(this.tooltip);
-
-    // document 级监听器保存引用，dispose 时移除（避免换世界累积）
-    this._onMouseMove = (e) => {
-      if (this.cursorItem) {
-        this.cursorEl.style.left = (e.clientX - 22) + 'px';
-        this.cursorEl.style.top = (e.clientY - 22) + 'px';
-      }
-      if (!this.visible) { this.tooltip.style.display = 'none'; return; }
-      if (this._hoverEl && this._hoverEl.contains(e.target)) {
-        this.tooltip.style.left = (e.clientX + 14) + 'px';
-        this.tooltip.style.top = (e.clientY + 14) + 'px';
-      }
-    };
-    this._onContextMenu = (e) => { if (this.visible) e.preventDefault(); };
-    document.addEventListener('mousemove', this._onMouseMove);
-    document.addEventListener('contextmenu', this._onContextMenu);
+    // 光标层（手持物品图标 + 悬浮提示 + document 级监听）统一由组合件承担
+    this._disposed = false;
+    this.cursor = new CursorOverlay({
+      isVisible: () => this.visible,
+      getCursorItem: () => this.cursorItem,
+      drawIcon: (canvas, name) => this.drawIcon(canvas, name),
+      blockContextMenu: true,
+      onHover: (name) => { this._hoverName = name; }, // R/U 配方查询目标
+    });
   }
 
+  // 释放：光标层（组合件内的监听器与节点）与面板节点一并摘除（幂等）
   dispose() {
-    document.removeEventListener('mousemove', this._onMouseMove);
-    document.removeEventListener('contextmenu', this._onContextMenu);
+    if (this._disposed) return;
+    this._disposed = true;
+    this.cursor.dispose();
     this.el.remove();
-    this.cursorEl.remove();
-    this.tooltip.remove();
-  }
-
-  _bindHover(slot, name) {
-    slot.onmouseenter = () => {
-      if (!name) { this.tooltip.style.display = 'none'; this._hoverName = null; return; }
-      this.tooltip.textContent = getDisplayName(name);
-      this.tooltip.style.display = 'block';
-      this._hoverEl = slot;
-      this._hoverName = name; // R/U 配方查询目标
-    };
-    slot.onmouseleave = () => {
-      this.tooltip.style.display = 'none';
-      this._hoverEl = null;
-      this._hoverName = null;
-    };
   }
 
   // 打开：从 World 惰性取容器内容（结构箱子按 (seed,表名,坐标) 确定性生成）
@@ -107,9 +70,7 @@ export class ChestScreen {
     this.returnCursorItem();
     this.visible = false;
     this.el.style.display = 'none';
-    this.tooltip.style.display = 'none';
-    this._hoverEl = null;
-    this._hoverName = null;
+    this.cursor.clearHover();
     if (this.game.controls) this.game.controls.enabled = true;
     if (this._changed && this.pos) {
       this.game.onContainerChanged(this.pos, this.items); // 联机上报（单机 noop）
@@ -130,8 +91,7 @@ export class ChestScreen {
     if (this.cursorItem) {
       this.game.inventory.add(this.cursorItem.name, this.cursorItem.count, this.cursorItem.data);
       this.cursorItem = null;
-      this.cursorEl.style.display = 'none';
-      this.cursorEl.innerHTML = '';
+      this.cursor.setItem(null);
       this.game.hotbar.update();
     }
   }
@@ -212,7 +172,7 @@ export class ChestScreen {
       const stack = this.items[idx];
       this.renderSlotContent(el, stack);
       this.bindSlotEvents(el, 'chest', idx);
-      this._bindHover(el, stack ? stack.name : null);
+      this.cursor.bindHover(el, stack ? stack.name : null);
     });
     const mainSlots = this.panel.querySelectorAll('[data-slot^="main-"]');
     mainSlots.forEach((el, i) => {
@@ -220,14 +180,14 @@ export class ChestScreen {
       const stack = this.game.inventory.slots[slotIdx];
       this.renderSlotContent(el, stack);
       this.bindSlotEvents(el, 'inv', slotIdx);
-      this._bindHover(el, stack ? stack.name : null);
+      this.cursor.bindHover(el, stack ? stack.name : null);
     });
     const hbSlots = this.panel.querySelectorAll('[data-slot^="hotbar-"]');
     hbSlots.forEach((el, i) => {
       const stack = this.game.inventory.slots[i];
       this.renderSlotContent(el, stack);
       this.bindSlotEvents(el, 'inv', i);
-      this._bindHover(el, stack ? stack.name : null);
+      this.cursor.bindHover(el, stack ? stack.name : null);
     });
   }
 
@@ -303,23 +263,6 @@ export class ChestScreen {
   }
 
   updateCursorEl() {
-    if (this.cursorItem) {
-      this.cursorEl.style.display = 'block';
-      this.cursorEl.innerHTML = '';
-      const canvas = document.createElement('canvas');
-      canvas.width = 32; canvas.height = 32;
-      canvas.style.cssText = 'width: 32px; height: 32px;';
-      this.cursorEl.appendChild(canvas);
-      this.drawIcon(canvas, this.cursorItem.name);
-      if (this.cursorItem.count > 1) {
-        const c = document.createElement('div');
-        c.textContent = this.cursorItem.count;
-        c.style.cssText = 'position: absolute; right: 2px; bottom: 0; color: #fff; font-size: 14px; font-weight: bold; text-shadow: 1px 1px 0 #000;';
-        this.cursorEl.appendChild(c);
-      }
-    } else {
-      this.cursorEl.style.display = 'none';
-      this.cursorEl.innerHTML = '';
-    }
+    this.cursor.setItem(this.cursorItem);
   }
 }

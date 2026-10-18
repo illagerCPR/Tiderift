@@ -2,6 +2,7 @@
 // 最小实现：lever/button 激活 -> 红石粉传播 -> piston/lamp/TNT/door 响应
 import { doorId, trapdoorId } from './blockShape.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
+import { posKey, parsePosKey } from './posKey.js';
 
 const REDSTONE_WIRE = 'redstone_wire';
 const REDSTONE_TORCH = 'redstone_torch';
@@ -25,13 +26,13 @@ export class RedstoneSystem {
   constructor(world) {
     this.world = world;
     this.poweredBlocks = new Map(); // "x,y,z" -> boolean
-    this.pendingUpdates = new Set(); // 待处理的坐标
+    this.pendingUpdates = new Map(); // 待处理坐标："x,y,z" -> [x,y,z]（BFS 复用入队坐标，免逐键反解析）
     this.buttonTimers = new Map(); // "x,y,z" -> 剩余激活时间
     this.onStateChange = null;    // 红石源状态回调 (x,y,z,on) => void，由 Game 注入（联机广播）
     this.onBlockDestroyed = null; // TNT 爆炸销毁方块回调 (x,y,z,def)，由 Game 注入（碎屑粒子）
   }
 
-  key(x, y, z) { return `${x},${y},${z}`; }
+  key(x, y, z) { return posKey(x, y, z); }
 
   // 玩家右键交互：切换拉杆/按钮状态
   onBlockInteract(x, y, z, blockId) {
@@ -82,11 +83,12 @@ export class RedstoneSystem {
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dz = -1; dz <= 1; dz++) {
-          this.pendingUpdates.add(this.key(x + dx, y + dy, z + dz));
+          const bx = x + dx, by = y + dy, bz = z + dz;
+          this.pendingUpdates.set(this.key(bx, by, bz), [bx, by, bz]);
         }
       }
     }
-    this.pendingUpdates.add(this.key(x, y, z));
+    this.pendingUpdates.set(this.key(x, y, z), [x, y, z]);
   }
 
   // 获取方块的信号强度（0-15）
@@ -127,7 +129,7 @@ export class RedstoneSystem {
       if (newTime <= 0) {
         this.buttonTimers.delete(k);
         this.poweredBlocks.set(k, false);
-        const [x, y, z] = k.split(',').map(Number);
+        const { x, y, z } = parsePosKey(k);
         this.scheduleUpdate(x, y, z);
         if (this.onStateChange) this.onStateChange(x, y, z, false); // 按钮自动关闭也要广播
       } else {
@@ -141,39 +143,36 @@ export class RedstoneSystem {
     const toProcess = [...this.pendingUpdates];
     this.pendingUpdates.clear();
     
-    for (const k of toProcess) {
-      const [x, y, z] = k.split(',').map(Number);
+    for (const [k, [x, y, z]] of toProcess) {
       const bid = this.world.getBlock(x, y, z);
       if (bid === 0) continue;
       const def = BlockRegistry.getById(bid);
       if (!def) continue;
       
-      const k2 = this.key(x, y, z);
-      
       if (def.name === REDSTONE_WIRE) {
         const power = this.getPower(x, y, z);
-        const wasPowered = this.poweredBlocks.get(k2) || false;
+        const wasPowered = this.poweredBlocks.get(k) || false;
         const isPowered = power > 0;
         if (wasPowered !== isPowered) {
-          this.poweredBlocks.set(k2, isPowered);
+          this.poweredBlocks.set(k, isPowered);
           this.scheduleUpdate(x, y, z);
         }
       } else if (def.baseBlock === REDSTONE_LAMP) {
         // B28：红石灯 = 未充能本名 + `_lit` 两态方块（此前恒亮 light:15、充能与否无外观差别）
         const power = this.getPower(x, y, z);
-        const wasPowered = this.poweredBlocks.get(k2) || false;
+        const wasPowered = this.poweredBlocks.get(k) || false;
         const isPowered = power > 0;
         if (wasPowered !== isPowered) {
-          this.poweredBlocks.set(k2, isPowered);
+          this.poweredBlocks.set(k, isPowered);
           this.setLampLit(x, y, z, isPowered);
           this.scheduleUpdate(x, y, z);
         }
       } else if (def.name === PISTON || def.name === STICKY_PISTON) {
         const power = this.getPower(x, y, z);
-        const wasPowered = this.poweredBlocks.get(k2) || false;
+        const wasPowered = this.poweredBlocks.get(k) || false;
         const isPowered = power > 0;
         if (wasPowered !== isPowered) {
-          this.poweredBlocks.set(k2, isPowered);
+          this.poweredBlocks.set(k, isPowered);
           if (isPowered) {
             this.activatePiston(x, y, z, def.name === STICKY_PISTON);
           } else {
@@ -188,13 +187,13 @@ export class RedstoneSystem {
       } else if (def.part === 'door_lower' || def.part === 'door_upper' || def.part === 'trapdoor') {
         // B27：门/活板门状态家族（状态 = ID 家族，任意半格/朝向/开合态都响应）
         const power = this.getPower(x, y, z);
-        const wasPowered = this.poweredBlocks.get(k2) || false;
+        const wasPowered = this.poweredBlocks.get(k) || false;
         const isPowered = power > 0;
         if (isPowered && !wasPowered) {
-          this.poweredBlocks.set(k2, true);
+          this.poweredBlocks.set(k, true);
           this.toggleDoor(x, y, z);
         } else if (!isPowered && wasPowered) {
-          this.poweredBlocks.set(k2, false);
+          this.poweredBlocks.set(k, false);
         }
       }
     }

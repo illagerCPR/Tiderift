@@ -36,7 +36,7 @@
 - `Hotbar`：`flashName()` 在切换快捷栏槽位时显示物品名气泡 2 秒；数字键 / 滚轮切换处需主动调用。
 - `Hud`：血量/饥饿行 `bottom:86px`，经验条 `bottom:72px`，都贴在快捷栏上方，改动二者距离时务必同步避免遮挡快捷栏。
 - `InfoBar`：游戏内左上角 4+1 行 —— 坐标 / 生物群系 / 时间 / **准星目标**（`targetLine`）/ **网络 RTT**（联机时显示「网络: Xms」，`rttLine`）。`update(player, generator, sky, crosshairInfo, rttMs = null)` 第 4 个参数是 `{type:'block'|'mob', displayName, name}` 或 null，第 5 个参数为联机平滑 RTT（毫秒，null=单机隐藏该行）。`crosshairInfo` 由 `Game.updateRaycast()` 每帧算好并存到 `this.crosshairInfo`：方块 hit + mob hit 取较近者。Mob 命中靠 `MobManager.findMobByRay(origin, dir, maxDist)`（不伤害的纯查询版，球体射线检测半径 = `mob.height/2`，与 `attackMob` 同口径）。ator.getBiome()` 更新。
-- `InventoryScreen`：每个 slot 通过 `_bindHover()` 挂载 mouseenter/mouseleave 悬浮 tooltip（显示 `displayName`）。`returnCursorItem()` / `hide()` 必须同时隐藏 tooltip。
+- `InventoryScreen` 等容器界面：槽位悬浮 tooltip 自 B30 轮 6 起统一由 `src/ui/CursorOverlay.js` 组合件承担（`bindHover(slot, name)`，B 键置位）；Screen 自身不再写 cursorEl/tooltip/mousemove/contextmenu。`returnCursorItem()` / `hide()` 必须同时调 `cursor.clearHover()` 隐藏 tooltip。
 - **创造栏去重陷阱**：`renderCreative()` 用 `[...BlockRegistry.all(), ...ItemRegistry.all()]` 合并展示列表。部分方块名在两边都注册——`lever` / `stone_button` 既在 `BlockDefs.js` 作方块又在 `ItemDefs.js` 作物品注册——不去重会出现两个相同物品槽。修复：方块优先，同名物品在合并时跳过。新加"既是方块也是物品"的项目时务必检查是否双注册。
 - `PauseMenu` / `DeathScreen`：禁用 `controls.enabled` + `exitPointerLock`，hide 时恢复。`PauseMenu` 不要再自带 ESC 监听器（会与 Game 的 ESC 切换同一事件内既打开又关闭）。`Game._setupPauseOnUnlock()` 监听 `pointerlockchange` 在指针锁意外丢失时自动弹暂停菜单。
 
@@ -151,3 +151,21 @@
 - **更名落地清单（英文名 Tiderift ↔ 中文名 裂潮，取自世界观「一潮三分」主链——`docs/worldview.md`；版本格式 `Tiderift Beta Build X`，**前缀变动 Build 数不重置**，Release tag 自本批起 `beta-build-<X>`，历史 `alpha-build-1..28` 保留）**：`src/version.js`（BUILD=29 + VERSION_LABEL）/ `index.html`（title + favicon）/ `MenuScreen`（logo 换 `res/logo-tiderift-js-edition.png` + alt）/ `package.json` name / `server/package.json` description / `server/admin.html` 面板标题 / README（logo + 徽章 + 仓库 URL）/ 活文档标题（bug.md、lan-multiplayer-design、worldview、wiki-handover）。**不动**：localStorage 存档前缀 `project-mc-save-` 与 JEI 键 `cubeworld-jei-*`（用户数据兼容面）、本地工作区目录名 `project-mc`、历史 tag；GitHub 仓库经 `gh repo rename` 改名（旧 URL 自动重定向），`src/**` 不允许再出现 "CubeWorld" 字样（build29 ①段全目录扫描断言）。
 - **技术性方块过滤 `isTechnicalBlock(def)`（ItemCategories.js 纯函数，与 `isIsoBlock` 同文件）**：三规则——① `def.fluidType`（水/岩浆 + `*_flow_N` 流动等级）；② `def.baseBlock && def.name !== def.baseBlock`（B27 门/床/活板门 + B28 箱/炉/头颅/灯的**全部状态家族变体**，规则化覆盖未来家族，勿逐名维护）；③ `TECHNICAL_NAMES` 显式清单（`piston_head`、`end_portal`/`nether_portal`/`aether_portal`/`end_gateway`、`end_portal_frame_eye`、`wind_current`、`wheat_crop_0..7`）。**过滤点在 `InventoryScreen._renderCreativeGrid` 的 blocks 源头**（搜索与非搜索双路径都生效）；**类JEI（RecipeViewer）明确不过滤**（`_allItems` 原样，防回退绊线 = 该文件不得出现 `isTechnicalBlock`）。`farmland`/红石件/石碑/祭坛保留（原版创造栏同样提供耕地）。
 - **验证**：`tests/build29-rename-icons.mjs` 405 断言；实机 agent-browser：创造搜索 water→仅水桶 1 项、piston→2（无活塞头）、oak_door→1、JEI 搜 piston_head/furnace_lit/门变体仍全量在列、菜单与 HUD 版本标签 `Tiderift Beta Build 29`。
+
+## B30 审查轮 6 · 前端模式归一（F5 光标层 / F11 世界输入门控）
+
+### F5 CursorOverlay（`src/ui/CursorOverlay.js`）
+
+- 四屏（ChestScreen / FurnaceScreen / InventoryScreen / TradeScreen）原先逐字复制的 cursorEl + tooltip + mousemove + contextmenu（约 45 行）收编为组合件 `CursorOverlay`，Screen 只负责构造与 `dispose()`。
+- 构造参数：`{ host, isVisible, getCursorItem, drawIcon, formatTooltip, blockContextMenu, onHover }`；纯函数导出 `cursorPos` / `tooltipPos` / `tooltipContent`，常量 `CURSOR_SIZE` / `TOOLTIP_OFFSET`（tooltip 位置 = clientX/clientY + TOOLTIP_OFFSET）。
+- `bindHover(slot, name)` 走 `slot.onmouseenter`（不是 addEventListener）——浏览器探针须用 `dispatchEvent(new MouseEvent('mouseenter'))` 或直接调用 `slot.onmouseenter()`。
+- **每屏一套实例**：`screen.cursor` / `screen.cursor.tooltip` 是该屏自己的节点，页面上可能有多个 z-index:200 的 tooltip——断言必须按屏取引用，不能 `document.querySelector` 取第一个。
+- `dispose()` 幂等（`_disposed` 置位后早退）；`tests/leak-guards.mjs` 覆盖「四屏开合后 document 监听器净增 0 / dispose 幂等」。
+- 交易界面没有 `data-slot` 属性：`show(mob)` 的形参是**怪物对象**（读 `mob.position` / `mob.tradeSeed` / `mob.dead`），槽位元素要靠 `onmouseenter` 是否存在来定位。
+
+### F11 世界输入门控（`Game._anyInputBlockingUI()`）
+
+- 单一清单：背包 / 箱子 / 熔炉 / 交易 / 信标 / 石碑六类界面的 `.visible`。挖掘、攻击、弓蓄力与指针锁自动暂停全部问这里——**新增此类界面只改这一处**。
+- 有意变更：信标 / 石碑界面打开时同样阻断挖掘 / 攻击 / 弓蓄力（此前会漏）。
+- **弓蓄力仍要求背包有箭**（`player.creative || slots.some(s => s.name === 'arrow')`，`Game.js` 约 1939 行）：无箭时右键被吞、根本不进蓄力。用探针验「界面阻断蓄力」时**必须先给箭**，否则正对照为空、负对照无意义（轮 6 曾因此误判为产品失败，实为探针缺箭）。
+- 确定性探针口径：蓄力通道可脱离浏览器用 node 驱动真实方法——`Game.prototype.handleMouseInput.call(fakeCtx, dt)`，fakeCtx 需要 `controls / inventory / hand / hotbar / player / breakMesh / _cancelBowCharge / _anyInputBlockingUI / _frameRay`；正负对照见 `.run/round6-f11-bow.mjs`（32/32）。

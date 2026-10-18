@@ -10,6 +10,7 @@
 // - 相遇规则（原版三条）：水接触岩浆源 → 黑曜石；水接触流动岩浆 → 圆石；流动岩浆流向水 → 石头。
 
 import { BlockRegistry } from './BlockRegistry.js';
+import { posKey as blockKey, parsePosKey } from './posKey.js';
 
 export const WATER_MAX_FLOW = 7;
 export const LAVA_MAX_FLOW = 3;
@@ -67,8 +68,8 @@ export function fluidIdAt(type, level) {
 export class FluidSim {
   constructor(world) {
     this.world = world;
-    this.pendingWater = new Set(); // posKey 集合：下步待处理水格
-    this.pendingLava = new Set();
+    this.pendingWater = new Map(); // posKey -> [x,y,z]：下步待处理水格（入队即存坐标，步进免反解析）
+    this.pendingLava = new Map();
     this._waterAcc = 0;
     this._lavaAcc = 0;
     this.writing = false; // 模拟内部 setBlock 标志：NetworkManager 据此分流批量通道
@@ -89,11 +90,8 @@ export class FluidSim {
     try { this.world.setBlock(x, y, z, id); } finally { this.writing = false; }
   }
 
-  static posKey(x, y, z) { return `${x},${y},${z}`; }
-  static parseKey(k) {
-    const c = k.split(',');
-    return { x: +c[0], y: +c[1], z: +c[2] };
-  }
+  static posKey(x, y, z) { return blockKey(x, y, z); }
+  static parseKey(k) { return parsePosKey(k); }
 
   // 扰动入队（World.setBlock 钩子调用）：改动格与 6 邻居中的流体进入计划队列
   onBlockChanged(x, y, z) {
@@ -110,7 +108,7 @@ export class FluidSim {
   scheduleAt(x, y, z) {
     const info = fluidInfo(this.world.getBlock(x, y, z));
     if (!info) return;
-    (info.type === 'water' ? this.pendingWater : this.pendingLava).add(FluidSim.posKey(x, y, z));
+    (info.type === 'water' ? this.pendingWater : this.pendingLava).set(FluidSim.posKey(x, y, z), [x, y, z]);
   }
 
   // 存档重载/换维后补登记：modifiedBlocks 中的流动等级方块重新入队（防瀑布断流）
@@ -120,7 +118,8 @@ export class FluidSim {
     for (const [k, id] of modifiedBlocks) {
       const info = fluidInfo(id);
       if (!info || info.level === 0) continue; // 源静态，不调度
-      (info.type === 'water' ? this.pendingWater : this.pendingLava).add(k);
+      const p = FluidSim.parseKey(k);
+      (info.type === 'water' ? this.pendingWater : this.pendingLava).set(k, [p.x, p.y, p.z]);
       n++;
     }
     return n;
@@ -142,16 +141,13 @@ export class FluidSim {
   _step(type) {
     const q = type === 'water' ? this.pendingWater : this.pendingLava;
     if (!q.size) return;
-    const keys = [];
-    for (const k of q) {
-      keys.push(k);
-      if (keys.length >= MAX_TICKS_PER_STEP) break;
+    const batch = [];
+    for (const entry of q) {
+      batch.push(entry);
+      if (batch.length >= MAX_TICKS_PER_STEP) break;
     }
-    for (const k of keys) q.delete(k);
-    for (const k of keys) {
-      const { x, y, z } = FluidSim.parseKey(k);
-      this._simulate(type, x, y, z);
-    }
+    for (const [k] of batch) q.delete(k);
+    for (const [, p] of batch) this._simulate(type, p[0], p[1], p[2]);
   }
 
   _isFluidOf(type, x, y, z) {

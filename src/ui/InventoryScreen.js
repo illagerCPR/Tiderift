@@ -9,6 +9,7 @@ import { CREATIVE_CATEGORIES, CATEGORY_LABEL_KEYS, getItemCategory, isTechnicalB
 import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
 import { getDisplayName } from './itemName.js';
+import { CursorOverlay, tooltipContent } from './CursorOverlay.js';
 
 // 盔甲槽空槽底纹（Build 19 K2：原版式四件套轮廓，灰线风）——svgToDataUri 32×32
 function armorSlotIcon(kind) {
@@ -73,84 +74,30 @@ export class InventoryScreen {
     
     // 拖拽中的物品（鼠标跟随）
     this.cursorItem = null; // {name, count, data}
-    this.cursorEl = document.createElement('div');
-    this.cursorEl.style.cssText = `
-      position: fixed; width: 44px; height: 44px; pointer-events: none;
-      z-index: 100; display: none; image-rendering: pixelated;
-    `;
-    document.body.appendChild(this.cursorEl);
-
-    // 物品悬浮提示框
-    this.tooltip = document.createElement('div');
-    this.tooltip.style.cssText = `
-      position: fixed; padding: 4px 8px; background: rgba(10,10,10,0.92);
-      color: #fff; font-family: monospace; font-size: 13px; z-index: 200;
-      pointer-events: none; display: none; border: 1px solid rgba(255,255,255,0.3);
-      text-shadow: 1px 1px 0 #000; max-width: 220px;
-    `;
-    document.body.appendChild(this.tooltip);
-    
-    // document 级监听器保存引用，dispose 时移除（避免切换存档累积）
+    // 光标层（手持物品图标 + 悬浮提示 + document 级监听）统一由组合件承担
     this._disposed = false;
-    this._onCursorMove = (e) => {
-      if (this.cursorItem) {
-        this.cursorEl.style.left = (e.clientX - 22) + 'px';
-        this.cursorEl.style.top = (e.clientY - 22) + 'px';
-      }
-    };
-    document.addEventListener('mousemove', this._onCursorMove);
-    
-    // 右键拖拽时放置单个
-    this._onContextMenu = (e) => {
-      if (this.visible) e.preventDefault();
-    };
-    document.addEventListener('contextmenu', this._onContextMenu);
-
-    this._onTooltipMove = (e) => {
-      if (!this.visible) { this.tooltip.style.display = 'none'; return; }
-      if (this._hoverEl && this._hoverEl.contains(e.target)) {
-        this.tooltip.style.left = (e.clientX + 14) + 'px';
-        this.tooltip.style.top = (e.clientY + 14) + 'px';
-      }
-    };
-    document.addEventListener('mousemove', this._onTooltipMove);
+    this.cursor = new CursorOverlay({
+      isVisible: () => this.visible,
+      getCursorItem: () => this.cursorItem,
+      drawIcon: (canvas, name) => this.drawIcon(canvas, name),
+      blockContextMenu: true,
+      formatTooltip: (name) => tooltipContent(name, this._lore(name)),
+      onHover: (name) => { this._hoverName = name; }, // R/U 配方查询目标
+    });
   }
 
-  // 释放：摘掉 3 个 document 监听器并移除三个 DOM 节点（Game 切换存档时调用，幂等）
+  // 释放：光标层（组合件内的监听器与节点）与面板节点一并摘除（幂等）
   dispose() {
     if (this._disposed) return;
     this._disposed = true;
-    document.removeEventListener('mousemove', this._onCursorMove);
-    document.removeEventListener('contextmenu', this._onContextMenu);
-    document.removeEventListener('mousemove', this._onTooltipMove);
+    this.cursor.dispose();
     this.el.remove();
-    this.cursorEl.remove();
-    this.tooltip.remove();
   }
 
-  _bindHover(slot, name) {
-    slot.onmouseenter = () => {
-      if (!name) { this.tooltip.style.display = 'none'; this._hoverName = null; return; }
-      const itemDef = ItemRegistry.getByName(name);
-      // 物品 lore 优先；方块（BlockDefs 注册，不在 ItemRegistry）回落方块 lore（世界观批次 N1）
-      const def = itemDef || BlockRegistry.getByName(name);
-      const lore = def && def.lore;
-      if (lore && lore.length) {
-        // 物品/方块 lore（天域批次 A / 世界观批次 N1）：名称 + 灰蓝斜体残文行（语言包键，缺项回落简体）
-        const rows = lore.map((l) => `<div style="color:#9fb3c8; font-style:italic; margin-top:2px;">${t(l)}</div>`).join('');
-        this.tooltip.innerHTML = `<div>${getDisplayName(name)}</div>${rows}`;
-      } else {
-        this.tooltip.textContent = getDisplayName(name);
-      }
-      this.tooltip.style.display = 'block';
-      this._hoverEl = slot;
-      this._hoverName = name; // R/U 配方查询目标
-    };
-    slot.onmouseleave = () => {
-      this.tooltip.style.display = 'none';
-      this._hoverEl = null;
-      this._hoverName = null;
-    };
+  // 悬浮提示的 lore 来源：物品定义优先，方块定义回落（世界观批次 N1）
+  _lore(name) {
+    const def = ItemRegistry.getByName(name) || BlockRegistry.getByName(name);
+    return (def && def.lore) || null;
   }
 
   show(craftSize = 2) {
@@ -173,7 +120,7 @@ export class InventoryScreen {
     this.returnCursorItem();
     this.visible = false;
     this.el.style.display = 'none';
-    this._hoverName = null;
+    this.cursor.clearHover();
     if (this.game && this.game.controls) {
       this.game.controls.enabled = true;
     }
@@ -199,12 +146,10 @@ export class InventoryScreen {
     if (this.cursorItem) {
       this.inventory.add(this.cursorItem.name, this.cursorItem.count, this.cursorItem.data);
       this.cursorItem = null;
-      this.cursorEl.style.display = 'none';
-      this.cursorEl.innerHTML = '';
+      this.cursor.setItem(null);
       this.game.hotbar.update();
     }
-    this.tooltip.style.display = 'none';
-    this._hoverEl = null;
+    this.cursor.clearHover();
   }
 
   render() {
@@ -385,8 +330,7 @@ export class InventoryScreen {
       e.preventDefault();
       if (this.cursorItem) {
         this.cursorItem = null; // 拖入光标物品直接销毁
-        this.cursorEl.style.display = 'none';
-        this.cursorEl.innerHTML = '';
+        this.cursor.setItem(null);
       }
     });
     searchRow.appendChild(destroy);
@@ -433,7 +377,7 @@ export class InventoryScreen {
         // 右键拿一个到光标
         this.setCursorItem(item.name, 1);
       });
-      this._bindHover(slot, item.name);
+      this.cursor.bindHover(slot, item.name);
       grid.appendChild(slot);
     }
     if (list.length === 0) {
@@ -501,7 +445,7 @@ export class InventoryScreen {
       const idx = parseInt(el.dataset.slot.split('-')[1]);
       this.renderSlotContent(el, this.craftGrid[idx]);
       this.bindSlotEvents(el, 'craft', idx);
-      this._bindHover(el, this.craftGrid[idx] ? this.craftGrid[idx].name : null);
+      this.cursor.bindHover(el, this.craftGrid[idx] ? this.craftGrid[idx].name : null);
     });
 
     // 合成输出槽
@@ -509,7 +453,7 @@ export class InventoryScreen {
     if (outEl) {
       this.bindOutputSlot(outEl);
       const result = this.getCurrentRecipeMatch();
-      this._bindHover(outEl, result ? result.name : null);
+      this.cursor.bindHover(outEl, result ? result.name : null);
     }
 
     // 主背包 slots 9~35
@@ -518,7 +462,7 @@ export class InventoryScreen {
       const slotIdx = 9 + i;
       this.renderSlotContent(el, this.inventory.slots[slotIdx]);
       this.bindSlotEvents(el, 'inv', slotIdx);
-      this._bindHover(el, this.inventory.slots[slotIdx] ? this.inventory.slots[slotIdx].name : null);
+      this.cursor.bindHover(el, this.inventory.slots[slotIdx] ? this.inventory.slots[slotIdx].name : null);
     });
 
     // 快捷栏 slots 0~8
@@ -526,7 +470,7 @@ export class InventoryScreen {
     hbSlots.forEach((el, i) => {
       this.renderSlotContent(el, this.inventory.slots[i]);
       this.bindSlotEvents(el, 'inv', i);
-      this._bindHover(el, this.inventory.slots[i] ? this.inventory.slots[i].name : null);
+      this.cursor.bindHover(el, this.inventory.slots[i] ? this.inventory.slots[i].name : null);
     });
 
     // 盔甲槽 armor 0~3（头/胸/腿/靴）
@@ -535,7 +479,7 @@ export class InventoryScreen {
       const idx = parseInt(el.dataset.slot.split('-')[1], 10);
       this.renderSlotContent(el, this.inventory.armor[idx]);
       this.bindArmorSlotEvents(el, idx);
-      this._bindHover(el, this.inventory.armor[idx] ? this.inventory.armor[idx].name : null);
+      this.cursor.bindHover(el, this.inventory.armor[idx] ? this.inventory.armor[idx].name : null);
     });
   }
 
@@ -729,23 +673,6 @@ export class InventoryScreen {
   }
 
   updateCursorEl() {
-    if (this.cursorItem) {
-      this.cursorEl.style.display = 'block';
-      this.cursorEl.innerHTML = '';
-      const canvas = document.createElement('canvas');
-      canvas.width = 32; canvas.height = 32;
-      canvas.style.cssText = 'width: 32px; height: 32px;';
-      this.cursorEl.appendChild(canvas);
-      this.drawIcon(canvas, this.cursorItem.name);
-      if (this.cursorItem.count > 1) {
-        const c = document.createElement('div');
-        c.textContent = this.cursorItem.count;
-        c.style.cssText = 'position: absolute; right: 2px; bottom: 0; color: #fff; font-size: 14px; font-weight: bold; text-shadow: 1px 1px 0 #000;';
-        this.cursorEl.appendChild(c);
-      }
-    } else {
-      this.cursorEl.style.display = 'none';
-      this.cursorEl.innerHTML = '';
-    }
+    this.cursor.setItem(this.cursorItem);
   }
 }

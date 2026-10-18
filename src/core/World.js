@@ -9,6 +9,8 @@ import { isCropId } from './crops.js';
 import { FluidSim, fluidInfo } from './FluidSim.js';
 import { doorId } from './blockShape.js';
 import { getDimension, DEFAULT_DIMENSION } from './dimensions.js';
+import { ModifiedBlocks } from './ModifiedBlocks.js';
+import { parsePosKey } from './posKey.js';
 
 export class World {
   constructor(seed = 0, dimension = DEFAULT_DIMENSION, worldOpts = null) {
@@ -19,10 +21,10 @@ export class World {
     this.generator = this.dimDef.createGenerator(seed, worldOpts || {});
     // 维度分桶账本：modifiedBlocks/containers 是"当前维度"桶的指针
     //（切换维度 = 整体重建 World，指针永不跨维度换绑）
-    this.dimensionBlocks = new Map();     // dimId -> Map("x,y,z" -> 方块 id)
+    this.dimensionBlocks = new Map();     // dimId -> ModifiedBlocks("x,y,z" -> 方块 id，带区块索引)
     this.dimensionContainers = new Map(); // dimId -> Map("x,y,z" -> 27 槽数组)
     this.dimensionFurnaces = new Map();   // dimId -> Map("x,y,z" -> 熔炉状态 {input,fuel,output,burnTime,burnMax,cookTime})
-    this.modifiedBlocks = this.dimBucket(this.dimensionBlocks);
+    this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
     // T5 容器：打开时惰性生成（结构箱子按 (seed,表名,坐标) 确定性 loot），
@@ -39,17 +41,17 @@ export class World {
     this._pendingChunks = new Map(); // "cx,cz" -> 在途 Promise
   }
 
-  // 取（或建）当前维度的账本桶
-  dimBucket(store) {
+  // 取（或建）当前维度的账本桶；indexed=true 建带区块索引的方块账本（容器/熔炉仍用原生 Map）
+  dimBucket(store, indexed = false) {
     let m = store.get(this.dimension);
-    if (!m) { m = new Map(); store.set(this.dimension, m); }
+    if (!m) { m = indexed ? new ModifiedBlocks() : new Map(); store.set(this.dimension, m); }
     return m;
   }
 
   // 从存档/换维数据装入全部维度桶，并把当前维度指针指向对应桶
   loadDimensionBuckets(blocksObj, containersObj, furnacesObj = null) {
     for (const [dim, entries] of Object.entries(blocksObj || {})) {
-      const m = new Map();
+      const m = new ModifiedBlocks();
       for (const [k, v] of Object.entries(entries || {})) m.set(k, v | 0);
       this.dimensionBlocks.set(dim, m);
     }
@@ -69,7 +71,7 @@ export class World {
         this.dimensionFurnaces.set(dim, m);
       }
     }
-    this.modifiedBlocks = this.dimBucket(this.dimensionBlocks);
+    this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
   }
@@ -164,16 +166,22 @@ export class World {
     return true;
   }
 
+  // 应用账本里属于本区块的修改：索引账本只遍历本区块桶（旧实现每次全账本扫描 + 逐键 split）
   applyModifications(chunk) {
-    const { cx, cz } = chunk;
-    for (const [key, id] of this.modifiedBlocks) {
-      const [gx, gy, gz] = key.split(',').map(Number);
-      const ccx = Math.floor(gx / CHUNK_SIZE);
-      const ccz = Math.floor(gz / CHUNK_SIZE);
-      if (ccx === cx && ccz === cz) {
-        chunk.set(gx - cx * CHUNK_SIZE, gy, gz - cz * CHUNK_SIZE, id);
-      }
+    const ledger = this.modifiedBlocks;
+    if (typeof ledger.keysInChunk === 'function') {
+      const keys = ledger.keysInChunk(chunk.cx, chunk.cz);
+      if (!keys) return;
+      for (const key of keys) this._applyLedgerEntry(chunk, key, ledger.get(key));
+      return;
     }
+    // 兜底：账本被外部整体换成普通 Map 时全量遍历（越界坐标由 Chunk.set 守卫丢弃，与旧实现等价）
+    for (const [key, id] of ledger) this._applyLedgerEntry(chunk, key, id);
+  }
+
+  _applyLedgerEntry(chunk, key, id) {
+    const p = parsePosKey(key);
+    chunk.set(p.x - chunk.cx * CHUNK_SIZE, p.y, p.z - chunk.cz * CHUNK_SIZE, id);
   }
 
   unloadChunk(cx, cz) {

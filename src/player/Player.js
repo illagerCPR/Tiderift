@@ -1,6 +1,7 @@
 // Player.js -- 玩家实体
 import * as THREE from 'three';
 import { Raycast } from './Raycast.js';
+import { PLAYER_EYE_HEIGHT } from './constants.js';
 
 // Build 20 ⑤：第三人称相机与眼睛的默认距离（格）；贴墙时按射线遮挡裁剪拉近
 const THIRD_PERSON_DIST = 4;
@@ -140,12 +141,12 @@ export class Player {
     this.camera.rotation.order = 'YXZ';
     if (this.viewMode === 0) {
       this.camera.position.copy(this.position);
-      this.camera.position.y += 1.62; // 视点高度
+      this.camera.position.y += PLAYER_EYE_HEIGHT; // 视点高度
       this.camera.rotation.y = this.yaw;
       this.camera.rotation.x = this.pitch;
       return;
     }
-    const ex = this.position.x, ey = this.position.y + 1.62, ez = this.position.z;
+    const ex = this.position.x, ey = this.position.y + PLAYER_EYE_HEIGHT, ez = this.position.z;
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     const dx = -sy * cp, dy = sp, dz = -cy * cp; // 视线方向（yaw=0 朝 -Z，pitch 正抬头）

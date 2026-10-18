@@ -52,11 +52,18 @@ export class BossBar {
 
   // 每帧调用：mobs 为当前存活的 Boss 数组（dragon/wither 等 type.boss 实体）
   update(mobs) {
-    const alive = (mobs || []).filter(m => m && !m.dead && !m.dyingAnim);
-    const show = alive.length > 0;
-    this.el.style.display = show ? 'block' : 'none';
-    if (!show) return;
-    for (const mob of alive) {
+    const list = mobs || [];
+    // F10：只读单循环遍历（不新建数组）——先计数决定显隐，再逐只建行
+    let count = 0;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (m && !m.dead && !m.dyingAnim) count++;
+    }
+    this.el.style.display = count > 0 ? 'block' : 'none';
+    if (count === 0) return;
+    for (let i = 0; i < list.length; i++) {
+      const mob = list[i];
+      if (!mob || mob.dead || mob.dyingAnim) continue;
       const r = this._row(mob);
       r.label.textContent = tName(mob.type.name, mob.type.displayName);
       const ratio = Math.max(0, Math.min(1, mob.health / mob.maxHealth));

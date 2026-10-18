@@ -396,6 +396,33 @@ else
     exit 1
 fi
 
+# 共享球体射线纯函数（纯 node：命中/未命中/背向/相切/非单位方向口径 + 帧射线缓存与 UI 阻断清单唯一性）
+echo "=== ray-sphere ==="
+if node tests/ray-sphere.mjs; then
+    echo "ray-sphere: OK"
+else
+    echo "ray-sphere: FAILED"
+    exit 1
+fi
+
+# 修改方块账本分桶索引与热路径坐标键（纯 node：索引一致性 + 与旧全量扫描实现等价性对照）
+echo "=== world-mod-index ==="
+if node tests/world-mod-index.mjs; then
+    echo "world-mod-index: OK"
+else
+    echo "world-mod-index: FAILED"
+    exit 1
+fi
+
+# 怪物球体射线选择 + dispose 复用 + Boss 列表（纯 node：与改前逐字实现随机对拍 + 源码唯一性断言）
+echo "=== mob-ray-select ==="
+if node tests/mob-ray-select.mjs; then
+    echo "mob-ray-select: OK"
+else
+    echo "mob-ray-select: FAILED"
+    exit 1
+fi
+
 # 测试非幂等：先确认 3001 空闲，再清空运行时数据保证干净状态
 if (exec 3<>/dev/tcp/127.0.0.1/3001) 2>/dev/null; then
     exec 3>&- 3<&- 2>/dev/null

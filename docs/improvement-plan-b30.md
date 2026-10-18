@@ -25,7 +25,7 @@
 | 3 | 工程卫生（计数失真 / 钉值收敛 / 测试入口 / 包名） | E1 E2 E7 E10 | 已完成（`e99aaa6`，CI run 39038850135 绿） |
 | 4 | README 出仓（用户向化） | E3 | 已完成（`2f99b3f`） |
 | 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 已完成（`4520a7b`，CI run 39091785891 绿） |
-| 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 待启动 |
+| 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（本轮提交，CI 见进度记录） |
 | 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 待启动 |
 | 8 | F3 Game.js 拆分（先只读可行性评估，确认后逐域迁移） | F3 | 待启动 |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
@@ -93,6 +93,8 @@
 | Build 31 | 2026-10-17 | 2026-10-17 | `070492d` | run 39039746519 绿 | BUILD 31 + 签名 tag `beta-build-31` + Release（Latest） |
 | 5 | 2026-10-18 | 2026-10-18 | `4520a7b`（本轮含文档） | run 39091785891 绿 | 两路并行（N1 服务端加固 5 条 / N2 落盘节流+回放打包+客户端防御）；调度方独立黑盒探针 22/22（写盘 200→3 次、SIGTERM 强刷、600 格回放 512+88 分块、删房清理、心跳 2006ms 热生效、皮肤限频 429 与日志 35→1）；浏览器端到端冒烟通过（0 TypeError）；新增三套件 51/28/18 已并入跑批；文档同步 AGENTS.md / docs/development.md / docs/agent-notes/multiplayer.md |
 
+| 6 | 2026-10-18 | 2026-10-18 | 本轮提交（含文档） | 见下 | 两波四路（第一波 P/Q/S 并行，第二波 R）；F5 四屏光标层收编 CursorOverlay（leak-guards 47/47）；F6 球体判别式统一 raySphereHit（MobManager 两处 + 远端玩家，消除每怪每帧 new Vector3）；F7 modifiedBlocks 分桶索引（40k 账本 169 区块重放 2356ms→10ms，169×65536 格逐字节等价）；F8 dispose 复用 _removeMobResources（唯一清理实现 + 幂等）；F9 眼高/方块中心/移速常量集中；F10 帧射线缓存 + Boss 列表零分配；F11 _anyInputBlockingUI 唯一清单（六类界面阻断挖掘/攻击/弓蓄力）；F12 红石/流体待处理队列键化；新增三套件 tests/ray-sphere、tests/world-mod-index、tests/mob-ray-select 并入跑批 |
+
 ## 八、轮 5 · 联机服务端打磨（S6–S13）
 
 两路并行，文件边界互斥；跨文件接口由调度方冻结（见下），接线只允许一处（index.mjs 属 N1）。
@@ -123,3 +125,50 @@ const worldFlushSweep = setInterval(() => { for (const r of rooms.values()) r.fl
 **握手口径**：客户端 `HELLO { name, version: PROTOCOL_VERSION }`；服务端 `Number(msg.version) !== PROTOCOL_VERSION` → `KICKED`（提示版本不一致、请刷新页面）并关闭连接；`version` 缺失（undefined/null）按旧客户端放行，`WELCOME` 带 `legacy: true`；`WELCOME` 恒带 `protocol: PROTOCOL_VERSION`。
 
 **验收标准**：① 改动文件逐个 `node --check`；② 新增套件注册进 `./server/run-all-tests.sh`（由调度方统一加，两路均不得改该脚本）；③ `npm test` 全绿且套件数/断言数不下降；④ 八条发现逐条可验证——限速新档超限丢包并进面板计数、皮肤端点 IP 限频 + 缓存上限清扫 + 三跳超时 + 域名白名单 + 日志节流、删房后档案/备份/内存条目全部清空、落盘节流（突发方块改动不即时落盘、flush 后落盘、关服强刷）、回放以 `BLOCK_CHANGE_BATCH` 分块（>512 格分多条）+ 背压等待、版本不匹配被踢且匹配放行、心跳改配置后在线连接下一轮即生效、`_handle` 对 null/数组/非法 JSON 不抛异常。
+## 九、轮 6 · 前端模式归一（F5–F12）
+
+两波实施：第一波三路并行（文件边界互斥），第二波单路（消费第一波产出的共享模块）。
+
+**第一波**
+
+| 路 | 负责条目 | 独占文件 |
+|---|---|---|
+| P | F5 UI 光标层归一（CursorOverlay 组合件替换四个 Screen 逐字复制的光标层，并接管其资源释放） | 新建 `src/ui/CursorOverlay.js`、`src/ui/ChestScreen.js`、`src/ui/FurnaceScreen.js`、`src/ui/InventoryScreen.js`、`src/ui/TradeScreen.js`、`tests/leak-guards.mjs`（可选扩展） |
+| Q | F6 Game 侧（远端玩家球体检测改纯函数）、F9 眼高/方块中心/移速常量集中（Game.js + Player.js）、F10 帧射线缓存、F11 `_anyInputBlockingUI()` 收口 | `src/player/Game.js`、`src/player/Player.js`、`src/player/Raycast.js`（仅追加导出）、新建常量模块（Q 定名，回报列出导出清单）、新建 `tests/ray-sphere.mjs` |
+| S | F7 `modifiedBlocks` 分桶索引（applyModifications 去全量扫描）、F12 RedstoneSystem/FluidSim 热路径坐标 key | `src/core/World.js`、`src/core/RedstoneSystem.js`、`src/core/FluidSim.js`、新建 tests/ 下纯 node 套件 |
+
+**第二波（第一波交付后开工；此时 `src/player/Game.js` 已由 Q 释放）**
+
+| 路 | 负责条目 | 独占文件 |
+|---|---|---|
+| R | F6 MobManager 侧（attackMob/findMobByRay 改调 raySphereHit）、F8 dispose 复用 `_removeMobResources`、F9 MobManager 内 `+ 0.5` 换常量、F10 BossBar 数据源（MobManager 维护 boss 列表 + Game 侧读取点改直读） | `src/entity/MobManager.js`、`src/player/Game.js`（仅 boss 列表读取处，约 1105-1115） |
+
+**冻结接口（第一波产出 → 第二波消费）**
+
+```js
+// src/player/Raycast.js（Q 追加导出；既有 Raycast 类语义不变）
+export function raySphereHit(ox, oy, oz, dx, dy, dz, cx, cy, cz, radius) // → number
+// 与旧内联实现逐式等价：oc = origin - center，b = oc·d，c = oc·oc - r²，disc = b*b - c；
+// disc < 0 → -1；t = -b - sqrt(disc)；t < 0 → -1；否则返回 t。未命中恒为 -1。
+// MobManager 侧球心 (mob.position.y + mob.height*0.5)、半径 max(width,height)*0.5；
+// ⚠ 勘误（R 路实施时发现并纠正）：本行初稿写作 position.y - height*0.5，是符号笔误。
+//   旧式 oc = rayOrigin - mob.position 后再 oc.y -= height*0.5 ⟺ 球心 y = position.y + height/2；
+//   raySphereHit 内部 ocy = oy - cy，传减号会与旧行为整整差一个 height（高个怪被静默漏判）。
+//   代价：球心在调用方预计算，与旧式 (oy-py)-h/2 相比有 ≤1 ulp 的浮点重结合差异——
+//   随机对拍 3000 组判定/命中选择零差异（t 最大差 1.1e-14），仅「旧式 disc 恰好为 0」的相切刀刃会翻转，属可接受边界。
+// Game 侧远端玩家球心 rp.group.position、半径 0.5，命中后仍由调用方做 1.8 身高区间判定。
+
+// 常量模块（Q 新建）：至少导出 PLAYER_EYE_HEIGHT = 1.62、BLOCK_CENTER = 0.5 与三档移速常量；
+// 确切路径与导出清单以 Q 回报为准，第二波按实际文件 import，不得改动该文件。
+```
+
+**验收标准**：① 改动文件逐个 `node --check`；② `npm test` 全绿且套件/断言数不下降；③ F5 光标层代码仅存在于 `CursorOverlay.js`（grep 证明），四个 Screen 的 dispose 幂等；④ F6 全仓无第二份球体判别式，纯函数探针覆盖命中/未命中/背向/相切/球心落于射线；⑤ F7 `applyModifications` 不再全账本遍历，索引在「写入 / 删除 / 维度切换 / 存档载入 / 批量 set」五条路径保持一致，探针按区块验证只应用本区块格子；⑥ F8 与 `_removeMobResources` 只有一份清理代码，重复 dispose 幂等；⑦ F9 眼高/方块中心/移速在 Q、R 独占文件内不再硬编码（grep 前后计数对照）；⑧ F10 帧射线不再每帧 new，BossBar 数据源不再每帧 filter；⑨ F11 `_anyInputBlockingUI()` 单一清单，弓蓄力与挖掘早退清单补齐 beaconScreen/steleScreen；⑩ F12 热路径不再反复 split+Number，键格式与外部消费者（`FluidSim.rehydrate` 消费账本键）不变；⑪ 浏览器端到端冒烟：四个界面开合后 document 监听器净增 0、光标层与 tooltip 正常、console 0 TypeError，信标界面打开时弓不可蓄力/不可挖掘。
+
+**证据要求**：每路给出改动清单、`node --check` 输出、定向探针输出与断言计数、迁移前后对照表、未覆盖风险点。
+
+
+**轮 6 实施中发现（不在本轮范围，待排期）**
+
+- 手持非方块（弓 / 末影之眼）且准星所指方块的「放置邻格」落在玩家自身 AABB 内时，右键会被 `Game.handleMouseInput` 的放置重叠守卫静默吞掉——`src/player/Game.js` 约 1884-1895 行的守卫条件只判 `sel && hit`，在 `BlockRegistry.getByName(sel.name)` 判断（1897 行）**之前**就 `return`，于是永远走不到 1938 行的弓蓄力分支。表现为「盯着脚边方块时弓无法蓄力 / 末影之眼掷不出」。
+- 归属：`git show HEAD:src/player/Game.js` 同区结构一致 → **轮前既有行为，非本轮回归**；按范围纪律本轮未改（最小修复＝把重叠检查移进 `if (blockDef)` 分支内，仅对真正要放置的方块生效）。
+- 证据：浏览器变体对照（`.run/round6-f11-diag2.mjs`）——`selectedBlock` 非空时同一 `handleMouseInput` 调用不进入蓄力；置空后立刻进入（无异常、无右键消费）。

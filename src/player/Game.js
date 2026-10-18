@@ -13,7 +13,8 @@ import { Physics, GLIDE_GRAVITY } from './Physics.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
-import { Raycast } from './Raycast.js';
+import { Raycast, raySphereHit } from './Raycast.js';
+import { PLAYER_EYE_HEIGHT, BLOCK_CENTER, MOVE_SPEED_FLYING, MOVE_SPEED_SURVIVAL, MOVE_SPEED_CREATIVE } from './constants.js';
 import { Hotbar, setSvgMaps } from '../ui/Hotbar.js';
 import { Hud } from '../ui/Hud.js';
 import { InfoBar } from '../ui/InfoBar.js';
@@ -185,17 +186,24 @@ export class Game {
       if (document.pointerLockElement) return;
       if (!this.controls.enabled) return;
       if (this.chatBox && this.chatBox.input) return; // 聊天输入中不弹暂停
-      if (this.inventoryScreen && this.inventoryScreen.visible) return;
-      if (this.chestScreen && this.chestScreen.visible) return;
-      if (this.beaconScreen && this.beaconScreen.visible) return;
-      if (this.steleScreen && this.steleScreen.visible) return;
-      if (this.furnaceScreen && this.furnaceScreen.visible) return;
-      if (this.tradeScreen && this.tradeScreen.visible) return;
+      if (this._anyInputBlockingUI()) return; // 容器界面开着时不弹暂停
       if (this.commandPanel && this.commandPanel.visible) return;
       if (this.pauseMenu && this.pauseMenu.visible) return;
       if (this.deathScreen && this.deathScreen.visible) return;
       this.pauseMenu?.show();
     });
+  }
+
+  // F11：唯一「阻断世界输入的 UI」清单（背包/箱子/熔炉/交易/信标/石碑）。
+  // 这些界面 show() 时置 controls.enabled=false 并退指针锁，但鼠标按键状态可能残留，
+  // 故挖掘/攻击/弓蓄力与指针锁自动暂停都必须先问这里——新增此类界面只改这一处。
+  _anyInputBlockingUI() {
+    return !!((this.inventoryScreen && this.inventoryScreen.visible) ||
+      (this.chestScreen && this.chestScreen.visible) ||
+      (this.furnaceScreen && this.furnaceScreen.visible) ||
+      (this.tradeScreen && this.tradeScreen.visible) ||
+      (this.beaconScreen && this.beaconScreen.visible) ||
+      (this.steleScreen && this.steleScreen.visible));
   }
 
   // 清理旧世界所有 Three.js 资源和 UI DOM，防止切换存档时残留"幽灵方块"等
@@ -397,10 +405,10 @@ export class Game {
     this.fireParticles = new ParticleSystem(this.renderer.scene, atlasTexture, atlasUV, 0.09);
     // 爆炸销毁方块时的碎屑粒子出口（TNT / 苦力怕爆炸共用）
     this.redstone.onBlockDestroyed = (x, y, z, def) => {
-      if (this.particles) this.particles.burstBlockBreak(x + 0.5, y, z + 0.5, def, this.world, 10);
+      if (this.particles) this.particles.burstBlockBreak(x + BLOCK_CENTER, y, z + BLOCK_CENTER, def, this.world, 10);
     };
     this.mobManager.onBlockDestroyed = (x, y, z, def) => {
-      if (this.particles) this.particles.burstBlockBreak(x + 0.5, y, z + 0.5, def, this.world, 8);
+      if (this.particles) this.particles.burstBlockBreak(x + BLOCK_CENTER, y, z + BLOCK_CENTER, def, this.world, 8);
     };
     // 末影龙击败事件（本地死亡链 + 远端同步入口，幂等）：置击败标记 + M3 建返回门/折跃门
     this.mobManager.onDragonDefeated = (mob) => this._onDragonDefeated(mob);
@@ -607,11 +615,8 @@ export class Game {
         if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
         if (this.pauseMenu && this.pauseMenu.visible) return;
         if (this.chatBox && this.chatBox.input) return;
-        if (this.inventoryScreen && this.inventoryScreen.visible) return;
         if (this.commandPanel && this.commandPanel.visible) return;
-        if ((this.chestScreen && this.chestScreen.visible) || (this.furnaceScreen && this.furnaceScreen.visible) ||
-            (this.beaconScreen && this.beaconScreen.visible) || (this.steleScreen && this.steleScreen.visible) ||
-            (this.tradeScreen && this.tradeScreen.visible)) return;
+        if (this._anyInputBlockingUI()) return; // 容器界面开着时不丢弃（清单唯一入口）
         e.preventDefault(); // 拦截浏览器 Ctrl+Q（Linux 关窗）等默认行为
         const stack = this.inventory.getSelected();
         if (!stack || !stack.name) return;
@@ -754,7 +759,7 @@ export class Game {
   // 检测眼睛位置是否在水里，更新 inWater / 氧气 / 溺水
   _updateWaterState(dt) {
     const p = this.player;
-    const eyeY = p.position.y + 1.62;
+    const eyeY = p.position.y + PLAYER_EYE_HEIGHT;
     const bx = Math.floor(p.position.x);
     const by = Math.floor(eyeY);
     const bz = Math.floor(p.position.z);
@@ -891,7 +896,7 @@ export class Game {
     } else {
       const move = this.controls.getMoveVector();
       // 信标速度效果（Idea-2D-③）：每级 +20% 移速
-      const speed = (this.player.flying ? 12 : (this.player.survival ? 4.3 : 5.6))
+      const speed = (this.player.flying ? MOVE_SPEED_FLYING : (this.player.survival ? MOVE_SPEED_SURVIVAL : MOVE_SPEED_CREATIVE))
         * (1 + 0.2 * (this.player.getEffectLevel ? this.player.getEffectLevel('speed') : 0));
       const sprint = this.controls.isSprinting() ? 1.3 : 1;
       
@@ -1106,9 +1111,7 @@ export class Game {
     }
     // Boss 血条（存活的 type.boss 实体：末影龙 / 凋灵可并存各占一条）
     if (this.bossBar) {
-      this.bossBar.update(this.mobManager
-        ? this.mobManager.mobs.filter(m => m.type && m.type.boss)
-        : []);
+      this.bossBar.update(this.mobManager ? this.mobManager.getBosses() : []);
     }
     
     // 红石系统
@@ -1328,10 +1331,10 @@ export class Game {
     for (const s of items) {
       if (!s) continue;
       if (this.networkMode && this.net) {
-        this.net.sendDropSpawn(block.x + 0.5, block.y + 0.5, block.z + 0.5, s.name, s.count);
+        this.net.sendDropSpawn(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER, s.name, s.count);
       } else if (this.mobManager) {
         this.mobManager.spawnDrop(
-          new THREE.Vector3(block.x + 0.5, block.y + 0.5, block.z + 0.5), s.name, s.count, null, { pickupDelay: 0.5 });
+          new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER), s.name, s.count, null, { pickupDelay: 0.5 });
       }
     }
   }
@@ -1349,12 +1352,12 @@ export class Game {
     }
     const data = (items && items.some(s => s)) ? items : null; // 空盒不带 data
     if (this.networkMode && this.net) {
-      this.net.sendDropSpawn(block.x + 0.5, block.y + 0.5, block.z + 0.5, 'shulker_box', 1, data);
+      this.net.sendDropSpawn(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER, 'shulker_box', 1, data);
     } else if (toInventory && this.player.survival) {
       this.inventory.add('shulker_box', 1, data);
     } else if (this.mobManager) {
       this.mobManager.spawnDrop(
-        new THREE.Vector3(block.x + 0.5, block.y + 0.5, block.z + 0.5), 'shulker_box', 1, data, { pickupDelay: 0.5 });
+        new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER), 'shulker_box', 1, data, { pickupDelay: 0.5 });
     }
     if (this.hotbar) this.hotbar.update();
   }
@@ -1444,10 +1447,10 @@ export class Game {
     for (const s of [st.input, st.fuel, st.output]) {
       if (!s) continue;
       if (this.networkMode && this.net) {
-        this.net.sendDropSpawn(block.x + 0.5, block.y + 0.5, block.z + 0.5, s.name, s.count);
+        this.net.sendDropSpawn(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER, s.name, s.count);
       } else if (this.mobManager) {
         this.mobManager.spawnDrop(
-          new THREE.Vector3(block.x + 0.5, block.y + 0.5, block.z + 0.5), s.name, s.count, null, { pickupDelay: 0.5 });
+          new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER), s.name, s.count, null, { pickupDelay: 0.5 });
       }
     }
   }
@@ -1473,11 +1476,21 @@ export class Game {
     if (this.hotbar) { this.hotbar.update(); this.hotbar.flashName(); }
   }
 
+  // F10：帧射线缓存——同一帧内眼位起点与视线方向只构建一次（updateRaycast/挖掘与攻击/右键交互共用）。
+  // 令牌为 this.frame：跨帧必重建，不存在脏数据；返回对象是共享只读量，调用方一律不得改写
+  // （改写会污染本帧后续使用者）；需要改方向的分支（射箭 multiplyScalar）自建局部向量。
+  _frameRay() {
+    if (this._rayFrame === this.frame && this._rayCache) return this._rayCache;
+    this._rayFrame = this.frame;
+    const cache = this._rayCache || (this._rayCache = { origin: new THREE.Vector3(), dir: new THREE.Vector3() });
+    cache.origin.copy(this.player.position);
+    cache.origin.y += PLAYER_EYE_HEIGHT;
+    this.renderer.camera.getWorldDirection(cache.dir);
+    return cache;
+  }
+
   updateRaycast() {
-    const origin = this.player.position.clone();
-    origin.y += 1.62;
-    const dir = new THREE.Vector3();
-    this.renderer.camera.getWorldDirection(dir);
+    const { origin, dir } = this._frameRay(); // F10：本帧射线（与 handleMouseInput 共用同一份）
 
     const maxDist = this.player.creative ? 5 : 4.5;
     // 空桶对准流体：射线需命中水/岩浆（否则准星穿透无法舀取）
@@ -1487,7 +1500,7 @@ export class Game {
 
     if (hit) {
       this.highlight.visible = true;
-      this.highlight.position.set(hit.block.x + 0.5, hit.block.y + 0.5, hit.block.z + 0.5);
+      this.highlight.position.set(hit.block.x + BLOCK_CENTER, hit.block.y + BLOCK_CENTER, hit.block.z + BLOCK_CENTER);
     } else {
       this.highlight.visible = false;
       this.breakingProgress = 0;
@@ -1496,9 +1509,9 @@ export class Game {
     // 计算准星目标 —— 方块与实体取较近者，用于 InfoBar 显示
     let blockDist = Infinity;
     if (hit) {
-      const cx = hit.block.x + 0.5 - origin.x;
-      const cy = hit.block.y + 0.5 - origin.y;
-      const cz = hit.block.z + 0.5 - origin.z;
+      const cx = hit.block.x + BLOCK_CENTER - origin.x;
+      const cy = hit.block.y + BLOCK_CENTER - origin.y;
+      const cz = hit.block.z + BLOCK_CENTER - origin.z;
       blockDist = Math.sqrt(cx * cx + cy * cy + cz * cz);
     }
     let info = null;
@@ -1521,11 +1534,7 @@ export class Game {
     // 弓蓄力通道（Idea-2A）：独立于下方单击分支——蓄力中吞掉全部右键语义防中途误触，
     // 松手在此检测（mouseup 后 controls.mouseRight 变 false，下方 mouseRight 块不会再进）。
     if (this._bowCharging) {
-      const uiOpen = (this.inventoryScreen && this.inventoryScreen.visible) ||
-        (this.chestScreen && this.chestScreen.visible) ||
-        (this.furnaceScreen && this.furnaceScreen.visible) ||
-        (this.tradeScreen && this.tradeScreen.visible);
-      if (uiOpen) {
+      if (this._anyInputBlockingUI()) { // 信标/石碑同样阻断（清单唯一入口）
         this._cancelBowCharge();
       } else if (!this.controls.mouseRight) {
         this._releaseBow();
@@ -1541,10 +1550,7 @@ export class Game {
         }
       }
     }
-    if (this.inventoryScreen && this.inventoryScreen.visible) return;
-    if (this.chestScreen && this.chestScreen.visible) return;
-    if (this.furnaceScreen && this.furnaceScreen.visible) return;
-    if (this.tradeScreen && this.tradeScreen.visible) return;
+    if (this._anyInputBlockingUI()) return; // 信标/石碑同样阻断（清单唯一入口）
     // 对空可持弓/掷眼（分支不依赖命中）——放宽未命中早退
     const heldNow = this.inventory.getSelected();
     const bowLikeHeld = !!heldNow && (heldNow.name === 'bow' || heldNow.name === 'ender_eye');
@@ -1554,10 +1560,7 @@ export class Game {
     if (this.controls.mouseLeft) {
       // 联机互殴：先检测远端玩家（射线命中优先于怪物）；Idea-4A：房间关闭 PvP 时跳过远端检测
       if (this.networkMode && this.net && this.net.roomSettings?.pvp !== false && !this.inventoryScreen?.visible) {
-        const origin = this.player.position.clone();
-        origin.y += 1.62;
-        const dir = new THREE.Vector3();
-        this.renderer.camera.getWorldDirection(dir);
+        const { origin, dir } = this._frameRay();
         const rp = this._findRemoteByRay(origin, dir, 4);
         if (rp) {
           this.hand.swing(); // 阶段10：命中远端玩家挥动
@@ -1568,10 +1571,7 @@ export class Game {
       }
       // 先尝试攻击怪物
       if (this.mobManager && !this.inventoryScreen?.visible) {
-        const origin = this.player.position.clone();
-        origin.y += 1.62;
-        const dir = new THREE.Vector3();
-        this.renderer.camera.getWorldDirection(dir);
+        const { origin, dir } = this._frameRay();
         const damage = this.player.creative ? 100 : this.getAttackDamage();
         // Build 20 ④：创造玩家攻击不激怒中立/守卫生物（怪物不以创造玩家为敌）
         const hit = this.mobManager.attackMob(origin, dir, 4, damage, { provoke: !this.player.creative });
@@ -1588,7 +1588,7 @@ export class Game {
       if (!def) return;
       
       if (this.player.creative) {
-        if (this.particles) this.particles.burstBlockBreak(hit.block.x + 0.5, hit.block.y, hit.block.z + 0.5, def, this.world);
+        if (this.particles) this.particles.burstBlockBreak(hit.block.x + BLOCK_CENTER, hit.block.y, hit.block.z + BLOCK_CENTER, def, this.world);
         audio.blockBreak(def);
         if (def.baseBlock === 'chest') this._breakChest(hit.block, false); // B28 家族（四朝向）
         if (def.name === 'beacon') this._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
@@ -1618,17 +1618,17 @@ export class Game {
         this._miningActive = true;
         this.breakingProgress += dt * speedMul / hardness;
         this.breakMesh.visible = true;
-        this.breakMesh.position.set(hit.block.x + 0.5, hit.block.y + 0.5, hit.block.z + 0.5);
+        this.breakMesh.position.set(hit.block.x + BLOCK_CENTER, hit.block.y + BLOCK_CENTER, hit.block.z + BLOCK_CENTER);
         this.breakMesh.material.opacity = Math.min(0.5, this.breakingProgress * 0.5);
         // 挖掘中小碎粒（每 0.25s 一两粒）
         this._miningPuffTimer = (this._miningPuffTimer || 0) + dt;
         if (this._miningPuffTimer >= 0.25 && this.particles) {
           this._miningPuffTimer = 0;
-          this.particles.puffMining(hit.block.x + 0.5, hit.block.y, hit.block.z + 0.5, def, this.world);
+          this.particles.puffMining(hit.block.x + BLOCK_CENTER, hit.block.y, hit.block.z + BLOCK_CENTER, def, this.world);
           audio.digHit(def); // 挖掘命中音（与碎粒同节奏，天然限频）
         }
         if (this.breakingProgress >= 1) {
-          if (this.particles) this.particles.burstBlockBreak(hit.block.x + 0.5, hit.block.y, hit.block.z + 0.5, def, this.world);
+          if (this.particles) this.particles.burstBlockBreak(hit.block.x + BLOCK_CENTER, hit.block.y, hit.block.z + BLOCK_CENTER, def, this.world);
           audio.blockBreak(def);
           if (def.baseBlock === 'chest') this._breakChest(hit.block, true); // B28 家族（四朝向）
           if (def.name === 'beacon') this._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
@@ -1649,7 +1649,7 @@ export class Game {
             for (const d of drops) {
               if (this.networkMode && this.net) {
                 // 联机：生成物理掉落物（服务器广播 drop_spawn，各端看到同一个），谁都能拾取
-                this.net.sendDropSpawn(hit.block.x + 0.5, hit.block.y + 0.5, hit.block.z + 0.5, d.name, d.count);
+                this.net.sendDropSpawn(hit.block.x + BLOCK_CENTER, hit.block.y + BLOCK_CENTER, hit.block.z + BLOCK_CENTER, d.name, d.count);
               } else {
                 // 单机：简化直接进入背包
                 this.inventory.add(d.name, d.count);
@@ -1672,10 +1672,7 @@ export class Game {
     if (this.controls.mouseRight) {
       // T5：右键村民优先交互（开交易屏；旁观不可）
       if (this.mobManager && this.tradeScreen && !this.player.spectator) {
-        const o = this.player.position.clone();
-        o.y += 1.62;
-        const d = new THREE.Vector3();
-        this.renderer.camera.getWorldDirection(d);
+        const { origin: o, dir: d } = this._frameRay();
         const mh = this.mobManager.findMobByRay(o, d, 4);
         if (mh && mh.mob.typeName === 'villager' && !mh.mob.dead) {
           this.tradeScreen.show(mh.mob);
@@ -1739,7 +1736,7 @@ export class Game {
       if (furnaceDef && (furnaceDef.part === 'bed_foot' || furnaceDef.part === 'bed_head') && !this.player.spectator) {
         if (this.world.dimension !== 'overworld') {
           this.bedSpawn = null;
-          const bx = furnaceHit.block.x + 0.5, by = furnaceHit.block.y + 0.5, bz = furnaceHit.block.z + 0.5;
+          const bx = furnaceHit.block.x + BLOCK_CENTER, by = furnaceHit.block.y + BLOCK_CENTER, bz = furnaceHit.block.z + BLOCK_CENTER;
           if (this.mobManager) this.mobManager.pendingExplosions.push({ x: bx, y: by, z: bz, radius: 3 }); // 另一半床体一并清除
           const d = this.player.position.distanceTo(new THREE.Vector3(bx, by, bz));
           const dmg = Math.round(12 * Math.max(0, 1 - d / 6));
@@ -1806,10 +1803,10 @@ export class Game {
                 this.hotbar.update();
               }
               // 殿前苏醒：底台东缘（门侧）地面高度，rise 阶段立起后进入岩卫
-              this.mobManager?._spawnAt('storm_colossus', hit.block.x + 6.5, hit.block.y + 2.05, hit.block.z + 0.5);
+              this.mobManager?._spawnAt('storm_colossus', hit.block.x + 6.5, hit.block.y + 2.05, hit.block.z + BLOCK_CENTER);
               if (this.particles) {
                 const marrowDef = BlockRegistry.getByName('star_marrow_block');
-                if (marrowDef) this.particles.burstBlockBreak(hit.block.x + 0.5, hit.block.y + 2, hit.block.z + 0.5, marrowDef, this.world);
+                if (marrowDef) this.particles.burstBlockBreak(hit.block.x + BLOCK_CENTER, hit.block.y + 2, hit.block.z + BLOCK_CENTER, marrowDef, this.world);
               }
             }
           } else {
@@ -1978,7 +1975,7 @@ export class Game {
         new THREE.SphereGeometry(0.12, 8, 8),
         new THREE.MeshBasicMaterial({ color: 0x66ffcc })
       );
-      mesh.position.set(p.x, p.y + 1.62, p.z);
+      mesh.position.set(p.x, p.y + PLAYER_EYE_HEIGHT, p.z);
       this.renderer.scene.add(mesh);
       this.eyeFlight = { mesh, dir: new THREE.Vector3(dx, 6, dz).normalize(), t: 0, total: 2.5 };
     }
@@ -2007,7 +2004,7 @@ export class Game {
     const dir = new THREE.Vector3();
     this.renderer.camera.getWorldDirection(dir);
     const start = this.player.position.clone();
-    start.y += 1.62;
+    start.y += PLAYER_EYE_HEIGHT;
     start.addScaledVector(dir, 0.6);
     this._ensureArrowAssets();
     const mesh = new THREE.Mesh(Game._arrowGeo, Game._arrowMat);
@@ -2289,7 +2286,7 @@ export class Game {
     // 仪式演出：粒子潮涌 + 第九章碑文自动浮现
     if (this.particles) {
       const tideDef = BlockRegistry.getByName('tide_altar');
-      if (tideDef) this.particles.burstBlockBreak(block.x + 0.5, block.y + 1.5, block.z + 0.5, tideDef, this.world);
+      if (tideDef) this.particles.burstBlockBreak(block.x + BLOCK_CENTER, block.y + 1.5, block.z + BLOCK_CENTER, tideDef, this.world);
     }
     this.steleScreen.open(block.x, block.y, block.z, 'renewal');
   }
@@ -2319,7 +2316,7 @@ export class Game {
         }
         if (this.particles) {
           const altarDef = BlockRegistry.getByName('primordial_altar');
-          if (altarDef) this.particles.burstBlockBreak(block.x + 0.5, block.y + 1.5, block.z + 0.5, altarDef, this.world);
+          if (altarDef) this.particles.burstBlockBreak(block.x + BLOCK_CENTER, block.y + 1.5, block.z + BLOCK_CENTER, altarDef, this.world);
         }
         // 候潮章浮现（复潮碑文浮现同款交互；联机提示通道 chatBox 由碑文统一替代）
         this.steleScreen.open(block.x, block.y, block.z, 'tide_waiting');
@@ -2439,7 +2436,7 @@ export class Game {
         if (this.world.finalePrimordial && Math.random() < 0.5) {
           const a = this.world.finalePrimordial;
           this.particles.spawn(
-            a.x + 0.5 + jx * 1.2, a.y + 1 + Math.random() * 0.8, a.z + 0.5 + jz * 1.2,
+            a.x + BLOCK_CENTER + jx * 1.2, a.y + 1 + Math.random() * 0.8, a.z + BLOCK_CENTER + jz * 1.2,
             jx * 0.6, pt.rise * (0.7 + Math.random() * 0.6), jz * 0.6,
             r, g, b, pt.life * (0.8 + Math.random() * 0.4), pt.grav, 0.995
           );
@@ -2472,7 +2469,7 @@ export class Game {
         const sx = Math.round(pos.x + jx * pt.spread), sz = Math.round(pos.z + jz * pt.spread);
         if (this.world.getBlock(sx, 62, sz) === WATER) {
           this.particles.spawn(
-            sx + 0.5, 63.8 + Math.random() * 0.5, sz + 0.5,
+            sx + BLOCK_CENTER, 63.8 + Math.random() * 0.5, sz + BLOCK_CENTER,
             jx * 0.3, pt.rise * (0.7 + Math.random() * 0.6), jz * 0.3,
             r, g, b, pt.life * (0.8 + Math.random() * 0.4), pt.grav, 0.998
           );
@@ -2489,7 +2486,7 @@ export class Game {
         if (sy > 0) {
           const tang = ang + Math.PI / 2 * (Math.random() < 0.5 ? 1 : -1); // 沿切线方向掠过
           this.particles.spawn(
-            sx + 0.5, sy + 1.2 + Math.random() * 1.6, sz + 0.5,
+            sx + BLOCK_CENTER, sy + 1.2 + Math.random() * 1.6, sz + BLOCK_CENTER,
             Math.cos(tang) * 1.6, pt.rise * 0.3, Math.sin(tang) * 1.6,
             r, g, b, pt.life * (0.9 + Math.random() * 0.4), pt.grav, 0.998
           );
@@ -2588,7 +2585,7 @@ export class Game {
     for (const [bx, by, bz] of [[hx, hy, hz], [hx, hy - 1, hz], [hx, hy - 2, hz], [hx - 1, hy - 1, hz], [hx + 1, hy - 1, hz]]) {
       this.world.setBlock(bx, by, bz, 0);
     }
-    this.mobManager._spawnAt('iron_golem', hx + 0.5, hy - 2 + 0.1, hz + 0.5);
+    this.mobManager._spawnAt('iron_golem', hx + BLOCK_CENTER, hy - 2 + 0.1, hz + BLOCK_CENTER);
     if (this.chatBox) this.chatBox.add(t('铁傀儡从方块中苏醒了…'), '#cfc');
     return true;
   }
@@ -2635,7 +2632,7 @@ export class Game {
             for (let i = 0; i < 3; i++) blocks.push([hx + ax * i, ty, hz + az * i]);
             for (let i = 0; i < 3; i++) blocks.push([hx + ax * i, ty - 1, hz + az * i]);
             blocks.push([hx + ax, ty - 2, hz + az]);
-            return { blocks, cx: hx + ax + 0.5, cz: hz + az + 0.5, sy: ty - 1 };
+            return { blocks, cx: hx + ax + BLOCK_CENTER, cz: hz + az + BLOCK_CENTER, sy: ty - 1 };
           }
         }
       }
@@ -2692,7 +2689,7 @@ export class Game {
     const range = 10 * power;
     const p = this.player;
     if (!p || p.dead) return;
-    const dx = p.position.x - (b.x + 0.5), dy = p.position.y - b.y, dz = p.position.z - (b.z + 0.5);
+    const dx = p.position.x - (b.x + BLOCK_CENTER), dy = p.position.y - b.y, dz = p.position.z - (b.z + BLOCK_CENTER);
     if (dx * dx + dy * dy + dz * dz <= range * range) {
       p.applyEffect(b.effect, Math.min(2, power), 12); // 12s 时长 > 4s 脉冲周期，效果无缝续期
     }
@@ -2727,7 +2724,7 @@ export class Game {
     const geo = new THREE.BoxGeometry(0.4, h, 0.4);
     const mat = new THREE.MeshBasicMaterial({ color: 0xf2f0dc, transparent: true, opacity: 0.22, depthWrite: false });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x + 0.5, y + h / 2, z + 0.5);
+    mesh.position.set(x + BLOCK_CENTER, y + h / 2, z + BLOCK_CENTER);
     this.renderer.scene.add(mesh);
     this._beaconBeams.set(key, mesh);
   }
@@ -2903,7 +2900,7 @@ export class Game {
     const p = this.player.position;
     const target = gatewayTarget(this.world, p.x, p.z);
     if (!target) return;
-    p.set(target.x + 0.5, target.y + 1, target.z + 0.5);
+    p.set(target.x + BLOCK_CENTER, target.y + 1, target.z + BLOCK_CENTER);
     this.player.velocity.set(0, 0, 0);
     if (this.chatBox) this.chatBox.add(t('折跃门的光束把你送往远方的岛屿……'), '#a7f');
   }
@@ -3102,8 +3099,8 @@ export class Game {
 
   // 玩家相对目标格的水平朝向键：门/活板门面板贴"玩家近边"
   _facingTowardPlayer(bx, bz) {
-    const dx = this.player.position.x - (bx + 0.5);
-    const dz = this.player.position.z - (bz + 0.5);
+    const dx = this.player.position.x - (bx + BLOCK_CENTER);
+    const dz = this.player.position.z - (bz + BLOCK_CENTER);
     return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'e' : 'w') : (dz > 0 ? 's' : 'n');
   }
 
@@ -3248,7 +3245,7 @@ export class Game {
       this.world.setBlock(x, y, z, 0);
       for (const d of drops) {
         if (this.networkMode && this.net) {
-          this.net.sendDropSpawn(x + 0.5, y + 0.5, z + 0.5, d.name, d.count);
+          this.net.sendDropSpawn(x + BLOCK_CENTER, y + BLOCK_CENTER, z + BLOCK_CENTER, d.name, d.count);
         } else {
           this.inventory.add(d.name, d.count);
         }
@@ -3284,7 +3281,7 @@ export class Game {
 
   // 末影水晶被击碎：范围爆炸（复用怪物爆炸破坏路径）+ 按距离衰减伤害
   _breakCrystal(x, y, z) {
-    const px = x + 0.5, py = y + 0.5, pz = z + 0.5;
+    const px = x + BLOCK_CENTER, py = y + BLOCK_CENTER, pz = z + BLOCK_CENTER;
     if (this.mobManager) {
       this.mobManager.pendingExplosions.push({ x: px, y: py, z: pz, radius: 3 });
     }
@@ -3313,7 +3310,7 @@ export class Game {
       y--;
     }
     if (y < 1) return;
-    p.set(tx + 0.5, y, tz + 0.5);
+    p.set(tx + BLOCK_CENTER, y, tz + BLOCK_CENTER);
     this.player.velocity.set(0, 0, 0); // 传送落地速度清零（摔落伤害按落地速度计算）
     if (this.chatBox) this.chatBox.add(t('紫颂果把你拉向了虚空中的另一处……'), '#c8f');
   }
@@ -3501,7 +3498,7 @@ export class Game {
     if (!this.networkMode && this.bedSpawn && this.bedSpawn.dimension === this.world.dimension) {
       const bedDef = BlockRegistry.getById(this.world.getBlock(this.bedSpawn.x, this.bedSpawn.y, this.bedSpawn.z));
       if (bedDef && (bedDef.part === 'bed_foot' || bedDef.part === 'bed_head')) {
-        sp = { x: this.bedSpawn.x + 0.5, y: this.bedSpawn.y + 1, z: this.bedSpawn.z + 0.5 };
+        sp = { x: this.bedSpawn.x + BLOCK_CENTER, y: this.bedSpawn.y + 1, z: this.bedSpawn.z + BLOCK_CENTER };
       } else {
         this.bedSpawn = null;
         if (this.chatBox) this.chatBox.add(t('你的床已不见或被挡住了，回到世界出生点'), '#fcc');
@@ -3590,8 +3587,8 @@ export class Game {
     if (hasPos) {
       const ay = this._resolveArrivalY(dim, arrival.x, arrival.z);
       const plat = ARRIVAL_PLATFORM[dim];
-      playerData.x = arrival.x + 0.5;
-      playerData.z = arrival.z + 0.5;
+      playerData.x = arrival.x + BLOCK_CENTER;
+      playerData.z = arrival.z + BLOCK_CENTER;
       playerData.y = ay > 0 ? ay : (plat ? plat.y : 64);
     }
     return {
@@ -3707,7 +3704,7 @@ export class Game {
     }
     const cam = this.renderer.camera;
     cam.position.copy(this.player.position); // 已被 update() 平滑吸附到目标附近
-    cam.position.y += 1.62; // 视点高度
+    cam.position.y += PLAYER_EYE_HEIGHT; // 视点高度
     cam.rotation.order = 'YXZ';
     cam.rotation.y = this._specSmoothed ? this._specSmoothYaw : rp.yaw;
     cam.rotation.x = this._specSmoothed ? this._specSmoothPitch : rp.pitch;
@@ -3724,20 +3721,17 @@ export class Game {
     return 1 + 2 * str;
   }
 
-  // 射线检测远端玩家（简化球体检测，半径 0.5，高度 1.8），返回命中的 RemotePlayer 或 null
+  // 射线检测远端玩家（F6：球体判别式走共享纯函数 raySphereHit，半径 0.5），返回命中的 RemotePlayer 或 null；
+  // 命中后仍按 1.8 身高区间过滤，并始终取最近者。
   _findRemoteByRay(origin, dir, maxDist) {
     let best = null, bestDist = maxDist;
     for (const rp of this.remotePlayers.values()) {
       if (rp.dead) continue;
-      const oc = new THREE.Vector3().subVectors(origin, rp.group.position);
-      const b = oc.dot(dir);
-      const c = oc.dot(oc) - 0.5 * 0.5;
-      const disc = b * b - c;
-      if (disc < 0) continue;
-      const t = -b - Math.sqrt(disc);
+      const c = rp.group.position;
+      const t = raySphereHit(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, c.x, c.y, c.z, 0.5);
       if (t < 0 || t > bestDist) continue;
       const hy = origin.y + dir.y * t;
-      if (hy < rp.group.position.y || hy > rp.group.position.y + 1.8) continue;
+      if (hy < c.y || hy > c.y + 1.8) continue;
       bestDist = t;
       best = rp;
     }

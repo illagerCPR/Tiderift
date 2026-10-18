@@ -6,7 +6,7 @@ import { drawIconInto } from '../render/BlockIcon.js';
 import { ensureStoneStyles } from './StoneStyle.js';
 import { villagerTrades } from '../world/loot.js';
 import { t } from '../i18n/index.js';
-import { getDisplayName } from './itemName.js';
+import { CursorOverlay } from './CursorOverlay.js';
 
 export class TradeScreen {
   constructor(game) {
@@ -30,28 +30,17 @@ export class TradeScreen {
     document.body.appendChild(this.el);
     this.el.addEventListener('click', (e) => { if (e.target === this.el) this.hide(); });
 
-    this.tooltip = document.createElement('div');
-    this.tooltip.style.cssText = `
-      position: fixed; padding: 4px 8px; background: rgba(10,10,10,0.92);
-      color: #fff; font-family: monospace; font-size: 13px; z-index: 200;
-      pointer-events: none; display: none; border: 1px solid rgba(255,255,255,0.3);
-      text-shadow: 1px 1px 0 #000; max-width: 220px;
-    `;
-    document.body.appendChild(this.tooltip);
-    this._onMouseMove = (e) => {
-      if (!this.visible) { this.tooltip.style.display = 'none'; return; }
-      if (this._hoverEl && this._hoverEl.contains(e.target)) {
-        this.tooltip.style.left = (e.clientX + 14) + 'px';
-        this.tooltip.style.top = (e.clientY + 14) + 'px';
-      }
-    };
-    document.addEventListener('mousemove', this._onMouseMove);
+    // 光标层（悬浮提示 + mousemove 定位）统一由组合件承担；交易界面不显示手持物品图标、不屏蔽右键
+    this._disposed = false;
+    this.cursor = new CursorOverlay({ isVisible: () => this.visible });
   }
 
+  // 释放：光标层（组合件内的监听器与节点）与面板节点一并摘除（幂等）
   dispose() {
-    document.removeEventListener('mousemove', this._onMouseMove);
+    if (this._disposed) return;
+    this._disposed = true;
+    this.cursor.dispose();
     this.el.remove();
-    this.tooltip.remove();
   }
 
   show(mob) {
@@ -76,8 +65,7 @@ export class TradeScreen {
   hide() {
     this.visible = false;
     this.el.style.display = 'none';
-    this.tooltip.style.display = 'none';
-    this._hoverEl = null;
+    this.cursor.clearHover();
     this.mob = null;
     if (this.game.controls) this.game.controls.enabled = true;
   }
@@ -113,7 +101,7 @@ export class TradeScreen {
     this.panel.appendChild(hint);
   }
 
-  _slotEl(stack, tooltipText) {
+  _slotEl(stack) {
     const slot = document.createElement('div');
     slot.style.cssText = `
       width: 44px; height: 44px; background: #8b8b8b; border: 2px solid #555;
@@ -130,14 +118,7 @@ export class TradeScreen {
       c.textContent = stack.count;
       c.style.cssText = 'position: absolute; right: 2px; bottom: 0; color: #fff; font-size: 14px; font-weight: bold; text-shadow: 1px 1px 0 #000;';
       slot.appendChild(c);
-    }
-    if (tooltipText) {
-      slot.onmouseenter = () => {
-        this.tooltip.textContent = tooltipText;
-        this.tooltip.style.display = 'block';
-        this._hoverEl = slot;
-      };
-      slot.onmouseleave = () => { this.tooltip.style.display = 'none'; this._hoverEl = null; };
+      this.cursor.bindHover(slot, stack.name);
     }
     return slot;
   }
@@ -145,12 +126,12 @@ export class TradeScreen {
   _tradeRow(trade, idx) {
     const row = document.createElement('div');
     row.style.cssText = 'display: flex; gap: 6px; align-items: center;';
-    row.appendChild(this._slotEl(trade.give, getDisplayName(trade.give.name)));
+    row.appendChild(this._slotEl(trade.give));
     const arrow = document.createElement('div');
     arrow.textContent = '→';
     arrow.style.cssText = 'font-size: 18px; color: #444;';
     row.appendChild(arrow);
-    row.appendChild(this._slotEl(trade.get, getDisplayName(trade.get.name)));
+    row.appendChild(this._slotEl(trade.get));
 
     const btn = document.createElement('button');
     const ok = this._countOf(trade.give.name) >= trade.give.count;

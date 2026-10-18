@@ -222,6 +222,7 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 
 | 文件 | 涵盖批次 | 何时必读 |
 |---|---|---|
+| `docs/agent-notes/world-ledger.md` | B30 审查轮 6（F7 modifiedBlocks 分桶索引、F12 红石/流体待处理队列键化） | 改动 World.setBlock/applyModifications、modifiedBlocks 账本、RedstoneSystem/FluidSim 待处理队列时 |
 | `docs/agent-notes/fluid-sim.md` | B26 流体模拟（M1 可流动水/岩浆 + M3 联机批量/相遇固化 + M2 部分水位） | 流体、FluidSim、方块注册白名单、水面渲染高度 |
 | `docs/agent-notes/worldgen-structures.md` | 自然建筑/村庄/要塞、T5 战利品箱与村民交易、W 水面/洞穴、生物群系规模、群系扩展、B25 树让位/村庄麦田/全景禁结构 | 地形生成、结构、群系、loot/容器/交易 |
 | `docs/agent-notes/dimensions-portals.md` | 维度基建/下界/末地/天域/联机同步、传送门、下界优化、末地完善（龙/末地城）、天域叙事基石（批次 A）、天域群风与众生（批次 B）、天域守誓巨像（批次 C）、天域复潮（批次 D） | 维度、传送门、下界/末地、换维联机、天域内容注册/i18n 审计/气流与免摔落/Boss AI/复潮档案 |
@@ -229,6 +230,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
 | `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、UI 图标链 |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关、B30 轮 5 服务端打磨（落盘节流/回放打包/协议版本/限速扩档/皮肤代理加固/心跳活读/入口防御） | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关、落盘与回放、握手版本 |
-| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤 | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏 |
+| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控 | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

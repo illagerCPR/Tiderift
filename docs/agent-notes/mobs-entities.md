@@ -131,3 +131,29 @@
 - **⑤ i18n**：皮肤面板「正版用户名」→「Minecraft®: Java Edition档案用户名」（键即中文源文案，10 包键名同步替换；服务器错误文案与注释里的旧词不属键面，保持原样）。
 - **版本钉值纪律**：各批次测试的 `BUILD === X` 断言在下一批次**必须全部前移**（本批漏了 4 个世界观套件 endgame-tide/content/finale、whale-barrow 钉在 21，全量回归才炸出）。建议：改 BUILD 时 grep `BUILD ===` 全量同步。
 - **测试/冒烟**：tests/build22-fixes.mjs 104 断言 + server/test-skinlog.mjs 6 断言并入 run-all-tests.sh；冒烟：test.png 猫耳回头顶（第三人称正面截图 + SkinScreen 预览）✓ 夜晚荧石旁玩家被暖光照亮且纹理保留（emissiveMap 迭代后截图）✓ 白天 glow=0 ✓ 远处 0.595/荧石旁 1.09 数值锚点 ✓ 怪物暗处 0.55 染色回归 ✓ `/api/skin/Notch` 200 + 日志 `mojang/classic` ✓。
+
+## B30 审查轮 6 · 第二波 R 路（F6 / F8 / F9 / F10）
+
+### F6 球体射线检测统一走 raySphereHit（高陷阱：球心 y 的符号）
+
+- `attackMob` 与 `findMobByRay` 的内联判别式删除，改调 `src/player/Raycast.js` 的 `raySphereHit`（标量入参，零分配；旧实现每怪一次 `new THREE.Vector3()`）。
+- **球心 y = `mob.position.y + mob.height * 0.5`（加号！）**：旧式 `oc = rayOrigin - mob.position` 后再 `oc.y -= height*0.5`，展开即球心 `position.y + height/2`（`MobTypes` 部件盒 `y0 ≥ 0` → position 是脚底）。传减号会让球心整体下移一个 height，**高个怪被静默漏判**（实测 900 组随机配置里 374 组本该命中却判未命中）。轮 6 计划书初稿此处即写错，由实施方发现。
+- 调用口径变化带来的唯一差异：球心在调用方预计算，与旧式 `(oy - py) - h/2` 相比存在 ≤1 ulp 浮点重结合——随机对拍 3000 组判定与命中选择零差异（命中距离最大差 1.1e-14），仅「旧式 disc 恰为 0」的相切刀刃会翻转命中与否（测度为零，可接受）。
+- `Game._findRemoteByRay` 同理改调 `raySphereHit`（远端玩家球心 `rp.group.position`、半径 0.5，无 y 偏移 → 无重结合问题），命中后仍按 1.8 身高区间过滤并取最近者。
+
+### F8 dispose 复用 _removeMobResources
+
+- `MobManager.dispose()` 内逐只 mob 的清理改为调用 `_removeMobResources(mob)`；全仓 per-mob 释放代码只剩一份（`scene.remove(mob.mesh)` / `healthBarSprite.material.dispose` / `healthBarTex.dispose` 各一处）。
+- 语义增强（有意）：`_removeMobResources` 会多释放 `healthBarTex` 并置空 `healthBarSprite/healthBarTex/healthBarCanvas/healthBarCtx`；`mob.mesh` 依旧不置空（与旧一致）。重复 `dispose()` 幂等（第二次零新增释放、不抛错），幂等性由末尾 `this.mobs = []` 保证。
+
+### F9 MobManager 内方块中心常量
+
+- 5 行 / 6 处 `x + 0.5` / `z + 0.5` → `BLOCK_CENTER`（被动群生成、小群散布、末影人、常规刷怪、`_teleportMob` 落点）。
+- **不要顺手改**：`Math.random() < 0.5` 概率判断、`y + 1`（站上顶面）、掉落物半高 0.5、球体半径 `* 0.5`。
+
+### F10 Boss 血条数据源（MobManager 维护，零分配）
+
+- `MobManager._bosses` 登记表：`spawnMob()` 末尾是全仓唯一 `this.mobs.push` 入列点（联机 `createMobFromNet` 也走它），此处按 `mob.type && mob.type.boss` 登记；**四条 `this.mobs.splice` 出列路径**（随村清扫 >120、末地城清扫 >200、死亡动画播完、despawn >80）各自先调 `_untrackBoss`，`dispose()` 同时清空两个数组——漏一条就是永久幽灵血条。
+- `getBosses()` 直接返回内部数组（零分配，调用方只读）；`Game` 每帧 `this.bossBar.update(this.mobManager ? this.mobManager.getBosses() : [])`，不再 `filter` 新建数组；`BossBar.update` 改为只读单循环（先计数决定显隐、再逐只建行）。
+- **BossBar 内的 `m.dead / m.dyingAnim` 防御不能删**：Boss 死亡后到死亡动画播完（最长 0.4s）仍留在 `_bosses` 里。
+- 预存在行为（本轮未改）：某只 Boss 的 DOM 行不会被回收，靠整体 `display:none` 隐藏；另一只 Boss 存活时死亡 Boss 的行会停在最后血量。

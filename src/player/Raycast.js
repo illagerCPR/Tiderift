@@ -65,3 +65,18 @@ export class Raycast {
     return null;
   }
 }
+
+// 球体-射线求交（F6：远端玩家/怪物命中检测的共享纯函数，标量入参零分配）。
+// 与旧内联实现逐式等价：oc = origin - center，b = oc·d，c = oc·oc - r²，disc = b*b - c；
+// disc < 0 → -1；t = -b - sqrt(disc)；t < 0 → -1；否则返回 t；未命中恒为 -1。
+// 口径：判别式按单位方向推导（与旧实现一致），d 非单位向量时 t 不随 |d| 归一，不再是几何距离；
+// 调用方一律传单位向量（camera.getWorldDirection 的输出）。
+export function raySphereHit(ox, oy, oz, dx, dy, dz, cx, cy, cz, radius) {
+  const ocx = ox - cx, ocy = oy - cy, ocz = oz - cz;
+  const b = ocx * dx + ocy * dy + ocz * dz;
+  const c = ocx * ocx + ocy * ocy + ocz * ocz - radius * radius;
+  const disc = b * b - c;
+  if (disc < 0) return -1;
+  const t = -b - Math.sqrt(disc);
+  return t < 0 ? -1 : t;
+}

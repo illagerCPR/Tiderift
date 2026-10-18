@@ -11,6 +11,8 @@ import { villagerTradeSeed } from '../world/loot.js';
 import { audio } from '../audio/AudioEngine.js';
 import { DROP_HALF, makeShadowMesh, makeCountSprite, updateCountSprite, attachDropModel } from '../render/DropMesh.js';
 import { applyEntityLight } from '../render/entityLight.js';
+import { raySphereHit } from '../player/Raycast.js';
+import { BLOCK_CENTER } from '../player/constants.js';
 
 const MAX_MOBS = 20;
 const MAX_PASSIVE = 12; // 被动动物上限（不含村民——村庄系统单独管理）
@@ -103,6 +105,7 @@ export class MobManager {
     this.atlasUV = atlasUV;
     this.atlasTexture = atlasTexture;
     this.mobs = [];
+    this._bosses = []; // F10：type.boss 实体登记表（与 this.mobs 同步增删，getBosses() 零分配返回）
     this.physics = new EntityPhysics(world);
     this.spawnTimer = 0;
     this.mobSkins = generateMobSkinSVGs();
@@ -257,10 +260,10 @@ export class MobManager {
       const group = this.world.dimension === 'aether'
         ? 'cloud_lamb'
         : ['cow', 'sheep', 'chicken'][Math.floor(Math.random() * 3)];
-      this._spawnAt(group, x + 0.5, y, z + 0.5);
+      this._spawnAt(group, x + BLOCK_CENTER, y, z + BLOCK_CENTER);
       const n = 2 + Math.floor(Math.random() * 2); // 2-3 只小群
       for (let i = 1; i < n; i++) {
-        this._spawnAt(group, x + 0.5 + (Math.random() * 6 - 3), y, z + 0.5 + (Math.random() * 6 - 3));
+        this._spawnAt(group, x + BLOCK_CENTER + (Math.random() * 6 - 3), y, z + BLOCK_CENTER + (Math.random() * 6 - 3));
       }
       return;
     }
@@ -270,7 +273,7 @@ export class MobManager {
 
     // 末地：末影人盘踞（主岛/外岛立地面均可）
     if (this.world.dimension === 'end') {
-      if (Math.random() < 0.5) this._spawnAt('enderman', x + 0.5, y, z + 0.5);
+      if (Math.random() < 0.5) this._spawnAt('enderman', x + BLOCK_CENTER, y, z + BLOCK_CENTER);
       return;
     }
 
@@ -294,7 +297,7 @@ export class MobManager {
       typeName = choices[Math.floor(Math.random() * choices.length)];
     }
 
-    this._spawnAt(typeName, x + 0.5, y, z + 0.5);
+    this._spawnAt(typeName, x + BLOCK_CENTER, y, z + BLOCK_CENTER);
   }
 
   // 在指定坐标生成（trySpawn 尾部 + 被动动物群生成共用；联机走 mobNet 广播惯例）
@@ -328,7 +331,7 @@ export class MobManager {
         const def = id ? BlockRegistry.getById(id) : null;
         if (def && def.solid &&
             this.world.getBlock(x, y + 1, z) === 0 && this.world.getBlock(x, y + 2, z) === 0) {
-          mob.position.set(x + 0.5, y + 1, z + 0.5);
+          mob.position.set(x + BLOCK_CENTER, y + 1, z + BLOCK_CENTER);
           mob.velocity.set(0, 0, 0);
           return true;
         }
@@ -490,6 +493,7 @@ export class MobManager {
       const hd = Math.hypot(m.home.x - player.position.x, m.home.z - player.position.z);
       if (hd > 120) {
         this._removeMobResources(m);
+        this._untrackBoss(m);
         this.mobs.splice(i, 1);
         this.spawnedVillages.delete(m.home.x + ',' + m.home.z);
         if (m.typeName === 'iron_golem') this.villageGolemSeen.delete(m.home.x + ',' + m.home.z);
@@ -543,6 +547,7 @@ export class MobManager {
       const hd = Math.hypot(m.home.x - player.position.x, m.home.z - player.position.z);
       if (hd > 200) {
         this._removeMobResources(m);
+        this._untrackBoss(m);
         this.mobs.splice(i, 1);
         this.spawnedEndCities.delete(m.home.x + ',' + m.home.z);
       }
@@ -639,6 +644,8 @@ export class MobManager {
     mob.healthBarFadeTimer = 0;
 
     this.mobs.push(mob);
+    // F10：Boss 登记（spawnMob 是全仓唯一的 this.mobs.push 入列点）
+    if (mob.type && mob.type.boss) this._bosses.push(mob);
   }
 
   // 重绘 mob 头顶血条 canvas（每受击一次调一次）
@@ -715,6 +722,7 @@ export class MobManager {
         if (mob.healthBarSprite) mob.healthBarSprite.visible = false;
         if (t >= 1) {
           this._removeMobResources(mob);
+          this._untrackBoss(mob);
           this.mobs.splice(i, 1);
         }
         continue;
@@ -809,6 +817,7 @@ export class MobManager {
         // 的随村清扫管理，否则逃敌被拖远会掏空村庄；批次 C：Boss 免清除——80 格静态清除
         // 半径会把走远找玩家的守誓巨像/龙/凋灵直接抹掉，Boss 只经死亡链移除）
         this._removeMobResources(mob);
+        this._untrackBoss(mob);
         this.mobs.splice(i, 1);
       }
     }
@@ -836,6 +845,18 @@ export class MobManager {
       mob.healthBarCanvas = null;
       mob.healthBarCtx = null;
     }
+  }
+
+  // F10：Boss 出列登记（死亡动画结束 / 随村清扫 / 末地城清扫 / dispose 全路径共用）
+  _untrackBoss(mob) {
+    if (!mob.type || !mob.type.boss) return;
+    const i = this._bosses.indexOf(mob);
+    if (i >= 0) this._bosses.splice(i, 1);
+  }
+
+  // F10：当前 Boss 列表（返回内部数组，零分配；调用方只读）
+  getBosses() {
+    return this._bosses;
   }
 
   processExplosions() {
@@ -1175,14 +1196,12 @@ export class MobManager {
     let closestDist = maxDist;
     for (const mob of this.mobs) {
       if (mob.dead || mob.dyingAnim) continue;
-      // 球体射线检测
-      const oc = new THREE.Vector3().subVectors(rayOrigin, mob.position);
-      oc.y -= mob.height * 0.5; // 球心=身体中点（高个怪可被平射命中）
-      const b = oc.dot(rayDir);
-      const c = oc.dot(oc) - (Math.max(mob.width, mob.height) * 0.5) ** 2;
-      const disc = b * b - c;
-      if (disc < 0) continue;
-      const t = -b - Math.sqrt(disc);
+      // 球体射线检测（F6：共享纯函数，标量入参零分配）
+      // cy = position.y + height/2 = 身体中点，与旧式 "oc = origin - position; oc.y -= height/2" 等价
+      const t = raySphereHit(rayOrigin.x, rayOrigin.y, rayOrigin.z,
+        rayDir.x, rayDir.y, rayDir.z,
+        mob.position.x, mob.position.y + mob.height * 0.5, mob.position.z,
+        Math.max(mob.width, mob.height) * 0.5);
       if (t < 0 || t > closestDist) continue;
       closestDist = t;
       closest = mob;
@@ -1272,13 +1291,11 @@ export class MobManager {
     let closestDist = maxDist;
     for (const mob of this.mobs) {
       if (mob.dead || mob.dyingAnim) continue;
-      const oc = new THREE.Vector3().subVectors(rayOrigin, mob.position);
-      oc.y -= mob.height * 0.5; // 球心=身体中点（高个怪可被平射命中）
-      const b = oc.dot(rayDir);
-      const c = oc.dot(oc) - (Math.max(mob.width, mob.height) * 0.5) ** 2;
-      const disc = b * b - c;
-      if (disc < 0) continue;
-      const t = -b - Math.sqrt(disc);
+      // 球体射线检测（F6：与 attackMob 共用 raySphereHit；cy = 身体中点）
+      const t = raySphereHit(rayOrigin.x, rayOrigin.y, rayOrigin.z,
+        rayDir.x, rayDir.y, rayDir.z,
+        mob.position.x, mob.position.y + mob.height * 0.5, mob.position.z,
+        Math.max(mob.width, mob.height) * 0.5);
       if (t < 0 || t > closestDist) continue;
       closestDist = t;
       closest = mob;
@@ -1287,18 +1304,8 @@ export class MobManager {
   }
 
   dispose() {
-    // 释放每只 mob 的 per-instance 资源（mesh + 血条）
-    for (const mob of this.mobs) {
-      if (mob.mesh) {
-        this.scene.remove(mob.mesh);
-        if (mob.mesh.material) mob.mesh.material.dispose();
-      }
-      if (mob.healthBarSprite) {
-        this.scene.remove(mob.healthBarSprite);
-        if (mob.healthBarSprite.material) mob.healthBarSprite.material.dispose();
-        if (mob.healthBarTex) mob.healthBarTex.dispose();
-      }
-    }
+    // 释放每只 mob 的 per-instance 资源（mesh + 血条）——单一实现 _removeMobResources（F8）
+    for (const mob of this.mobs) this._removeMobResources(mob);
     // 释放 type 级共享资源（master geometry + master material + skin texture）
     for (const [name, geo] of this.mobGeometries) geo.dispose();
     this.mobGeometries.clear();
@@ -1317,6 +1324,7 @@ export class MobManager {
       }
     }
     this.mobs = [];
+    this._bosses = [];
     this.droppedItems = [];
     this._pendingPickup = new Map(); // 阶段10：拾取留档随世界销毁一并清空
   }
