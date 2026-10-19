@@ -15,6 +15,7 @@ import { GlideWind } from './GlideWind.js';
 import { Endgame } from './Endgame.js';
 import { Projectiles } from './Projectiles.js';
 import { Beacon } from './Beacon.js';
+import { PortalSystem } from './PortalSystem.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
@@ -40,14 +41,9 @@ import { ChatBox } from '../ui/ChatBox.js';
 import { BossBar } from '../ui/BossBar.js';
 import { PortalOverlay } from '../ui/PortalOverlay.js';
 import { SleepOverlay } from '../ui/SleepOverlay.js';
-import { CHUNK_SIZE, Chunk, CHUNK_HEIGHT } from '../core/Chunk.js';
+import { CHUNK_SIZE, CHUNK_HEIGHT } from '../core/Chunk.js';
 import { FINALE_TIDE_SEGMENTS, FINALE_TIDE_DURATION, finaleEnvelope, finalePulse, finaleListenGate } from '../world/finale-tide.js';
-import {
-  PORTAL_KINDS, DIM_PORTAL_KINDS, ARRIVAL_PLATFORM,
-  portalBlockId, portalTargetPos, detectPortalInterior, fillPortal,
-  findPortalNear, buildReturnPortal, removeConnectedPortals,
-  detectEndRing, fillEndPortalCenter, gatewayTarget,
-} from '../core/Portals.js';
+import { ARRIVAL_PLATFORM, removeConnectedPortals } from '../core/Portals.js';
 import { ringPoints } from '../world/structures/stronghold.js';
 import { matchRecipe } from '../core/Crafting.js';
 import { SMELT_TIME, getSmeltingResult, getFuelTime } from '../core/Smelting.js';
@@ -127,6 +123,7 @@ export class Game {
     this.endgame = new Endgame(this);
     this.projectiles = new Projectiles(this);
     this.beacon = new Beacon(this);
+    this.portalSystem = new PortalSystem(this);
     this.currentSlot = 1;
     this.onExit = null;
     this.mobManager = null;
@@ -2406,186 +2403,35 @@ export class Game {
   _breakBeacon(x, y, z) { return this.beacon.breakBeacon(x, y, z); }
   _clearBeaconState() { return this.beacon.clearBeaconState(); }
 
+  // ── 传送门域（轮 8 步 5）：门面委托 PortalSystem（点火 / 嵌眼 / 站门计时 / 到达落点 / 立地面）──
+  // 穿越三件套 _portalTimer/_portalArmed/_portalCooldown 留在 Game（start() 里复位，本轮禁改区）；
+  // portalOverlay 亦留在 Game（start 新建 / _disposeWorld 释放）。控制器一律调用点现取，不留构造期快照。
   // 打火石点火传送门：点击框体 → 内部候选格 = 点击面外邻格 → 框校验 → 填充门方块。
   // 返回 true 表示本次右键已被处理（无论点火成败——打火石无"生火"语义可回退）。
-  _tryLightPortal(hit, targetDef) {
-    const kind = { obsidian: 'nether', glowstone: 'aether' }[targetDef.name];
-    if (!kind) return false;
-    const cx = hit.block.x + hit.normal.x;
-    const cy = hit.block.y + hit.normal.y;
-    const cz = hit.block.z + hit.normal.z;
-    if (this.world.getBlock(cx, cy, cz) !== 0) return false;
-    const det = detectPortalInterior(this.world, cx, cy, cz, targetDef.id);
-    if (!det) {
-      if (this.chatBox) this.chatBox.add(t('传送门框架不完整（内部至少 2×3，框边须封闭）'), '#fa8');
-      return true;
-    }
-    this.hand.swing();
-    fillPortal(this.world, det, portalBlockId(kind));
-    if (this.chatBox) this.chatBox.add(kind === 'nether' ? t('下界传送门被点亮了…') : t('天域传送门被点亮了…'), '#a7f');
-    return true;
-  }
+  _tryLightPortal(hit, targetDef) { return this.portalSystem.tryLightPortal(hit, targetDef); }
 
   // 末影之眼嵌入要塞传送门框架：无眼框→带眼框（消耗 1）；12 眼集齐→中心 3×3 填门体。
   // 返回 true 表示本次右键已被处理；非环位散框不消耗（原版语义）。
-  _tryPlaceEndEye(hit, targetDef) {
-    if (targetDef.name !== 'end_portal_frame') return false;
-    const { x: bx, y: by, z: bz } = hit.block;
-    const FRAME = BlockRegistry.getId('end_portal_frame');
-    const EYE = BlockRegistry.getId('end_portal_frame_eye');
-    const PORTAL = BlockRegistry.getId('end_portal');
-    if (!detectEndRing(this.world, bx, by, bz, FRAME, EYE)) return false;
-    this.hand.swing();
-    this.world.setBlock(bx, by, bz, EYE);
-    if (this.player.survival) {
-      this.inventory.removeSelected(1);
-      this.hotbar.update();
-    }
-    const after = detectEndRing(this.world, bx, by, bz, FRAME, EYE);
-    if (after && after.eyes === 12) {
-      fillEndPortalCenter(this.world, after, PORTAL);
-      if (this.chatBox) this.chatBox.add(t('末地传送门被激活了——跳进去！'), '#a7f');
-    } else if (after) {
-      if (this.chatBox) this.chatBox.add(t('末影之眼嵌入框架（{n}/12）', { n: after.eyes }), '#a7f');
-    }
-    return true;
-  }
+  _tryPlaceEndEye(hit, targetDef) { return this.portalSystem.tryPlaceEndEye(hit, targetDef); }
 
   // 传送门穿越检测：站入门方块累积 2s 触发（末地门即触）；到达后须离开门体才重新武装（防立即回传）
-  updatePortals(dt) {
-    if (!this.world || this.spectating || !this.player || this.player.dead) return;
-    if (this._portalCooldown > 0) {
-      this._portalCooldown -= dt;
-      if (this.portalOverlay) this.portalOverlay.update(null, 0);
-      return;
-    }
-    const kinds = DIM_PORTAL_KINDS[this.world.dimension] || [];
-    if (!kinds.length) { this._portalTimer = 0; if (this.portalOverlay) this.portalOverlay.update(null, 0); return; }
-    const p = this.player.position;
-    const bx = Math.floor(p.x), bz = Math.floor(p.z);
-    const cellId = (dy) => this.world.getBlock(bx, Math.floor(p.y + dy), bz);
-    let kindIn = null;
-    for (const kind of kinds) {
-      const pid = portalBlockId(kind);
-      // gateway 是"踩入式"（嵌地面层，非固体）——额外探测脚下格
-      const probes = kind === 'gateway' ? [-0.3, 0.1, 1.0] : [0.1, 1.0];
-      if (probes.some(dy => cellId(dy) === pid)) { kindIn = kind; break; }
-    }
-    if (!kindIn) {
-      this._portalTimer = 0;
-      this._portalArmed = true;
-      if (this.portalOverlay) this.portalOverlay.update(null, 0);
-      return;
-    }
-    if (!this._portalArmed) {
-      if (this.portalOverlay) this.portalOverlay.update(null, 0);
-      return;
-    }
-    // 折跃门站入 1s 触发（同维传送）；下界/天域门 2s；末地门陷入即触
-    const threshold = kindIn === 'gateway' ? 1.0 : 2.0;
-    if (this.portalOverlay) this.portalOverlay.update(kindIn, Math.min(1, this._portalTimer / threshold));
-    this._portalTimer += dt;
-    if (this._portalTimer >= threshold) {
-      this._portalTimer = 0;
-      this._portalArmed = false;
-      if (this.portalOverlay) this.portalOverlay.update(kindIn, 1);
-      if (kindIn === 'gateway') this._useGatewayPortal();
-      else this._usePortal(kindIn);
-    }
-  }
+  updatePortals(dt) { return this.portalSystem.updatePortals(dt); }
 
   // 传送门环境粒子（M3）：从已加载区块的 portalCells 随机抽样发射（mesh build 时收集，与方块数据同步）。
   // 纯视觉客户端本地效果，不进存档/协议；密度随视频设置 densityScale 缩放。
-  updatePortalParticles(dt) {
-    if (!this.fireParticles || !this.world || this.paused) return;
-    this._portalPartT = (this._portalPartT || 0) + dt;
-    if (this._portalPartT < 0.04) return;
-    this._portalPartT = 0;
-    const cand = [];
-    for (const [, chunk] of this.world.chunks) {
-      if (chunk.portalCells && chunk.portalCells.length) cand.push(chunk);
-    }
-    if (!cand.length) return;
-    const n = Math.max(1, Math.round(4 * this.fireParticles.densityScale));
-    for (let k = 0; k < n; k++) {
-      const chunk = cand[(Math.random() * cand.length) | 0];
-      const cells = chunk.portalCells;
-      const i = ((Math.random() * cells.length) / 3 | 0) * 3;
-      const wx = chunk.cx * CHUNK_SIZE + cells[i], wy = cells[i + 1], wz = chunk.cz * CHUNK_SIZE + cells[i + 2];
-      const def = BlockRegistry.getById(this.world.getBlock(wx, wy, wz));
-      if (!def || !def.ambientParticles) continue; // 方块可能已被改动（mesh 尚未重建）
-      this.fireParticles.portalAmbient(wx, wy, wz, def.name);
-    }
-  }
+  updatePortalParticles(dt) { return this.portalSystem.updatePortalParticles(dt); }
 
   // 传送门触发：目标维度 = 门种类配对的另一端
   //（下界 overworld↔nether 1:8 / 天域 overworld↔aether 1:1 / 末地 overworld↔end 落出生点）
-  _usePortal(kind) {
-    if (this.portalOverlay) this.portalOverlay.flash();
-    const dim = this.world.dimension;
-    let target = null;
-    let arrival = null;
-    if (kind === 'nether') {
-      target = { nether: 'overworld', overworld: 'nether' }[dim];
-      if (target) {
-        const pos = portalTargetPos('nether', dim, this.player.position.x, this.player.position.z);
-        arrival = { x: pos.x, z: pos.z, portal: kind };
-      }
-    } else if (kind === 'aether') {
-      target = { aether: 'overworld', overworld: 'aether' }[dim];
-      if (target) {
-        const pos = portalTargetPos('aether', dim, this.player.position.x, this.player.position.z);
-        arrival = { x: pos.x, z: pos.z, portal: kind };
-      }
-    } else if (kind === 'end') {
-      // 末地：原版语义——去程落末地出生点（到达后自动建回程垫），回程落主世界出生点
-      target = dim === 'end' ? 'overworld' : 'end';
-      arrival = { portal: kind };
-    }
-    if (!target) return;
-    const def = getDimension(target);
-    if (this.chatBox) this.chatBox.add(t('传送门轰鸣着将你送往「{d}」…', { d: t(def.name) }), '#a7f');
-    this.switchDimension(target, arrival);
-  }
+  _usePortal(kind) { return this.portalSystem.usePortal(kind); }
 
   // 折跃门传送（末地同维）：不换维，账本扫描"角度最近"的配对门直达
   //（两端门角度一致由 gatewayPlacements 保证；armed/cooldown 防回弹由 updatePortals 统一处理）
-  _useGatewayPortal() {
-    if (this.portalOverlay) this.portalOverlay.flash();
-    const p = this.player.position;
-    const target = gatewayTarget(this.world, p.x, p.z);
-    if (!target) return;
-    p.set(target.x + BLOCK_CENTER, target.y + 1, target.z + BLOCK_CENTER);
-    this.player.velocity.set(0, 0, 0);
-    if (this.chatBox) this.chatBox.add(t('折跃门的光束把你送往远方的岛屿……'), '#a7f');
-  }
+  _useGatewayPortal() { return this.portalSystem.useGatewayPortal(); }
 
   // 传送门到达落地：有坐标落点 → 半径 24 搜既有同类门吸附、无门自动建返程门（原版语义）；
   // 无坐标落点（末地链）→ 仅落维度出生点（M3 起回程门由击败末影龙激活，到达不再自动建垫）
-  _afterPortalArrival(arrival) {
-    if (!this.world || !this.running) return;
-    const kind = arrival.portal && PORTAL_KINDS[arrival.portal] ? arrival.portal : null;
-    if (!Number.isFinite(arrival.x) || !Number.isFinite(arrival.z)) {
-      this._portalCooldown = 4;
-      this._portalArmed = false;
-      return;
-    }
-    const portalId = kind ? portalBlockId(kind) : 0;
-    let pos = portalId ? findPortalNear(this.world, arrival.x, arrival.z, portalId, 24) : null;
-    if (pos) {
-      this.player.position.set(pos.x, pos.y, pos.z);
-    } else if (kind) {
-      pos = buildReturnPortal(this.world, kind, arrival.x, arrival.z, {
-        top: this.world.dimDef.spawnScanTop || CHUNK_HEIGHT - 2,
-        platform: ARRIVAL_PLATFORM[this.world.dimension] || null,
-      });
-      this.player.position.set(pos.x, pos.y, pos.z);
-      if (this.chatBox) this.chatBox.add(t('你在落点建造了一座返程传送门'), '#a7f');
-    }
-    if (pos) this.player.velocity.set(0, 0, 0);
-    this._portalCooldown = 4;
-    this._portalArmed = false;
-  }
+  _afterPortalArrival(arrival) { return this.portalSystem.afterPortalArrival(arrival); }
 
   // 末地出生点旁的回程门垫（龙败激活，原版喷泉基座造型）：
   // 16 格内已有 end_portal 则跳过（重连/多端幂等），否则在出生点偏移 ~5 格建造
@@ -2908,23 +2754,7 @@ export class Game {
 
   // 传送门落点立足面预解析：临时生成器 + 临时区块探测（纯函数，不碰当前世界）；
   // 无立足面返回 -1（到达后由 buildReturnPortal 按维度档案垫平台）
-  _resolveArrivalY(dim, x, z) {
-    const def = getDimension(dim);
-    if (!def) return -1;
-    const gen = def.createGenerator(this.world.seed, { biomeScale: this.biomeScale });
-    const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
-    const c = new Chunk(cx, cz);
-    gen.generateChunk(c);
-    const lx = x - cx * CHUNK_SIZE, lz = z - cz * CHUNK_SIZE;
-    const top = Math.min(def.spawnScanTop || 140, CHUNK_HEIGHT - 2);
-    for (let y = top; y >= 1; y--) {
-      if (c.get(lx, y, lz) === 0 && c.get(lx, y + 1, lz) === 0) {
-        const d = BlockRegistry.getById(c.get(lx, y - 1, lz));
-        if (d && d.solid) return y;
-      }
-    }
-    return -1;
-  }
+  _resolveArrivalY(dim, x, z) { return this.portalSystem.resolveArrivalY(dim, x, z); }
 
   // 鞘翅滑翔折叠判定（每帧在移动分支之前调用）：没穿鞘翅 / 创造飞行 / 旁观 /
   // 在水中 / 已在地面 → 折叠。独立于气动结算——水中走游泳分支不进移动滑翔分支，

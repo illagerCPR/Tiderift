@@ -1120,6 +1120,309 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
     '清前=' + JSON.stringify(beforeClear) + ' 清后=' + JSON.stringify(afterClear) + ' 二次=' + JSON.stringify(twice));
 }
 
+// ── M. 传送门域行为：点火 / 逐框嵌眼 / 站门计时与防回弹 / 到达落点与返程门 / 立地面下探 ──
+// 轮 8 步 5 的迁移面（PortalSystem）。断言全部经 Game 上的同名真实入口驱动
+// （_tryLightPortal / _tryPlaceEndEye / updatePortals / _afterPortalArrival / _resolveArrivalY；
+// 折跃门由 updatePortals 触发 _useGatewayPortal 做真实同维瞬移），只 stub 两处**域外**协作面：
+// chatBox（单机为 null）与 switchDimension（真跑会整世界重建，属 L17 域，本步不动）。
+// 穿越三件套 _portalTimer/_portalArmed/_portalCooldown 按红线留在 Game（start() 复位，禁改区），
+// 本段直接读写 Game 字段——这正是要钉住的不变量。
+{
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const Chunky = await import('../src/core/Chunk.js');
+  const Dims = await import('../src/core/dimensions.js');
+  const OBS = Reg.getId('obsidian'), GLOW = Reg.getId('glowstone'), STONE = Reg.getId('stone');
+  const NETHER_PORTAL = Reg.getId('nether_portal'), AETHER_PORTAL = Reg.getId('aether_portal');
+  const FRAME = Reg.getId('end_portal_frame'), EYE = Reg.getId('end_portal_frame_eye');
+  const END_PORTAL = Reg.getId('end_portal'), GATEWAY = Reg.getId('end_gateway');
+
+  const m = await boot({ mode: 'creative', seed: SEED });
+  track(m.g);
+  const mg = m.g;
+  const chat = [];
+  mg.chatBox = { add: (text, color) => chat.push([text, color]) };
+  mg.running = true; // boot() 收尾会 stop()（running=false），真实对局中恒 true——_afterPortalArrival 首行读它
+  const lastChat = () => chat[chat.length - 1] || ['', ''];
+  const countLedger = (id) => { let n = 0; for (const [, v] of mg.world.modifiedBlocks) if (v === id) n++; return n; };
+  const px0 = Math.floor(mg.player.position.x), pz0 = Math.floor(mg.player.position.z);
+
+  // ── M1 打火石点框：黑曜石框 → 下界门 / 萤石框 → 天域门 ──
+  // 4×5 框（内 2×3）沿 x 轴：上下整行 + 左右立柱；点底框上表面 → 候选格 = 框内空气
+  const buildFrame = (bx, by, bz, frameId) => {
+    for (let ix = -1; ix <= 2; ix++) {
+      mg.world.setBlock(bx + ix, by - 1, bz, frameId);
+      mg.world.setBlock(bx + ix, by + 3, bz, frameId);
+    }
+    for (let iy = 0; iy <= 2; iy++) {
+      mg.world.setBlock(bx - 1, by + iy, bz, frameId);
+      mg.world.setBlock(bx + 2, by + iy, bz, frameId);
+    }
+  };
+  const interior = (bx, by, bz) => {
+    const a = [];
+    for (let ix = 0; ix <= 1; ix++) for (let iy = 0; iy <= 2; iy++) a.push(mg.world.getBlock(bx + ix, by + iy, bz));
+    return a;
+  };
+  const bx1 = px0 + 8, by1 = 200, bz1 = pz0, bz2 = pz0 + 8;
+  buildFrame(bx1, by1, bz1, OBS);
+  const litNether = mg._tryLightPortal({ block: { x: bx1, y: by1 - 1, z: bz1 }, normal: { x: 0, y: 1, z: 0 } }, Reg.getByName('obsidian'));
+  const netherFill = interior(bx1, by1, bz1);
+  const netherChat = lastChat();
+  const frameKept = mg.world.getBlock(bx1 - 1, by1 + 1, bz1) === OBS && mg.world.getBlock(bx1, by1 - 1, bz1) === OBS;
+  buildFrame(bx1, by1, bz2, GLOW);
+  const litAether = mg._tryLightPortal({ block: { x: bx1, y: by1 - 1, z: bz2 }, normal: { x: 0, y: 1, z: 0 } }, Reg.getByName('glowstone'));
+  const aetherFill = interior(bx1, by1, bz2);
+  const aetherChat = lastChat();
+  assert('M1 点火：黑曜石框填 6 格 nether_portal、萤石框填 6 格 aether_portal；框材原样保留、返回 true（点击已消费）、播报「…被点亮了…」（#a7f）',
+    litNether === true && netherFill.length === 6 && netherFill.every((id) => id === NETHER_PORTAL) && frameKept &&
+    litAether === true && aetherFill.length === 6 && aetherFill.every((id) => id === AETHER_PORTAL) &&
+    netherChat[0].includes('下界传送门') && netherChat[1] === '#a7f' &&
+    aetherChat[0].includes('天域传送门') && aetherChat[1] === '#a7f',
+    '下界=' + JSON.stringify(netherFill) + ' 天域=' + JSON.stringify(aetherFill) + ' 播报=' + JSON.stringify([netherChat, aetherChat]));
+
+  // 非法框：独块黑曜石（无框）→ 返回 true（打火石无"生火"语义可回退）但零填充 + 播报「框架不完整」
+  const lx1 = bx1, ly1 = by1 + 10, lz1 = bz1;
+  mg.world.setBlock(lx1, ly1, lz1, OBS);
+  const ledgerBeforeBad = countLedger(NETHER_PORTAL) + countLedger(AETHER_PORTAL);
+  const rBad = mg._tryLightPortal({ block: { x: lx1, y: ly1, z: lz1 }, normal: { x: 0, y: 1, z: 0 } }, Reg.getByName('obsidian'));
+  const badChat = lastChat();
+  const ledgerAfterBad = countLedger(NETHER_PORTAL) + countLedger(AETHER_PORTAL);
+  const rNoAir = mg._tryLightPortal({ block: { x: bx1 - 1, y: by1 + 1, z: bz1 }, normal: { x: 1, y: 0, z: 0 } }, Reg.getByName('obsidian'));
+  const rNotFrame = mg._tryLightPortal({ block: { x: lx1, y: ly1, z: lz1 }, normal: { x: 0, y: 1, z: 0 } }, Reg.getByName('stone'));
+  assert('M1b 点火拒绝路径：非法框返回 true 但账本零新增 + 播报「框架不完整」（#fa8）；候选格非空气返回 false；非框材 targetDef 返回 false',
+    rBad === true && ledgerAfterBad === ledgerBeforeBad && badChat[0].includes('框架不完整') && badChat[1] === '#fa8' &&
+    rNoAir === false && rNotFrame === false,
+    'rBad=' + rBad + ' 账本=' + ledgerBeforeBad + '->' + ledgerAfterBad + ' 播报=' + JSON.stringify(badChat) + ' rNoAir=' + rNoAir + ' rNotFrame=' + rNotFrame);
+
+  // ── M2 末影之眼逐框嵌眼：第 11 眼不激活；第 12 眼取**远边**点击（窗口原点须枚举到 -4）才激活 ──
+  const ring5 = (w0x, wy2, w0z) => {
+    const pos = [];
+    for (let ix = 0; ix < 5; ix++) for (let iz = 0; iz < 5; iz++) {
+      const corner = (ix === 0 || ix === 4) && (iz === 0 || iz === 4);
+      const edge = ix === 0 || ix === 4 || iz === 0 || iz === 4;
+      if (!edge || corner) continue;
+      pos.push([ix, iz]);
+      mg.world.setBlock(w0x + ix, wy2, w0z + iz, FRAME);
+    }
+    for (let ix = 1; ix <= 3; ix++) for (let iz = 1; iz <= 3; iz++) mg.world.setBlock(w0x + ix, wy2, w0z + iz, 0);
+    return pos;
+  };
+  const centerIds = (w0x, wy2, w0z) => {
+    const a = [];
+    for (let ix = 1; ix <= 3; ix++) for (let iz = 1; iz <= 3; iz++) a.push(mg.world.getBlock(w0x + ix, wy2, w0z + iz));
+    return a;
+  };
+  const w0x = px0 + 24, wy2 = 210, w0z = pz0;
+  const NEARX = [0, 2], FARX = [4, 2]; // 近边（窗口原点 ox=0）/ 远边（须枚举到 ox=-4）
+  const ring = ring5(w0x, wy2, w0z);
+  for (const [ix, iz] of ring) {
+    if ((ix === NEARX[0] && iz === NEARX[1]) || (ix === FARX[0] && iz === FARX[1])) continue;
+    mg.world.setBlock(w0x + ix, wy2, w0z + iz, EYE);
+  }
+  mg.player.setMode('survival');
+  mg.inventory.slots[mg.inventory.hotbarSelected] = { name: 'ender_eye', count: 5, data: null };
+  const eyesStart = mg.inventory.getSelected().count;
+  chat.length = 0;
+  const r11 = mg._tryPlaceEndEye({ block: { x: w0x + NEARX[0], y: wy2, z: w0z + NEARX[1] }, normal: { x: -1, y: 0, z: 0 } }, Reg.getByName('end_portal_frame'));
+  const c11 = { center: centerIds(w0x, wy2, w0z), eye: mg.world.getBlock(w0x + NEARX[0], wy2, w0z + NEARX[1]) === EYE, chat: lastChat(), stock: mg.inventory.getSelected().count };
+  const r12 = mg._tryPlaceEndEye({ block: { x: w0x + FARX[0], y: wy2, z: w0z + FARX[1] }, normal: { x: 1, y: 0, z: 0 } }, Reg.getByName('end_portal_frame'));
+  const c12 = { center: centerIds(w0x, wy2, w0z), eye: mg.world.getBlock(w0x + FARX[0], wy2, w0z + FARX[1]) === EYE, chat: lastChat(), stock: mg.inventory.getSelected().count };
+  assert('M2 逐框嵌眼：第 11 眼（近边点击）只嵌框 + 播报「11/12」、中心 3×3 仍全空气；第 12 眼取**远边**点击 → 嵌框 + 中心 3×3 填 end_portal + 播报激活；生存各消耗 1 眼',
+    r11 === true && c11.eye === true && c11.center.every((id) => id === 0) && c11.chat[0].includes('11/12') && c11.stock === eyesStart - 1 &&
+    r12 === true && c12.eye === true && c12.center.length === 9 && c12.center.every((id) => id === END_PORTAL) &&
+    c12.chat[0].includes('末地传送门被激活了') && c12.stock === eyesStart - 2,
+    '11眼=' + JSON.stringify(c11) + ' 12眼=' + JSON.stringify(c12));
+
+  // 散框（非环位）不消耗；targetDef 非 end_portal_frame 直接 false
+  const scat = px0 + 40;
+  mg.world.setBlock(scat, wy2, pz0, FRAME);
+  const stockBefore = mg.inventory.getSelected().count;
+  const rScat = mg._tryPlaceEndEye({ block: { x: scat, y: wy2, z: pz0 }, normal: { x: 0, y: 1, z: 0 } }, Reg.getByName('end_portal_frame'));
+  const scatAfter = { kept: mg.world.getBlock(scat, wy2, pz0) === FRAME, stock: mg.inventory.getSelected().count };
+  const rOtherTarget = mg._tryPlaceEndEye({ block: { x: scat, y: wy2, z: pz0 }, normal: { x: 0, y: 1, z: 0 } }, Reg.getByName('stone'));
+  assert('M2b 散框不消耗：非环位独框返回 false、方块与眼数量都不变；targetDef 非 end_portal_frame 直接 false',
+    rScat === false && scatAfter.kept === true && scatAfter.stock === stockBefore && rOtherTarget === false,
+    'rScat=' + rScat + ' 散框=' + JSON.stringify(scatAfter) + ' 原数=' + stockBefore + ' rOther=' + rOtherTarget);
+
+  // ── M3 站门计时与防回弹：下界门 2s 阈值 / 离门才重新武装 / 到达 cooldown 4s 前置拦截 ──
+  const switched = [];
+  mg.switchDimension = (dim, arrival) => { switched.push([dim, arrival]); return Promise.resolve(true); };
+  const sx3 = px0 + 6, sz3 = pz0 + 6, sy3 = 202;
+  mg.world.setBlock(sx3, sy3 - 1, sz3, STONE);
+  for (let dy = 0; dy <= 2; dy++) mg.world.setBlock(sx3, sy3 + dy, sz3, 0);
+  mg.player.position.set(sx3 + 0.5, sy3, sz3 + 0.5);
+  mg.player.velocity.set(0, 0, 0);
+  mg._portalTimer = 0; mg._portalArmed = true; mg._portalCooldown = 0;
+  const drive = (sec, dt = 0.1) => { const n = Math.round(sec / dt); for (let i = 0; i < n; i++) mg.updatePortals(dt); };
+  mg.world.setBlock(sx3, sy3, sz3, NETHER_PORTAL);
+  chat.length = 0;
+  drive(1.9);
+  const at19 = { calls: switched.length, timer: mg._portalTimer, armed: mg._portalArmed };
+  drive(0.2);
+  const at21 = { calls: switched.length, timer: mg._portalTimer, armed: mg._portalArmed, dim: switched[0] && switched[0][0], arrival: switched[0] && switched[0][1], chat: lastChat() };
+  assert('M3a 站门 2s 阈值：站入下界门 1.9s 不触发（计时器累积到 1.9+ 且仍武装），2.1s 触发一次 → 目标维度 nether、落点 = 玩家坐标 1/8 换算向下取整 + portal 标记、计时器归零 + 撤武装、播报「传送门轰鸣着将你送往…」（#a7f）',
+    at19.calls === 0 && at19.timer > 1.8 && at19.timer < 2.0 && at19.armed === true &&
+    at21.calls === 1 && at21.timer === 0 && at21.armed === false && at21.dim === 'nether' &&
+    at21.arrival && at21.arrival.x === Math.floor((sx3 + 0.5) / 8) && at21.arrival.z === Math.floor((sz3 + 0.5) / 8) && at21.arrival.portal === 'nether' &&
+    at21.chat[0].includes('传送门轰鸣着将你送往') && at21.chat[1] === '#a7f',
+    '1.9s=' + JSON.stringify(at19) + ' 2.1s=' + JSON.stringify(at21));
+
+  drive(3.0); // 仍站在门里：未武装 → 计时器零累积，绝不二次触发
+  const stayed = { calls: switched.length, timer: mg._portalTimer, armed: mg._portalArmed };
+  mg.world.setBlock(sx3, sy3, sz3, 0); // 离门
+  drive(0.5);
+  const leftDoor = { armed: mg._portalArmed, timer: mg._portalTimer };
+  mg.world.setBlock(sx3, sy3, sz3, NETHER_PORTAL); // 再入门
+  drive(1.9);
+  const re19 = { calls: switched.length };
+  drive(0.2);
+  const re21 = { calls: switched.length };
+  assert('M3b 防回弹：触发后仍站 3s 不二次触发（计时器恒 0）；离门一帧后 _portalArmed 复位为 true；再入门须满 2s 才二次触发（1.9s 时仍未触发）',
+    stayed.calls === 1 && stayed.timer === 0 && stayed.armed === false &&
+    leftDoor.armed === true && leftDoor.timer === 0 &&
+    re19.calls === 1 && re21.calls === 2,
+    '停留=' + JSON.stringify(stayed) + ' 离门=' + JSON.stringify(leftDoor) + ' 再入1.9s=' + JSON.stringify(re19) + ' 再入2.1s=' + JSON.stringify(re21));
+
+  // 到达态（无坐标分支）：cooldown=4 且撤武装；冷却期内连"离门重新武装"都被前置拦截、计时器零累积
+  mg._afterPortalArrival({ portal: 'nether' });
+  const arrived = { cooldown: mg._portalCooldown, armed: mg._portalArmed };
+  mg.world.setBlock(sx3, sy3, sz3, 0);
+  drive(2.2);
+  const inCooldown = { calls: switched.length, timer: mg._portalTimer, armed: mg._portalArmed, cooldown: mg._portalCooldown };
+  drive(1.9);
+  const cooled = { armed: mg._portalArmed, cooldown: mg._portalCooldown };
+  mg.world.setBlock(sx3, sy3, sz3, NETHER_PORTAL);
+  drive(2.1);
+  const afterCooled = { calls: switched.length };
+  assert('M3c 到达 cooldown：无坐标到达置 cooldown=4 + 撤武装；冷却期内（离门 2.2s）计时器零累积且**不**重新武装（2.2s 时冷却还剩 1.8）；冷却归零 + 离门后才武装；此后站门 2.1s 触发第 3 次',
+    arrived.cooldown === 4 && arrived.armed === false &&
+    inCooldown.calls === 2 && inCooldown.timer === 0 && inCooldown.armed === false && Math.abs(inCooldown.cooldown - 1.8) < 0.01 &&
+    cooled.armed === true && cooled.cooldown <= 0 && afterCooled.calls === 3,
+    '到达=' + JSON.stringify(arrived) + ' 冷却中=' + JSON.stringify(inCooldown) + ' 冷却尽=' + JSON.stringify(cooled) + ' 再触发=' + JSON.stringify(afterCooled));
+
+  // ── M4 到达落点：24 格内吸附既有门 / 门外自动建 4×5 返程门 / 无坐标与未知种类只置到达态 ──
+  mg._portalArmed = true; mg._portalTimer = 0; mg._portalCooldown = 0;
+  chat.length = 0;
+  const ax4 = px0 + 320, az4 = pz0 + 320;
+  const ledgerBuiltBefore = countLedger(NETHER_PORTAL);
+  mg._afterPortalArrival({ x: ax4, z: az4, portal: 'nether' });
+  const pyA = mg.player.position.y;
+  const built = {
+    footPortal: mg.world.getBlock(ax4 + 1, pyA, az4) === NETHER_PORTAL,
+    leftFrame: mg.world.getBlock(ax4, pyA, az4) === OBS,
+    rightFrame: mg.world.getBlock(ax4 + 3, pyA, az4) === OBS,
+    atStand: mg.player.position.x === ax4 + 1.5 && mg.player.position.z === az4 + 0.5,
+    velZero: mg.player.velocity.length() === 0,
+    cooldown: mg._portalCooldown, armed: mg._portalArmed, chat: lastChat(),
+  };
+  const ledgerBuiltAfter = countLedger(NETHER_PORTAL);
+  assert('M4a 无门自动建返程门：落点 24 格内无同类门 → 就地建 4×5 门（账本新增 6 格 nether_portal、左右立柱为黑曜石），玩家被放到门内底格中心（落点 +1.5/+0.5）、速度清零、cooldown=4 + 撤武装，播报「你在落点建造了一座返程传送门」',
+    built.footPortal === true && built.leftFrame === true && built.rightFrame === true && built.atStand === true &&
+    ledgerBuiltAfter - ledgerBuiltBefore === 6 && built.velZero === true &&
+    built.cooldown === 4 && built.armed === false && built.chat[0].includes('你在落点建造了一座返程传送门') && built.chat[1] === '#a7f',
+    JSON.stringify(built) + ' 账本=' + ledgerBuiltBefore + '->' + ledgerBuiltAfter);
+
+  const ledgerSnapBefore = countLedger(NETHER_PORTAL);
+  mg._afterPortalArrival({ x: ax4 + 20, z: az4, portal: 'nether' }); // 距最近门格 18 格 → 吸附
+  const snapPos = { x: mg.player.position.x, y: mg.player.position.y, z: mg.player.position.z };
+  const snap = { ledger: countLedger(NETHER_PORTAL), footPortal: mg.world.getBlock(Math.floor(snapPos.x), snapPos.y, Math.floor(snapPos.z)) === NETHER_PORTAL, cooldown: mg._portalCooldown };
+  mg._afterPortalArrival({ x: ax4 + 40, z: az4, portal: 'nether' });  // 距最近门格 37 格 → 门外，另建一座
+  const farBuild = { ledger: countLedger(NETHER_PORTAL), footPortal: mg.world.getBlock(Math.floor(mg.player.position.x), mg.player.position.y, Math.floor(mg.player.position.z)) === NETHER_PORTAL };
+  assert('M4b 24 格吸附半径：落点在既有门 18 格内 → 吸附到账本门格中心（脚格是门方块、位置在门体范围内）且不新建（账本零新增）；37 格外 → 不走吸附、另建一座（账本 +6）',
+    snap.ledger === ledgerSnapBefore && snap.footPortal === true && snap.cooldown === 4 &&
+    snapPos.x > ax4 && snapPos.x < ax4 + 4 && snapPos.z === az4 + 0.5 &&
+    farBuild.ledger === ledgerSnapBefore + 6 && farBuild.footPortal === true,
+    '吸附=' + JSON.stringify(snap) + ' 位置=' + JSON.stringify(snapPos) + ' 远建=' + JSON.stringify(farBuild));
+
+  mg.player.position.set(px0 + 0.5, 220, pz0 + 0.5);
+  const ledgerNoPos = countLedger(NETHER_PORTAL);
+  mg._afterPortalArrival({ portal: 'end' }); // 仅 portal 标记（末地出生点链）
+  const noPos = { pos: [mg.player.position.x, mg.player.position.y, mg.player.position.z], ledger: countLedger(NETHER_PORTAL), cooldown: mg._portalCooldown, armed: mg._portalArmed };
+  mg._afterPortalArrival({ x: ax4 + 60, z: az4, portal: 'bogus' }); // 未知种类（服务器可回传任意串）
+  const bogus = { pos: [mg.player.position.x, mg.player.position.y, mg.player.position.z], ledger: countLedger(NETHER_PORTAL) };
+  assert('M4c 只置到达态：无坐标 arrival（末地出生点链）→ 位置不动、不建门、cooldown=4 + 撤武装；未知 portal 种类 → 同样不吸附不建门',
+    noPos.pos[0] === px0 + 0.5 && noPos.pos[1] === 220 && noPos.pos[2] === pz0 + 0.5 && noPos.ledger === ledgerNoPos &&
+    noPos.cooldown === 4 && noPos.armed === false &&
+    bogus.ledger === ledgerNoPos && bogus.pos[0] === px0 + 0.5 && bogus.pos[1] === 220,
+    '无坐标=' + JSON.stringify(noPos) + ' 未知种类=' + JSON.stringify(bogus));
+
+  const mMenu = await createGame();
+  let menuArrival = 'n/a';
+  try { mMenu.g._afterPortalArrival({ x: 0, z: 0, portal: 'nether' }); menuArrival = 'ok'; } catch (err) { menuArrival = 'throw:' + (err && err.message); }
+  shutdown(mMenu.g);
+  assert('M4d 主菜单期（world/running 皆无）：_afterPortalArrival 早退不抛（构造期漏实例化传送门控制器会在这里炸）',
+    menuArrival === 'ok', 'menuArrival=' + menuArrival);
+
+  // ── M5 立地面下探 _resolveArrivalY：与真实生成器重算的"最高可站立空气层"逐值一致 ──
+  // 独立样本：用该维度真实生成器现造临时区块重算（断言"最高且合法"，不是复述实现）
+  const oracle = (dim, x, z) => {
+    const def = Dims.getDimension(dim);
+    const gen = def.createGenerator(mg.world.seed, { biomeScale: mg.biomeScale });
+    const cx = Math.floor(x / Chunky.CHUNK_SIZE), cz = Math.floor(z / Chunky.CHUNK_SIZE);
+    const c = new Chunky.Chunk(cx, cz);
+    gen.generateChunk(c);
+    const lx = x - cx * Chunky.CHUNK_SIZE, lz = z - cz * Chunky.CHUNK_SIZE;
+    const top = Math.min(def.spawnScanTop || 140, Chunky.CHUNK_HEIGHT - 2);
+    const valid = [];
+    for (let y = top; y >= 1; y--) {
+      if (c.get(lx, y, lz) === 0 && c.get(lx, y + 1, lz) === 0) {
+        const d = Reg.getById(c.get(lx, y - 1, lz));
+        if (d && d.solid) valid.push(y);
+      }
+    }
+    return { max: valid.length ? valid[0] : -1, count: valid.length };
+  };
+  const qx = px0 + 137, qz = pz0 - 91;
+  const owOracle = oracle('overworld', qx, qz);
+  const neOracle = oracle('nether', qx, qz);
+  const owY = mg._resolveArrivalY('overworld', qx, qz);
+  const neY = mg._resolveArrivalY('nether', qx, qz);
+  const owAgain = mg._resolveArrivalY('overworld', qx, qz);
+  const bogusY = mg._resolveArrivalY('bogus', qx, qz);
+  assert('M5 _resolveArrivalY：主世界/下界各一列 = 真实生成器重算的"从扫描顶下探的首个（本格空气 + 上格空气 + 下格实心）"且为最高者；同参二次调用逐值相同；未知维度 -1',
+    owY === owOracle.max && owOracle.count >= 1 && neY === neOracle.max && owAgain === owY && bogusY === -1,
+    '主世界=' + owY + '/' + JSON.stringify(owOracle) + ' 下界=' + neY + '/' + JSON.stringify(neOracle) + ' 二次=' + owAgain + ' 未知=' + bogusY);
+
+  const ldArr = mg._composeSwitchLoadData('nether', null, null, { x: qx, z: qz, portal: 'nether' });
+  const ldSpawn = mg._composeSwitchLoadData('nether', null, null, null);
+  assert('M5b 落点装配接缝：带坐标 arrival → dimensionSpawn=false + player.x/z = 落点 +0.5 + player.y = _resolveArrivalY（无立足面回落 ARRIVAL_PLATFORM.nether=40）；无 arrival → dimensionSpawn=true 且不写落点坐标',
+    ldArr.dimensionSpawn === false && ldArr.dimension === 'nether' && ldArr.player.x === qx + 0.5 && ldArr.player.z === qz + 0.5 &&
+    ldArr.player.y === (neY > 0 ? neY : 40) &&
+    ldSpawn.dimensionSpawn === true && ldSpawn.player.x === undefined && ldSpawn.player.z === undefined,
+    '带坐标=' + JSON.stringify([ldArr.dimensionSpawn, ldArr.player.x, ldArr.player.y, ldArr.player.z]) + ' 无坐标=' + JSON.stringify([ldSpawn.dimensionSpawn, ldSpawn.player.x]));
+}
+
+// ── N. 折跃门域行为：末地同维传送（1s 阈值 + 账本角度最近配对直达）─────────────────
+{
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const GATEWAY = Reg.getId('end_gateway');
+  const e = await boot({ mode: 'creative', seed: SEED, loadData: { dimension: 'end', gamemode: 'creative', seed: SEED } });
+  track(e.g);
+  const eg = e.g;
+  const gchat = [];
+  eg.chatBox = { add: (text, color) => gchat.push([text, color]) };
+  const gx = Math.floor(eg.player.position.x) + 20, gz = Math.floor(eg.player.position.z) + 20, gy = 200;
+  eg.world.setBlock(gx, gy, gz, GATEWAY);          // 脚下这座
+  eg.world.setBlock(gx + 40, gy, gz, GATEWAY);     // 配对门（账本内另一座，>6 格）
+  eg.player.position.set(gx + 0.5, gy, gz + 0.5);
+  eg.player.velocity.set(0, 0, 0);
+  eg._portalTimer = 0; eg._portalArmed = true; eg._portalCooldown = 0;
+  const gdrive = (sec, dt = 0.05) => { const n = Math.round(sec / dt); for (let i = 0; i < n; i++) eg.updatePortals(dt); };
+  gdrive(0.75);
+  const gAt075 = { x: eg.player.position.x, y: eg.player.position.y, z: eg.player.position.z, timer: eg._portalTimer };
+  gdrive(0.3);
+  const gAt105 = {
+    x: eg.player.position.x, y: eg.player.position.y, z: eg.player.position.z,
+    timer: eg._portalTimer, armed: eg._portalArmed, vel: eg.player.velocity.length(), chat: gchat[gchat.length - 1] || ['', ''],
+  };
+  assert('N1 折跃门：站入 0.75s 不动（1s 阈值），1.05s 触发 → 直达账本角度最近配对门（门格 +1 高度、格心 +0.5）、速度清零、计时器归零 + 撤武装，播报「折跃门的光束把你送往远方的岛屿……」',
+    gAt075.x === gx + 0.5 && gAt075.y === gy && gAt075.z === gz + 0.5 && gAt075.timer > 0.7 && gAt075.timer < 1.0 &&
+    gAt105.x === gx + 40.5 && gAt105.y === gy + 1 && gAt105.z === gz + 0.5 &&
+    gAt105.timer === 0 && gAt105.armed === false && gAt105.vel === 0 &&
+    gAt105.chat[0].includes('折跃门的光束把你送往远方的岛屿') && gAt105.chat[1] === '#a7f',
+    '0.75s=' + JSON.stringify(gAt075) + ' 1.05s=' + JSON.stringify(gAt105));
+}
+
 for (const x of games) shutdown(x);
 for (const x of games) shutdown(x);
 finish('game-behavior');
