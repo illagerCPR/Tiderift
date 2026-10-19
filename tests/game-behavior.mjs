@@ -2103,17 +2103,79 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
     'cell=' + qg.world.getBlock(P.x, P.y, P.z) + ' 剩=' + countOf('cobblestone') + ' mouseRight=' + qg.controls.mouseRight);
   qg.controls.mouseRight = false;
 
-  // ── Q25 放置重叠守卫（既存缺陷 H1，轮 9 修）：不消费 ──
+  // ── Q25 放置重叠守卫只对「手持可放置方块」生效（H1 已修复：守卫移入 if (blockDef) 内） ──
+  // 场景：站高处、竖直俯视脚下方块（y=199 顶面）→ 放置邻格（y=200）即玩家自身所在格 → 守卫谓词成立。
+  // 以下三个只读观测函数只重现守卫公式（不写 selectedBlock、不写世界），用于证明场景真的命中守卫谓词。
+  const placeCellOfAim = () => {
+    const s = qg.selectedBlock;
+    if (!s || !s.block || !s.normal) return null;
+    return { x: s.block.x + s.normal.x, y: s.block.y + s.normal.y, z: s.block.z + s.normal.z };
+  };
+  const cellOverlapsPlayer = (p) => {
+    const pos = qg.player.position;
+    return p.x >= Math.floor(pos.x - 0.3) && p.x <= Math.floor(pos.x + 0.3) &&
+           p.y >= Math.floor(pos.y) && p.y <= Math.floor(pos.y + 1.8) &&
+           p.z >= Math.floor(pos.z - 0.3) && p.z <= Math.floor(pos.z + 0.3);
+  };
+
+  // ── Q25 （改写）手持弓同场景：守卫不再吞掉右键 → 照常进入蓄力通道 ──
   qg.world.setBlock(P.x, P.y, P.z, 0);
   setT('stone');
   hold('bow', 1);
   giveArrows(8);
   await stand(DOWN);
-  const q25Aim = qg.selectedBlock && qg.selectedBlock.block ? qg.selectedBlock.block.y === 199 : false;
+  const q25Place = placeCellOfAim();
+  qg._cancelBowCharge();
   await clickRight();
-  assert('Q25 放置重叠守卫（既存缺陷 H1，轮 9 修）：手持弓竖直瞄准脚下方块 → 放置邻格落在玩家 AABB → 整方法退出且**不消费**（蓄力被吞）',
-    q25Aim && qg._bowCharging === false && qg.controls.mouseRight === true,
-    'aimUnder=' + q25Aim + ' charging=' + qg._bowCharging + ' mouseRight=' + qg.controls.mouseRight);
+  assert('Q25 放置重叠守卫只对手持方块生效（H1 已修复）：手持弓竖直瞄准脚下方块、放置邻格落在玩家 AABB 内 → 不再被吞，仍进入蓄力（_bowCharging=true）且 mouseRight 不被消费',
+    q25Place !== null && cellOverlapsPlayer(q25Place) && qg._bowCharging === true && qg.controls.mouseRight === true,
+    'place=' + JSON.stringify(q25Place) + ' overlap=' + (q25Place ? cellOverlapsPlayer(q25Place) : 'n/a') +
+    ' charging=' + qg._bowCharging + ' mouseRight=' + qg.controls.mouseRight);
+  qg._cancelBowCharge();
+  qg.controls.mouseRight = false;
+
+  // ── Q25a 正对照（同场景手持真方块 cobblestone）：守卫仍然生效 ──
+  setT('stone');
+  hold('cobblestone', 4);
+  await stand(DOWN);
+  const q25aPlace = placeCellOfAim();
+  const q25aBefore = q25aPlace ? qg.world.getBlock(q25aPlace.x, q25aPlace.y, q25aPlace.z) : -1;
+  await clickRight();
+  assert('Q25a 正对照·同场景手持真方块（cobblestone）：放置重叠守卫仍然生效 → 放置邻格零写入（仍为 0）、库存不减、mouseRight 不被消费',
+    q25aPlace !== null && cellOverlapsPlayer(q25aPlace) && q25aBefore === 0 &&
+    qg.world.getBlock(q25aPlace.x, q25aPlace.y, q25aPlace.z) === 0 &&
+    countOf('cobblestone') === 4 && qg.controls.mouseRight === true,
+    'place=' + JSON.stringify(q25aPlace) + ' cell=' + (q25aPlace ? qg.world.getBlock(q25aPlace.x, q25aPlace.y, q25aPlace.z) : 'n/a') +
+    ' 库存=' + countOf('cobblestone') + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q25b 同场景手持末影之眼（主世界）：不再被吞 → 掷出分支照常生效 ──
+  setT('stone');
+  hold('ender_eye', 2);
+  inv.slots[8] = null;
+  await stand(DOWN);
+  const q25bPlace = placeCellOfAim();
+  qg.projectiles.eyeFlight = null; qg.eyeFlight = null;
+  await clickRight();
+  const q25bFlight = !!qg.eyeFlight;
+  assert('Q25b 同场景手持末影之眼（主世界）：不再被吞 → 消耗 1 颗、生成 1 个飞行物（eyeFlight）、mouseRight 不被消费',
+    q25bPlace !== null && cellOverlapsPlayer(q25bPlace) && countOf('ender_eye') === 1 && q25bFlight && qg.controls.mouseRight === true,
+    'place=' + JSON.stringify(q25bPlace) + ' eye=' + countOf('ender_eye') + ' flight=' + q25bFlight +
+    ' mouseRight=' + qg.controls.mouseRight);
+  qg.projectiles.eyeFlight = null; qg.eyeFlight = null;
+  qg.controls.mouseRight = false;
+
+  // ── Q25c 同场景手持非方块杂物（stick）：不再被吞 → 落到末尾兜底分支消费 ──
+  setT('stone');
+  hold('stick', 1);
+  await stand(DOWN);
+  const q25cPlace = placeCellOfAim();
+  await clickRight();
+  assert('Q25c 同场景手持非方块杂物（stick）：不再被吞 → 走完后续分支并由末尾兜底置位消费 mouseRight（放置邻格仍零写入）',
+    q25cPlace !== null && cellOverlapsPlayer(q25cPlace) &&
+    qg.world.getBlock(q25cPlace.x, q25cPlace.y, q25cPlace.z) === 0 && qg.controls.mouseRight === false,
+    'place=' + JSON.stringify(q25cPlace) + ' cell=' + (q25cPlace ? qg.world.getBlock(q25cPlace.x, q25cPlace.y, q25cPlace.z) : 'n/a') +
+    ' mouseRight=' + qg.controls.mouseRight);
   qg.controls.mouseRight = false;
 
   // ── Q26 右键·末尾兜底消费：手持非方块（stick） ──

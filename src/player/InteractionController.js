@@ -26,8 +26,10 @@
 //   置位语句仍在原位置逐字保留（外部 Controls / update() / NetworkManager 都读 controls.mouse*，
 //   置位时机与次数不得变）；「已消费但继续」由段内 leftConsumed 标记表达，不再拿置位本身当返回值。
 //
-// 已知既存缺陷（本步只保行为、不修）：段③的放置重叠守卫（CLICK_ABORT）不置位 mouseRight，
-//   手持弓/末影之眼对准自身重叠格时右键被静默吞掉 —— 轮 9 H1 修，届时同步更新钉子 Q25。
+// 已修复缺陷 H1（轮 9）：段③的放置重叠守卫（CLICK_ABORT）原先写在 if (blockDef) 之前，
+//   手持弓/末影之眼对准「放置邻格与玩家 AABB 重叠」的目标时右键被静默吞掉（既不置位 mouseRight 也无动作）。
+//   守卫现整体移入 if (blockDef) 内 —— 只对真正要放置的方块生效；非方块手持物继续走
+//   弓蓄力 / 掷末影之眼 / 末尾兜底消费三条后续分支。钉子 Q25 已同步改写，并补真方块正对照。
 import * as THREE from 'three';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
@@ -442,16 +444,15 @@ export class InteractionController {
         const placeY = hit.block.y + hit.normal.y;
         const placeZ = hit.block.z + hit.normal.z;
 
-        // 检查是否会与玩家重叠
-        const px = g.player.position.x, py = g.player.position.y, pz = g.player.position.z;
-        if (placeX >= Math.floor(px - 0.3) && placeX <= Math.floor(px + 0.3) &&
-            placeY >= Math.floor(py) && placeY <= Math.floor(py + 1.8) &&
-            placeZ >= Math.floor(pz - 0.3) && placeZ <= Math.floor(pz + 0.3)) {
-          return CLICK_ABORT; // 放置邻格与玩家重叠：未消费（既存缺陷 H1，轮 9 修）
-        }
-
         const blockDef = BlockRegistry.getByName(sel.name);
         if (blockDef) {
+          // 检查是否会与玩家重叠（H1 修复：守卫只对可放置方块生效，非方块手持物不被吞）
+          const px = g.player.position.x, py = g.player.position.y, pz = g.player.position.z;
+          if (placeX >= Math.floor(px - 0.3) && placeX <= Math.floor(px + 0.3) &&
+              placeY >= Math.floor(py) && placeY <= Math.floor(py + 1.8) &&
+              placeZ >= Math.floor(pz - 0.3) && placeZ <= Math.floor(pz + 0.3)) {
+            return CLICK_ABORT; // 放置邻格与玩家重叠：未消费
+          }
           g.hand.swing(); // 阶段10：放置方块挥动
           // B27：门/床/活板门形制放置（多格 + 朝向；失败不消耗）
           if (blockDef.part && g._tryPlaceShaped(placeX, placeY, placeZ, blockDef)) {
