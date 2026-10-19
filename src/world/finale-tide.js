@@ -1,6 +1,6 @@
 // finale-tide.js -- 终局篇 F2「四界同潮」演出配置与包络纯函数
 // 原初之潮归位的 60 秒窗口：四界分段并行，玩家换维即见彼界段落（单机可追潮跑四界，
-// 窗口跨换维延续——_finaleTide 挂 Game 实例，start 重入不清）。
+// 窗口跨换维延续——演出窗口由 AetherFinale 控制器持有（Game 侧只读访问器 get _finaleTide()），start 重入不清）。
 // 演出纪律（不变量 5）：纯客户端零持久化——不进存档、不进联机账本；天色/雾走
 // 「逐帧写入」模式（Sky.finaleOverride 每帧由 Game 喂、雾写在 applyFogRange 之后），
 // 停写即回落 = 还原纯度天然成立，无任何显式还原动作、无状态残留。LAN：F2 阶段各端本地触发（调试口）；startTs 权威分发随 F3 room flag。

@@ -60,7 +60,8 @@ const skySrc = readFileSync('./src/render/Sky.js', 'utf8');
 ok(skySrc.includes('this.finaleOverride = null;'), 'Sky 演出覆盖字段（逐帧写入模式）');
 ok(skySrc.includes('c.lerp(') && skySrc.includes('finaleOverride'), 'Sky 天色每帧包络混入（停写自动回落）');
 const gameSrc = readFileSync('./src/player/Game.js', 'utf8');
-ok(gameSrc.includes('this.sky.finaleOverride = null; // 天色每帧重算，停写自动回落'), '停写清 finaleOverride（零还原动作）');
+const afSrc = readFileSync('./src/player/AetherFinale.js', 'utf8'); // 轮 8 步 7：终局域逻辑迁出 Game
+ok(afSrc.includes('g.sky.finaleOverride = null; // 天色每帧重算，停写自动回落'), '停写清 finaleOverride（零还原动作）');
 ok(gameSrc.includes('returnToMenu') && gameSrc.split('returnToMenu(save = true) {').length === 2, 'returnToMenu 唯一定义（停写点归属核对前置）');
 const rtIdx = gameSrc.indexOf('returnToMenu(save = true) {');
 const stopIdx = gameSrc.indexOf('this._stopFinaleTide()', rtIdx);
@@ -73,7 +74,7 @@ const updIdx = gameSrc.indexOf('this._updateFinaleTide(dt);');
 ok(fogIdx > 0 && updIdx > fogIdx && updIdx - fogIdx < 600, '_updateFinaleTide 在雾段之后调用（每帧最后写入者）');
 ok(gameSrc.includes('_startFinaleTide(opts = {}) {'), '演出启动方法在场（F3 起 ritual/startTs 参数化）');
 ok(gameSrc.includes('_finaleParticleTick(seg, p, t, dt)'), '四段粒子发射钩子在场');
-ok(gameSrc.includes("BlockRegistry.getId('water')"), '逆雨段水下采样在场（雨只在海上）');
+ok(afSrc.includes("BlockRegistry.getId('water')"), '逆雨段水下采样在场（雨只在海上）');
 const cpSrc = readFileSync('./src/ui/CommandPanel.js', 'utf8');
 ok(cpSrc.includes('_startFinaleTide()') && cpSrc.includes('_stopFinaleTide()'), '命令面板调试口在场（F3 正式触发链前置）');
 finish('endgame-tide');

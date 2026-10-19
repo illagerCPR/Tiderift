@@ -1763,5 +1763,455 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
 }
 
 for (const x of games) shutdown(x);
+
+// ── P. 天域终局 / 复潮域行为：复潮档案 / 巨像震地与裂心拽引 / 复潮仪式 / 候潮献证 /
+//      听潮门控三态 / 演出窗口生命周期与天色雾写入 / 四段粒子发射 ──
+// 轮 8 步 7 的迁移面（AetherFinale）。断言全部经 Game 上的同名真实入口驱动；世界 / 玩家 /
+// 背包 / 碑文屏 / 掉落物一律走真实子系统（只在计数处临时替换 particles 记录器与 Math.random）。
+{
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const { getDimension } = await import('../src/core/dimensions.js');
+  const { FINALE_TIDE_SEGMENTS, FINALE_TIDE_DURATION, finaleEnvelope, finalePulse } = await import('../src/world/finale-tide.js');
+  const { STELE_CHAPTERS } = await import('../src/world/steles.js');
+  const aether = getDimension('aether');
+  const duskSnap = (x) => ({ flag: x.aetherDusk, fixed: JSON.stringify(aether.sky.fixedColor), polar: aether.sky.polarDay, light: aether.light.skyLightLevel, time: x.sky.time });
+
+  // 天域世界（复潮档案 / 仪式 / 演出 / 粒子）+ 主世界生存世界（巨像震地 / 纹章发放）
+  const ab = await boot({ mode: 'creative', seed: SEED, loadData: { dimension: 'aether', gamemode: 'creative', seed: SEED } });
+  track(ab.g);
+  const pg = ab.g;
+  const sb = await boot({ mode: 'survival', seed: SEED });
+  track(sb.g);
+  const sg = sb.g;
+
+  // ── P1–P2 复潮状态切换 ──
+  const d0 = duskSnap(pg);
+  pg.applyAetherDusk(true);
+  const d1 = duskSnap(pg);
+  pg.sky.time = 0.75; // 手拨到夜晚（模拟玩家在天域呆到日落）：off 分支不得重写时间
+  pg.applyAetherDusk(false);
+  const d2 = duskSnap(pg);
+  assert('P1 applyAetherDusk（天域）：on 把天域档案切成日落档（fixedColor=null / polarDay=false / skyLightLevel=null）并把时间锚定上午 0.32；off 归位永昼档案但不重写时间（锚定只在 on 分支——此刻手拨的 0.75 原样保留）',
+    d0.fixed !== 'null' && d0.polar === true && d0.light === 1 &&
+    d1.flag === true && d1.fixed === 'null' && d1.polar === false && d1.light === null && d1.time === 0.32 &&
+    d2.flag === false && d2.fixed === d0.fixed && d2.polar === true && d2.light === 1 && d2.time === 0.75,
+    JSON.stringify({ d0, d1, d2 }));
+
+  const o0 = duskSnap(sg);
+  sg.applyAetherDusk(true);
+  const o1 = duskSnap(sg);
+  sg.applyAetherDusk(false);
+  assert('P2 applyAetherDusk（非天域维度）：状态位照样置位，但档案覆盖与时间锚定被维度门控拦住（天域档案与当前维度时间都不动）',
+    o1.flag === true && o1.fixed === o0.fixed && o1.polar === o0.polar && o1.light === o0.light && o1.time === o0.time,
+    JSON.stringify({ o0, o1 }));
+
+  // ── P3–P8 守誓巨像：震地结算 / 远端回执 / 门控 / 裂心拽引 ──
+  const svec = (x, y, z) => sg.player.position.clone().set(x, y, z);
+  const slamSent = [];
+  sg.net = { sendColossusSlam: (p) => slamSent.push({ x: p.x, y: p.y, z: p.z }) };
+  sg.networkMode = true;
+  const px = Math.floor(sg.player.position.x) + 10, py = 200, pz = Math.floor(sg.player.position.z) + 10;
+  const bursts = [];
+  const sgRealParticles = sg.particles;
+  sg.particles = { burstBlockBreak: (...a) => bursts.push(a) };
+  const resetP = () => { sg.player.setMode('survival'); sg.player.dead = false; sg.player.health = 20; sg.player.invulnerable = 0; sg.player.velocity.set(0, 0, 0); sg.player.position.set(px, py, pz); };
+  resetP();
+  sg._colossusSlam({ position: svec(px - 2, py, pz) });
+  assert('P3 _colossusSlam：本地按距心 2 格结算 5 点伤害 + 沿背离震心方向 8 水平 / 5 垂直击退，并把震心坐标广播给服务器（networkMode ∧ net）；冲击环只发一次（星髓青爆环）',
+    slamSent.length === 1 && slamSent[0].x === px - 2 && slamSent[0].y === py && slamSent[0].z === pz &&
+    sg.player.health === 15 && sg.player.velocity.x === 8 && sg.player.velocity.y === 5 && sg.player.velocity.z === 0 &&
+    bursts.length === 1 && bursts[0][3] && bursts[0][3].name === 'star_marrow_block',
+    JSON.stringify({ sent: slamSent, hp: sg.player.health, vel: sg.player.velocity, bursts: bursts.length }));
+
+  resetP();
+  const sent0 = slamSent.length;
+  sg.spawnRemoteColossusSlam(px, py + 1, pz);
+  assert('P4 spawnRemoteColossusSlam（远端回执）：只做本地结算不回播（零新增广播），伤害口径同震地（距心 1 格 → 5 点）；震心与玩家同列时水平方向退化走 (1,0,0) 兜底，仍给 8/5 击退',
+    slamSent.length === sent0 && sg.player.health === 15 &&
+    sg.player.velocity.x === 8 && sg.player.velocity.y === 5 && sg.player.velocity.z === 0,
+    JSON.stringify({ sent: slamSent.length, hp: sg.player.health, vel: sg.player.velocity }));
+
+  const gateCases = [];
+  for (const mode of ['creative', 'spectator']) {
+    resetP(); sg.player.setMode(mode);
+    sg._applyColossusSlam(svec(px - 2, py, pz));
+    gateCases.push([mode, sg.player.health, sg.player.velocity.length()]);
+  }
+  resetP(); sg.player.dead = true;
+  sg._applyColossusSlam(svec(px - 2, py, pz));
+  gateCases.push(['dead', sg.player.health, sg.player.velocity.length()]);
+  resetP();
+  sg._applyColossusSlam(svec(px + 8, py, pz));
+  gateCases.push(['far(8)', sg.player.health, sg.player.velocity.length()]);
+  assert('P5 _applyColossusSlam 门控：创造 / 旁观 / 死亡 / 距心 ≥6 格四类一律零伤害零击退（不进 hurt 与击退分支）',
+    gateCases.every((c) => c[1] === 20 && c[2] === 0), JSON.stringify(gateCases));
+  assert('P6 _applyColossusSlam 冲击环在门控之外：上述四次被门控拦下的震地仍然各发一次星髓青爆环（粒子与伤害结算解耦）',
+    bursts.length === 6 && bursts.every((b) => b[3] && b[3].name === 'star_marrow_block'),
+    'bursts=' + bursts.length + ' names=' + JSON.stringify(bursts.map((b) => b[3] && b[3].name)));
+
+  const auraMob = { dead: false, dyingAnim: false, typeName: 'storm_colossus', health: 10, maxHealth: 100, position: svec(px + 5, py, pz) };
+  sg.mobManager.mobs.push(auraMob);
+  const auraRun = () => { resetP(); sg.player.flying = false; sg._updateColossusAura(0.5); return { x: sg.player.velocity.x, y: sg.player.velocity.y, z: sg.player.velocity.z }; };
+  const auraOk = auraRun();
+  const kAura = 9 * (1 - 5 / 11);
+  assert('P7 _updateColossusAura：残血巨像（10/100 < 1/3）在 5 格外 → 按 9*(1-d/11) 的拉力把玩家拖向巨像（dt=0.5 → 水平 +k*3）+ 微抬升 2.5*dt',
+    Math.abs(auraOk.x - kAura * 3) < 1e-9 && Math.abs(auraOk.z) < 1e-9 && Math.abs(auraOk.y - 1.25) < 1e-9,
+    JSON.stringify({ auraOk, expectX: kAura * 3 }));
+
+  const auraCases = [];
+  const auraVariant = (mob, player) => {
+    Object.assign(auraMob, { dead: false, dyingAnim: false, typeName: 'storm_colossus', health: 10, maxHealth: 100, position: svec(px + 5, py, pz) }, mob);
+    resetP(); Object.assign(sg.player, player);
+    sg._updateColossusAura(0.5);
+    return sg.player.velocity.length();
+  };
+  auraCases.push(['frac>1/3(health=50)', auraVariant({ health: 50 }, {})]);
+  auraCases.push(['d>11(pos+12)', auraVariant({ position: svec(px + 12, py, pz) }, {})]);
+  auraCases.push(['d<0.5(pos)', auraVariant({ position: svec(px, py, pz) }, {})]);
+  auraCases.push(['dead', auraVariant({ dead: true }, {})]);
+  auraCases.push(['dyingAnim', auraVariant({ dyingAnim: true }, {})]);
+  auraCases.push(['other mob', auraVariant({ typeName: 'zombie' }, {})]);
+  auraCases.push(['flying', auraVariant({}, { flying: true })]);
+  assert('P8 _updateColossusAura 门控：血量 >1/3 / 距离 >11 / 距离 <0.5 / 已死 / 死亡动画中 / 非巨像怪物 / 飞行中 七类一律零拉力',
+    auraCases.every((c) => c[1] === 0), JSON.stringify(auraCases));
+  sg.mobManager.mobs.pop();
+  sg.particles = sgRealParticles;
+
+  // ── P9–P11 天域复潮仪式 ──
+  const chat = [];
+  pg.chatBox = { add: (text, color) => chat.push([text, color]) };
+  const sentAether = [], sentFinale = [], sentDrops = [];
+  pg.net = {
+    sendAetherState: (v) => sentAether.push(v),
+    sendFinaleState: (p) => sentFinale.push({ offered: p.offered, done: p.done, x: p.x, y: p.y, z: p.z }),
+    sendDropSpawn: (x, y, z, name, count) => sentDrops.push({ x, y, z, name, count }),
+  };
+  const countOf = (name) => pg.inventory.slots.reduce((n, s) => (s && s.name === name ? n + s.count : n), 0);
+  const give = (name, count) => pg.inventory.add(name, count);
+  const tx = Math.floor(pg.player.position.x) + 3, ty = 200, tz = Math.floor(pg.player.position.z) + 3;
+  const AETHER_ALTAR = Reg.getId('aether_altar'), TIDE_ALTAR = Reg.getId('tide_altar'), PRIMORDIAL_ALTAR = Reg.getId('primordial_altar');
+  pg.world.setBlock(tx, ty, tz, AETHER_ALTAR);
+  pg.steleScreen.hide();
+  pg.aetherDusk = true;
+  chat.length = 0;
+  pg._tryTideRitual({ x: tx, y: ty, z: tz });
+  const p9 = { block: pg.world.getBlock(tx, ty, tz), chat: chat.length, sent: sentAether.length, stele: pg.steleScreen.visible };
+  pg.aetherDusk = false;
+  assert('P9 _tryTideRitual 早退：已复潮（aetherDusk=true）时整段不执行——祭坛不改写、不消耗、不上报、不提示、不浮碑文',
+    p9.block === AETHER_ALTAR && p9.chat === 0 && p9.sent === 0 && p9.stele === false, JSON.stringify(p9));
+
+  chat.length = 0;
+  pg.steleScreen.hide();
+  pg._tryTideRitual({ x: tx, y: ty, z: tz });
+  const p10 = { block: pg.world.getBlock(tx, ty, tz), chat: chat.length ? chat[chat.length - 1] : ['', ''], stele: pg.steleScreen.visible };
+  assert('P10 _tryTideRitual 材料不足：祭坛保持原样、零上报零碑文，只在聊天通道提示「祭坛沉默着——集齐三页潮汐残页与三枚心核碎片再来。」（色 #cde）',
+    p10.block === AETHER_ALTAR && p10.stele === false && p10.chat[0].includes('祭坛沉默着') && p10.chat[1] === '#cde',
+    JSON.stringify(p10));
+
+  give('page_rising', 1); give('page_marrow', 1); give('page_sunder', 1); give('heart_shard', 3);
+  pg.steleScreen.hide();
+  pg.networkMode = true;
+  pg._tryTideRitual({ x: tx, y: ty, z: tz });
+  pg.networkMode = false;
+  const p11 = {
+    block: pg.world.getBlock(tx, ty, tz), dusk: pg.aetherDusk, sent: JSON.stringify(sentAether),
+    left: ['page_rising', 'page_marrow', 'page_sunder', 'heart_shard'].map(countOf),
+    stele: pg.steleScreen.visible, chapter: pg.steleScreen.chapter === STELE_CHAPTERS.renewal,
+    pos: JSON.stringify(pg.steleScreen.pos),
+  };
+  assert('P11 _tryTideRitual 成功：三页残页 + 三枚心核碎片全数扣除 → 祭坛置换为潮心祭坛（setBlock 进账本）、复潮状态置位并上报 sendAetherState(true)、碑文于祭坛坐标浮现复潮章 renewal',
+    p11.block === TIDE_ALTAR && p11.dusk === true && sentAether.length === 1 && sentAether[0] === true &&
+    p11.left.every((n) => n === 0) && p11.stele === true && p11.chapter === true &&
+    p11.pos === JSON.stringify({ x: tx, y: ty, z: tz }),
+    JSON.stringify(p11));
+  pg.aetherDusk = false;
+  pg.steleScreen.hide();
+
+  // ── P12–P14 候潮献证（三潮之证 → 原初祭坛 + 候潮态）──
+  const ox = tx + 2, oy = ty, oz = tz;
+  pg.world.setBlock(ox, oy, oz, TIDE_ALTAR);
+  pg.world.finalePrimordial = null;
+  pg.steleScreen.hide();
+  pg._tryPrimordialOffering({ x: ox, y: oy, z: oz });
+  const p12 = { block: pg.world.getBlock(ox, oy, oz), fp: pg.world.finalePrimordial, chapter: pg.steleScreen.chapter === STELE_CHAPTERS.renewal, sent: sentFinale.length };
+  assert('P12 _tryPrimordialOffering 未集齐：方块保持潮心祭坛、候潮位不置位、零上报，回落复潮章 renewal（不变量 6：复潮行为不回退）',
+    p12.block === TIDE_ALTAR && p12.fp === null && p12.chapter === true && p12.sent === 0, JSON.stringify(p12));
+
+  give('storm_core', 1); give('mourn_tear', 1); give('page_rain', 1);
+  pg.steleScreen.hide();
+  pg.networkMode = true;
+  pg._tryPrimordialOffering({ x: ox, y: oy, z: oz });
+  pg.networkMode = false;
+  const p13 = {
+    block: pg.world.getBlock(ox, oy, oz), fp: JSON.stringify(pg.world.finalePrimordial),
+    left: ['storm_core', 'mourn_tear', 'page_rain'].map(countOf),
+    sent: JSON.stringify(sentFinale), chapter: pg.steleScreen.chapter === STELE_CHAPTERS.tide_waiting,
+  };
+  assert('P13 _tryPrimordialOffering 三证齐：风暴之核 / 哀潮之泪 / 雨潮残页 各 1 消耗 → 置换原初祭坛、候潮位记祭坛坐标、sendFinaleState({offered:true,坐标}) 上报（F3 候潮状态上服务器）、碑文浮现候潮章 tide_waiting',
+    p13.block === PRIMORDIAL_ALTAR && p13.fp === JSON.stringify({ x: ox, y: oy, z: oz }) &&
+    p13.left.every((n) => n === 0) && p13.sent === JSON.stringify([{ offered: true, x: ox, y: oy, z: oz }]) &&
+    p13.chapter === true,
+    JSON.stringify(p13));
+
+  give('storm_core', 1); give('mourn_tear', 1); give('page_rain', 1);
+  pg.steleScreen.hide();
+  pg._tryPrimordialOffering({ x: ox, y: oy, z: oz });
+  const p14 = { left: ['storm_core', 'mourn_tear', 'page_rain'].map(countOf), sent: sentFinale.length, chapter: pg.steleScreen.chapter === STELE_CHAPTERS.renewal };
+  assert('P14 _tryPrimordialOffering 已候潮：候潮位已置时不再消耗材料、不重复上报，照旧浮现复潮章（finalePrimordial 只置一次）',
+    p14.left.every((n) => n === 1) && p14.sent === 1 && p14.chapter === true, JSON.stringify(p14));
+  pg.steleScreen.hide();
+
+  // ── P15–P20 听潮门控三态（守望界碑右键）──
+  pg._stopFinaleTide();
+  pg.world.finaleDone = false;
+  pg.world.finalePrimordial = null;
+  const r15 = pg._tryListenTide({ x: tx, y: ty, z: tz });
+  const p15 = { ret: r15, done: pg.world.finaleDone, tide: !!pg._finaleTide };
+  assert('P15 _tryListenTide 门控 read（真实 structureManager 下无守望章）：返回 false（右键继续走读碑文分支）、不置 finaleDone、不开窗口',
+    p15.ret === false && p15.done === false && p15.tide === false, JSON.stringify(p15));
+
+  const smReal = pg.world.generator.structureManager;
+  pg.world.generator.structureManager = { steleChapterAt: () => 'end_watch' };
+  pg.world.finalePrimordial = null; pg.world.finaleDone = false;
+  const r16 = pg._tryListenTide({ x: tx, y: ty, z: tz });
+  assert('P16 门控 read（未候潮）：守望碑 ∧ offered=false → 返回 false 且不置位（不变量 6：既有阅读行为不回退）',
+    r16 === false && pg.world.finaleDone === false && !pg._finaleTide, JSON.stringify({ r16, done: pg.world.finaleDone }));
+
+  pg.world.finalePrimordial = { x: ox, y: oy, z: oz }; pg.world.finaleDone = true;
+  const r17 = pg._tryListenTide({ x: tx, y: ty, z: tz });
+  assert('P17 门控 read（已听完）：done=true 优先 → 返回 false（重复右键照旧读守望章），不重播演出',
+    r17 === false && !pg._finaleTide, JSON.stringify({ r17, tide: !!pg._finaleTide }));
+
+  pg.world.finaleDone = false;
+  pg._startFinaleTide({ startTs: 777 });
+  const r18 = pg._tryListenTide({ x: tx, y: ty, z: tz });
+  const p18 = { ret: r18, done: pg.world.finaleDone, ts: pg._finaleTide && pg._finaleTide.startTs };
+  pg._stopFinaleTide();
+  assert('P18 门控 swallow（演出进行中）：返回 true 吞掉右键，且不重触发（窗口 startTs 原样）也不置 finaleDone',
+    p18.ret === true && p18.done === false && p18.ts === 777, JSON.stringify(p18));
+
+  pg.world.finaleDone = false;
+  const r19 = pg._tryListenTide({ x: tx, y: ty, z: tz });
+  const p19 = { ret: r19, done: pg.world.finaleDone, tide: pg._finaleTide, ritual: pg._finaleTide && pg._finaleTide.ritual };
+  assert('P19 门控 trigger（单机）：候潮 ∧ 未听过 ∧ 空闲 → 返回 true（右键已被仪式消费），本地 finaleDone 置位并以 ritual=true 开 60s 窗口',
+    p19.ret === true && p19.done === true && !!p19.tide && p19.ritual === true, JSON.stringify(p19));
+
+  pg._stopFinaleTide();
+  pg.world.finaleDone = false;
+  sentFinale.length = 0;
+  pg.networkMode = true;
+  const r20 = pg._tryListenTide({ x: tx, y: ty, z: tz });
+  pg.networkMode = false;
+  const p20 = { ret: r20, done: pg.world.finaleDone, sent: JSON.stringify(sentFinale), tide: !!pg._finaleTide };
+  assert('P20 门控 trigger（联机）：只上报 sendFinaleState({done:true}) 由广播统一驱动（含发起者），本地不置 finaleDone、不开窗口',
+    p20.ret === true && p20.done === false && p20.sent === JSON.stringify([{ offered: undefined, done: true }]) && p20.tide === false,
+    JSON.stringify(p20));
+  pg.world.generator.structureManager = smReal;
+
+  // ── P21–P25 演出窗口生命周期与纹章发放 ──
+  pg._stopFinaleTide();
+  pg._startFinaleTide({ startTs: 1234567, ritual: true });
+  const w1 = pg._finaleTide;
+  const tA = Date.now();
+  pg._startFinaleTide();
+  const tB = Date.now();
+  const w2 = pg._finaleTide;
+  assert('P21 _startFinaleTide：显式 startTs 原样采用（LAN 服务器时钟重排口）+ ritual/granted 初值；缺省取本地时钟（落在调用窗口内）且 ritual=false；窗口状态经 game._finaleTide 可读（命令面板调试口契约）',
+    w1.startTs === 1234567 && w1.ritual === true && w1.granted === false &&
+    w2.startTs >= tA && w2.startTs <= tB && w2.ritual === false && w2.granted === false && pg._finaleTide === w2,
+    JSON.stringify({ w1: w1.startTs, w2: w2.startTs, tA, tB }));
+
+  const emblem0 = countOf('primordial_emblem');
+  pg.sky.finaleOverride = { sky: [0, 0, 0], strength: 1, fogPull: 0.5 };
+  pg._startFinaleTide();
+  pg._stopFinaleTide();
+  const p22 = { tide: pg._finaleTide, over: pg.sky.finaleOverride, emblem: countOf('primordial_emblem') - emblem0 };
+  assert('P22 _stopFinaleTide：窗口置空 + 清 Sky 演出覆盖（停写即回落，零还原动作）；非仪式窗口不发纹章',
+    p22.tide === null && p22.over === null && p22.emblem === 0, JSON.stringify(p22));
+
+  const banner = [];
+  const realBanner = pg.hud.showFinaleBanner;
+  pg.hud.showFinaleBanner = () => banner.push(1);
+  chat.length = 0;
+  pg._startFinaleTide({ ritual: true });
+  pg._stopFinaleTide();
+  const e1 = countOf('primordial_emblem') - emblem0;
+  pg._stopFinaleTide();
+  const e2 = countOf('primordial_emblem') - emblem0;
+  pg.hud.showFinaleBanner = realBanner;
+  assert('P23 仪式窗口收束：ritual 窗口停止时发放原初纹章（背包 +1、终局横幅触发、聊天文案「潮声落定。碑座上留着一枚纹章。」#bfeee8）；窗口已空后再 stop 不重复发放（granted/空窗口双保险）',
+    e1 === 1 && e2 === 1 && banner.length === 1 && chat.length === 1 &&
+    chat[0][0].includes('潮声落定') && chat[0][1] === '#bfeee8',
+    JSON.stringify({ e1, e2, banner: banner.length, chat }));
+
+  const slotsSave = pg.inventory.slots.map((s) => (s ? { ...s } : null));
+  const fillBag = () => { for (let i = 0; i < pg.inventory.slots.length; i++) pg.inventory.slots[i] = { name: 'stone', count: 64, data: null }; };
+  const ppos = pg.player.position;
+  fillBag();
+  const dropsBefore = pg.mobManager.droppedItems.length;
+  sentDrops.length = 0;
+  pg.networkMode = true;
+  pg._grantPrimordialEmblem();
+  pg.networkMode = false;
+  const sd = sentDrops[sentDrops.length - 1];
+  assert('P24 纹章发放·背包满·联机：走 sendDropSpawn(脚下 +1 格, primordial_emblem, 1) 进账本且不生成本地掉落实体',
+    sentDrops.length === 1 && !!sd && sd.name === 'primordial_emblem' && sd.count === 1 &&
+    sd.x === ppos.x && sd.y === ppos.y + 1 && sd.z === ppos.z &&
+    pg.mobManager.droppedItems.length === dropsBefore,
+    JSON.stringify({ sentDrops, drops: pg.mobManager.droppedItems.length - dropsBefore }));
+
+  sentDrops.length = 0;
+  pg._grantPrimordialEmblem();
+  const drop = pg.mobManager.droppedItems[pg.mobManager.droppedItems.length - 1];
+  assert('P25 纹章发放·背包满·单机：改走 mobManager.spawnDrop（落点 = 脚下 +1 格再抬 0.5、pickupDelay 0.5），联机发送口零调用',
+    pg.mobManager.droppedItems.length === dropsBefore + 1 && sentDrops.length === 0 && !!drop &&
+    drop.name === 'primordial_emblem' && drop.count === 1 && drop.pickupDelay === 0.5 &&
+    Math.abs(drop.position.x - ppos.x) < 1e-9 && Math.abs(drop.position.y - (ppos.y + 1.5)) < 1e-9 && Math.abs(drop.position.z - ppos.z) < 1e-9,
+    JSON.stringify({ n: pg.mobManager.droppedItems.length - dropsBefore, sent: sentDrops.length, drop: drop && { name: drop.name, y: drop.position.y, pick: drop.pickupDelay } }));
+  for (let i = 0; i < slotsSave.length; i++) pg.inventory.slots[i] = slotsSave[i];
+  pg.hotbar.update();
+
+  // ── P26–P30 演出推进：早退 / 到期 / 未知维度 / 段写入 + 真实帧链路 ──
+  pg._stopFinaleTide();
+  const sentinel = { sky: [0, 0, 0], strength: 0.42, fogPull: 0 };
+  pg.sky.finaleOverride = sentinel;
+  pg._updateFinaleTide(1 / 60);
+  assert('P26 _updateFinaleTide 无窗口：整段早退——Sky 覆盖哨兵原样留存（不写天色不拉雾不发粒子）',
+    pg.sky.finaleOverride === sentinel, JSON.stringify(pg.sky.finaleOverride));
+
+  pg._startFinaleTide({ startTs: Date.now() - (FINALE_TIDE_DURATION * 1000 + 1000) });
+  pg._updateFinaleTide(1 / 60);
+  const p27 = { tide: pg._finaleTide, over: pg.sky.finaleOverride };
+  assert('P27 _updateFinaleTide 到期：t ≥ 60s 立即收束（窗口置空 + Sky 覆盖清除）',
+    p27.tide === null && p27.over === null, JSON.stringify(p27));
+
+  const dimReal = pg.world.dimension;
+  pg.world.dimension = 'nowhere';
+  pg.sky.finaleOverride = sentinel;
+  pg._startFinaleTide({ startTs: Date.now() - 30000 });
+  pg._updateFinaleTide(1 / 60);
+  const p28 = { over: pg.sky.finaleOverride === sentinel, alive: !!pg._finaleTide };
+  assert('P28 _updateFinaleTide 未知维度：无段配置直接跳过渲染（Sky 哨兵不动），窗口继续计时不被收束',
+    p28.over === true && p28.alive === true, JSON.stringify(p28));
+  pg._stopFinaleTide();
+  pg.world.dimension = dimReal;
+  pg.sky.finaleOverride = null;
+
+  const segA = FINALE_TIDE_SEGMENTS.aether;
+  const fog = pg.renderer.scene.fog;
+  const fog0 = { near: fog.near, far: fog.far };
+  const wA = Date.now();
+  pg._startFinaleTide({ startTs: wA - 30000 });
+  pg._updateFinaleTide(1 / 60);
+  const wB = Date.now();
+  const ov = pg.sky.finaleOverride;
+  const kFog = ov ? 1 - ov.fogPull : 1;
+  // 期望值按调用窗口 [30, 30+(tB-tA)/1000] 用同一组纯函数算紧：基数/相位被改动即越界
+  const tHi = (wB - wA) / 1000 + 30;
+  const sLo = finaleEnvelope(30) * (0.55 + 0.25 * finalePulse(30));
+  const sHi = finaleEnvelope(tHi) * (0.55 + 0.25 * finalePulse(tHi));
+  const fLo = segA.fogPull * (0.7 + 0.3 * finalePulse(30));
+  const fHi = segA.fogPull * (0.7 + 0.3 * finalePulse(tHi));
+  const p29 = {
+    water: pg.player.inWater, tint: ov && JSON.stringify(ov.sky), strength: ov && ov.strength, fogPull: ov && ov.fogPull,
+    near: fog.near, far: fog.far, near0: fog0.near, far0: fog0.far, k: kFog,
+  };
+  assert('P29 _updateFinaleTide 天域段（t≈30s 盛放期）：写入 Sky 覆盖 {sky=段色, strength=0.55+0.25·pulse, fogPull=0.25·(0.7+0.3·pulse)}（按同一组纯函数算到调用窗口内，紧界），并把雾按 k=1-fogPull 拉近（near·k / far·(1-(1-k)/2)）——每帧最后写入者语义',
+    p29.water === false && !!ov && JSON.stringify(ov.sky) === JSON.stringify(segA.skyTint) &&
+    ov.strength >= sLo - 1e-9 && ov.strength <= sHi + 1e-9 &&
+    ov.fogPull >= fLo - 1e-9 && ov.fogPull <= fHi + 1e-9 &&
+    Math.abs(fog.near - fog0.near * kFog) < 1e-9 && Math.abs(fog.far - fog0.far * (1 - (1 - kFog) * 0.5)) < 1e-9,
+    JSON.stringify({ ...p29, sLo, sHi, fLo, fHi }));
+  fog.near = fog0.near; fog.far = fog0.far;
+
+  pg.sky.finaleOverride = null; // 清掉直调残留：只有 update() 的每帧推进能把它重新写回来
+  const tideFrames = await step(pg, 3);
+  const p30 = { bad: tideFrames.length, tint: pg.sky.finaleOverride && JSON.stringify(pg.sky.finaleOverride.sky), alive: !!pg._finaleTide };
+  assert('P30 帧链路：窗口存活期间 update() 每帧推进演出（先清覆盖 → 三帧零异常后 Sky 覆盖被重新写入天域段色 + 窗口仍在）',
+    tideFrames.length === 0 && p30.tint === JSON.stringify(segA.skyTint) && p30.alive === true, JSON.stringify(p30));
+  pg._stopFinaleTide();
+
+  // ── P31–P35 四段粒子发射（记录器 + Math.random 定值 0）──
+  const realParticles = pg.particles;
+  const P = { densityScale: 1, out: [], spawn(...a) { this.out.push(a); } };
+  pg.particles = P;
+  const rndSave = Math.random;
+  Math.random = () => 0;
+  const at = (i) => ({ x: P.out[i][0], y: P.out[i][1], z: P.out[i][2], vx: P.out[i][3], vy: P.out[i][4], vz: P.out[i][5], r: P.out[i][6], g: P.out[i][7], b: P.out[i][8], life: P.out[i][9], grav: P.out[i][10], drag: P.out[i][11] });
+  const ppos2 = pg.player.position;
+  const fp = pg.world.finalePrimordial;
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.aether, 1, 0.5, 2 / 90);
+  const aetherP = [at(0), at(1)];
+  assert('P31 _finaleParticleTick·天域「风涨」：包络 1 × rate 90 × dt=2/90 → 恰 2 粒（整数计数无随机加成）；候潮锚点在场时走原初祭坛涌泉分支——祭坛坐标 + 抖动带、速度 -0.6/rise·0.7/-0.6、寿命 life·0.8、重力 -1.6、阻尼 0.995',
+    P.out.length === 2 && !!fp && aetherP.every((q) =>
+      Math.abs(q.x - (fp.x + 0.5 - 1.2)) < 1e-9 && Math.abs(q.y - (fp.y + 1)) < 1e-9 && Math.abs(q.z - (fp.z + 0.5 - 1.2)) < 1e-9 &&
+      Math.abs(q.vx + 0.6) < 1e-9 && Math.abs(q.vy - 2.2 * 0.7) < 1e-9 && Math.abs(q.vz + 0.6) < 1e-9 &&
+      Math.abs(q.life - 2.8 * 0.8) < 1e-9 && q.grav === -1.6 && q.drag === 0.995),
+    JSON.stringify({ n: P.out.length, aetherP, fp }));
+
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.nether, 1, 0.5, 2 / 80);
+  const netherP = [at(0), at(1)];
+  assert('P32 _finaleParticleTick·下界「熔岩潮涌」：rate 80 × dt=2/80 → 2 粒，全部走岩浆海面火花分支（y=31.6 固定高度、水平铺开 spread、阻尼 0.99、重力 +2.5 上喷）',
+    P.out.length === 2 && netherP.every((q) =>
+      Math.abs(q.x - (ppos2.x - 14)) < 1e-9 && Math.abs(q.y - 31.6) < 1e-9 && Math.abs(q.z - (ppos2.z - 14)) < 1e-9 &&
+      Math.abs(q.vy - 5.5 * 0.6) < 1e-9 && Math.abs(q.life - 2.2 * 0.7) < 1e-9 && q.grav === 2.5 && q.drag === 0.99),
+    JSON.stringify({ n: P.out.length, netherP, p: ppos2 }));
+
+  const WATER = Reg.getId('water');
+  const wx = Math.round(ppos2.x - 18), wz = Math.round(ppos2.z - 18);
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.overworld, 1, 0.5, 2 / 120);
+  const dryCount = P.out.length;
+  pg.world.setBlock(wx, 62, wz, WATER);
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.overworld, 1, 0.5, 2 / 120);
+  const wetP = [at(0), at(1)];
+  pg.world.setBlock(wx, 62, wz, 0);
+  assert('P33 _finaleParticleTick·主世界「逆雨」：只在采样列 y=62 是水的格子上发射（y=63.8 贴水面倒落）——无水列 0 粒、有水列 2 粒（rate 120 × dt=2/120）',
+    dryCount === 0 && P.out.length === 2 && wetP.every((q) =>
+      Math.abs(q.x - (wx + 0.5)) < 1e-9 && Math.abs(q.y - 63.8) < 1e-9 && Math.abs(q.z - (wz + 0.5)) < 1e-9 &&
+      Math.abs(q.vx + 0.3) < 1e-9 && Math.abs(q.vy - 4.5 * 0.7) < 1e-9 && q.drag === 0.998),
+    JSON.stringify({ dry: dryCount, wet: P.out.length, wx, wz, wetP }));
+
+  const ex = Math.round(ppos2.x + 8), ez = Math.round(ppos2.z);
+  for (let y = 61; y <= 72; y++) pg.world.setBlock(ex, y, ez, 0);
+  pg.world.setBlock(ex, 60, ez, Reg.getId('stone'));
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.end, 1, 0.5, 2 / 70);
+  const endP = [at(0), at(1)];
+  assert('P34 _finaleParticleTick·末地「潮声过岸」：环形采样（半径 8 + spread）向下找首个非空气格 → 在滩涂上方 sy+1.2 沿切线横掠（rise·0.3 微升、阻尼 0.998）；此刻无仪式窗口，不带龙影环',
+    P.out.length === 2 && endP.every((q) =>
+      Math.abs(q.x - (ex + 0.5)) < 1e-9 && Math.abs(q.y - 61.2) < 1e-9 && Math.abs(q.z - (ez + 0.5)) < 1e-9 &&
+      Math.abs(q.vy - 0.4 * 0.3) < 1e-9 && Math.abs(q.life - 3.5 * 0.9) < 1e-9 && q.grav === 0.4 && q.drag === 0.998),
+    JSON.stringify({ n: P.out.length, endP, ex, ez }));
+
+  const dragonPos = pg.player.position.clone().set(ex + 40, 88, ez + 40);
+  pg.mobManager.mobs.push({ typeName: 'dragon', position: dragonPos, dead: false });
+  pg._startFinaleTide({ ritual: true });
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.end, 1, 0.5, 2 / 70);
+  const ringP = [at(1), at(3)];
+  const la0 = 0.5 * 1.1, la1 = 0.5 * 1.1 + 1.7;
+  const expectRing = [la0, la1];
+  assert('P35 听潮仪式附加·龙影低头：ritual 窗口 ∧ 包络 >0.25 时每粒追加一发紫黑垂落环（龙头位置 ±2.6 慢旋、vy=-1.4、颜色 0.42/0.30/0.58、寿命 1.8）',
+    P.out.length === 4 && ringP.every((q, i) =>
+      Math.abs(q.x - (dragonPos.x + Math.cos(expectRing[i]) * 2.6)) < 1e-9 &&
+      Math.abs(q.y - (dragonPos.y - 1.2 - Math.sin(expectRing[i] * 2) * 0.9)) < 1e-9 &&
+      Math.abs(q.z - (dragonPos.z + Math.sin(expectRing[i]) * 2.6)) < 1e-9 &&
+      q.r === 0.42 && q.g === 0.3 && q.b === 0.58 && q.life === 1.8 && q.vy === -1.4),
+    JSON.stringify({ n: P.out.length, ringP }));
+
+  pg.mobManager.mobs.pop();
+  P.out.length = 0;
+  pg._finaleParticleTick(FINALE_TIDE_SEGMENTS.end, 0.2, 0.5, 2 / 14);
+  assert('P36 龙影环门控：ritual 窗口在场但包络 p=0.2 ≤ 0.25（未到盛放期）→ 只发潮雾带 2 粒、不发龙影环',
+    P.out.length === 2, 'n=' + P.out.length);
+  pg._stopFinaleTide();
+  Math.random = rndSave;
+  pg.particles = realParticles;
+}
+
 for (const x of games) shutdown(x);
 finish('game-behavior');

@@ -24,6 +24,7 @@ ok(finaleListenGate(null) === 'read', '空状态 → read（防御）');
 
 // ── ② finaleDone 状态序列化三处 ──
 const gameSrc = readFileSync('./src/player/Game.js', 'utf8');
+const afSrc = readFileSync('./src/player/AetherFinale.js', 'utf8'); // 轮 8 步 7：终局域逻辑迁出 Game
 ok(gameSrc.includes('this.world.finaleDone = !!(loadData && loadData.finaleDone);'), 'start 恢复 finaleDone');
 ok(gameSrc.includes('finaleDone: !!this.world.finaleDone, // 听潮完成跨维透传'), '换维透传 finaleDone');
 const saveSrc = readFileSync('./src/core/SaveSystem.js', 'utf8');
@@ -50,21 +51,21 @@ ok(gameSrc.includes('if (this.finaleInfo) {'), 'start 落地 finaleInfo（aether
 // ── ④ 仪式演出绊线 ──
 ok(gameSrc.includes('_tryListenTide(block) {'), '听潮门控方法在场');
 ok(gameSrc.includes("if (!this._tryListenTide(hit.block)) {"), '守望碑右键走门控（返回 false 才读碑文）');
-ok(gameSrc.includes("finaleListenGate({"), '门控走纯函数（真值表 node 可测）');
-ok(gameSrc.includes('this.net.sendFinaleState({ done: true })'), 'LAN 听潮上服务器（含发起者统一由广播驱动）');
-ok(gameSrc.includes('this.world.finaleDone = true; // 单机：本地置位'), '单机听潮本地置位（SaveSystem 持久化）');
+ok(afSrc.includes("finaleListenGate({"), '门控走纯函数（真值表 node 可测）');
+ok(afSrc.includes('g.net.sendFinaleState({ done: true })'), 'LAN 听潮上服务器（含发起者统一由广播驱动）');
+ok(afSrc.includes('g.world.finaleDone = true; // 单机：本地置位'), '单机听潮本地置位（SaveSystem 持久化）');
 ok(gameSrc.includes('_grantPrimordialEmblem() {'), '纹章发放方法在场');
-ok(gameSrc.includes('if (ft && ft.ritual && !ft.granted) this._grantPrimordialEmblem();'), '仪式窗口结束发放（granted 防重复）');
-ok(gameSrc.includes("this.inventory.add('primordial_emblem', 1)"), '纹章入背包');
-ok(gameSrc.includes("sendDropSpawn(p.x, p.y + 1, p.z, 'primordial_emblem', 1)"), '背包满走掉落链（联机进账本）');
-ok(gameSrc.includes("m.typeName === 'dragon'"), '龙影低头取龙实体位置（在场才低头）');
-ok(gameSrc.includes('_finaleTide.ritual && p > 0.25 && this.mobManager'), '龙影环仅仪式窗口且包络盛放期');
-ok(gameSrc.includes('this.net.sendFinaleState({ offered: true'), '献证 LAN 上报（F1 缺口补齐）');
+ok(afSrc.includes('if (ft && ft.ritual && !ft.granted) g._grantPrimordialEmblem();'), '仪式窗口结束发放（granted 防重复）');
+ok(afSrc.includes("g.inventory.add('primordial_emblem', 1)"), '纹章入背包');
+ok(afSrc.includes("sendDropSpawn(p.x, p.y + 1, p.z, 'primordial_emblem', 1)"), '背包满走掉落链（联机进账本）');
+ok(afSrc.includes("m.typeName === 'dragon'"), '龙影低头取龙实体位置（在场才低头）');
+ok(afSrc.includes('this.tide.ritual && p > 0.25 && g.mobManager'), '龙影环仅仪式窗口且包络盛放期');
+ok(afSrc.includes('g.net.sendFinaleState({ offered: true'), '献证 LAN 上报（F1 缺口补齐）');
 
 // ── ⑥ K3 终局成就 ──
 const hudSrc = readFileSync('./src/ui/Hud.js', 'utf8');
 ok(hudSrc.includes('showFinaleBanner() {'), '终局横幅方法在场（10s 金色淡入淡出）');
-ok(gameSrc.includes('if (this.hud) this.hud.showFinaleBanner();'), '纹章发放时触发横幅');
+ok(afSrc.includes('if (g.hud) g.hud.showFinaleBanner();'), '纹章发放时触发横幅');
 ok(hudSrc.includes('heartSvg(filled, half = false, bedrock = false)'), '心形 SVG 支持基岩参数');
 ok(hudSrc.includes('player.emblemWorn'), 'Hud 按 emblemWorn 渲染基岩心');
 ok(hudSrc.includes('wingIcon.style.display = player.flying'), '翅膀图标全模式判定（K2 在场核对）');
