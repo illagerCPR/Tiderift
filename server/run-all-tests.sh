@@ -53,6 +53,7 @@ PURE_NODE_SUITES=(
     framework-guard            # runner 样板唯一性元断言（纯 node：tests/ 与 server/ 各自只有一份框架，无复制粘贴断言样板）
     room-persist-replay        # 落盘节流 + 账本回放打包（纯 node：Room 直接实例化，不依赖服务器进程）
     net-message-guard          # 客户端消息入口防御（纯 node：parseServerMessage 脏输入 + _handle 空值不抛）
+    net-block-ledger           # B32-2：远端方块修改写本地账本 + 区块卸载重载后保留且不回环
     ray-sphere                 # 共享球体射线纯函数（纯 node：命中/未命中/背向/相切/非单位方向口径 + 帧射线缓存与 UI 阻断清单唯一性）
     game-behavior              # Game.js node 级行为回归（轮 8 路标 B：boot/帧循环/射线链/生存挖掘/重开生命周期/地形确定性/无人守契约；假环境见 tests/lib/game-env.mjs）
     world-mod-index            # 修改方块账本分桶索引与热路径坐标键（纯 node：索引一致性 + 与旧全量扫描实现等价性对照）

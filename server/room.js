@@ -564,11 +564,10 @@ export class Room {
     const dim = player.dim; // M4：归入发起者当前维度的账本，广播只发同维度玩家
     const blocks = this.dimBucket(this.dimensionBlocks, dim);
     const containers = this.dimBucket(this.dimensionContainers, dim);
+    // 0 是确定性地形上的显式空气修改，不能与“该坐标没有账本项”混为一谈。
+    blocks.set(`${x},${y},${z}`, id);
     if (id === 0) {
-      blocks.delete(`${x},${y},${z}`);
       containers.delete(`${x},${y},${z}`); // T5：箱子被挖 → 容器账本一并清除（内容散落由挖掘方 drop_spawn 上报）
-    } else {
-      blocks.set(`${x},${y},${z}`, id);
     }
     this.broadcastDim(MSG.BLOCK_CHANGE, { x, y, z, id, by: player.id, d: dim }, dim, player.id);
     this.saveSoon();
@@ -585,11 +584,10 @@ export class Room {
       if (!Array.isArray(it) || it.length !== 4) continue;
       const x = safeInt(it[0]), y = safeInt(it[1]), z = safeInt(it[2]), id = safeInt(it[3]);
       if (id < 0 || id > 65535) continue;
+      // 与单条路径同义：显式保留空气值，容器内容另行清理。
+      blocks.set(`${x},${y},${z}`, id);
       if (id === 0) {
-        blocks.delete(`${x},${y},${z}`);
         containers.delete(`${x},${y},${z}`);
-      } else {
-        blocks.set(`${x},${y},${z}`, id);
       }
       changes.push([x, y, z, id]);
     }

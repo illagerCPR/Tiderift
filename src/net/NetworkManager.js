@@ -506,9 +506,12 @@ export class NetworkManager {
     const oldDef = BlockRegistry.getById(world.getBlock(x, y, z));
     const wasChest = oldDef && oldDef.baseBlock === 'chest'; // B28：箱子四朝向家族（朝北本名也带 baseBlock）
     this._applyingRemote = true;
-    world.setBlock(x, y, z, id, false); // 远端落地：不写入本地 modifiedBlocks
-    if (this.game.redstone) this.game.redstone.onBlockChange(x, y, z);
-    this._applyingRemote = false;
+    try {
+      world.setBlock(x, y, z, id); // 远端修改也写入本地账本，区块重载后仍可恢复
+      if (this.game.redstone) this.game.redstone.onBlockChange(x, y, z);
+    } finally {
+      this._applyingRemote = false; // 即使方块/红石回调抛错也恢复防回环状态
+    }
     if (wasChest) {
       world.removeContainer(x, y, z);
       const cs = this.game.chestScreen;
