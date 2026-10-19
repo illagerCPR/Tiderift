@@ -12,6 +12,7 @@ import { Player } from './Player.js';
 import { Physics } from './Physics.js';
 import { Summoning } from './Summoning.js';
 import { GlideWind } from './GlideWind.js';
+import { Endgame } from './Endgame.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
@@ -43,15 +44,12 @@ import {
   PORTAL_KINDS, DIM_PORTAL_KINDS, ARRIVAL_PLATFORM,
   portalBlockId, portalTargetPos, detectPortalInterior, fillPortal,
   findPortalNear, buildReturnPortal, removeConnectedPortals,
-  detectEndRing, fillEndPortalCenter, buildEndReturnPad,
-  buildGatewayPad, gatewayTarget,
+  detectEndRing, fillEndPortalCenter, gatewayTarget,
 } from '../core/Portals.js';
-import { gatewayPlacements } from '../world/dimensions/end.js';
 import { ringPoints } from '../world/structures/stronghold.js';
 import { matchRecipe } from '../core/Crafting.js';
 import { SMELT_TIME, getSmeltingResult, getFuelTime } from '../core/Smelting.js';
 import { MobManager } from '../entity/MobManager.js';
-import { Mob } from '../entity/Mob.js';
 import { LocalPlayerModel } from '../entity/LocalPlayerModel.js';
 import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLight.js';
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
@@ -130,6 +128,7 @@ export class Game {
     // 经 this.game 现取 world / mobManager / inventory / hud，不留构造期快照（那些随 start() 重建）。
     this.summoning = new Summoning(this);
     this.glideWind = new GlideWind(this);
+    this.endgame = new Endgame(this);
     this.currentSlot = 1;
     this.onExit = null;
     this.mobManager = null;
@@ -2855,96 +2854,41 @@ export class Game {
   // 末地出生点旁的回程门垫（龙败激活，原版喷泉基座造型）：
   // 16 格内已有 end_portal 则跳过（重连/多端幂等），否则在出生点偏移 ~5 格建造
   _ensureEndReturnPad() {
-    if (this._endPadExists()) return;
-    const w = this.world;
-    const sp = w.getSpawnPoint();
-    buildEndReturnPad(w, Math.floor(sp.x) + 4, Math.floor(sp.z) + 4, {
-      top: w.dimDef.spawnScanTop || 140,
-      platformY: 64,
-      fountain: true,
-    });
-    if (this.chatBox) this.chatBox.add(t('主岛中心升起基岩喷泉——踩上门垫返回主世界'), '#a7f');
+    this.endgame.ensureEndReturnPad();
   }
 
-  // 出生点 16 格内是否已有激活回程门（_ensureEndReturnPad 与 _ensureDragon 共用）
+  // 出生点 16 格内是否已有激活回程门（_endPadExists 与 _ensureDragon 共用）
   _endPadExists() {
-    const w = this.world;
-    const EP = BlockRegistry.getId('end_portal');
-    const sp = w.getSpawnPoint();
-    for (const [k, id] of w.modifiedBlocks) {
-      if (id !== EP) continue;
-      const p = k.split(',');
-      if ((+p[0] - sp.x) ** 2 + (+p[2] - sp.z) ** 2 <= 256) return true;
-    }
-    return false;
+    return this.endgame.endPadExists();
   }
 
   // 末地开局生成末影龙（未击败时；单机/host 权威生成，联机经 mob_spawn 广播）
   // 击败判定：会话标记 OR 账本内已有回程门（跨会话/联机一致——门方块账本服务器权威持久化）
   _ensureDragon() {
-    if (!this.world || this.world.dimension !== 'end') return;
-    if (!this.mobManager) return;
-    if (this.networkMode && this.net && !this.net.isHost) return; // 联机非 host 等广播
-    if (this.world.dragonDefeated || this._endPadExists()) return;
-    if (this.mobManager.mobs.some(m => m.typeName === 'dragon' && !m.dead)) return;
-    const mob = new Mob('dragon', this.world);
-    // 出生在柱环外缘上空（主岛中心偏移，盘旋半径与 DragonAI.CIRCLE_R 对齐）
-    mob.position.set(0.5, 88, 30.5);
-    if (this.networkMode && this.net) {
-      this.net.sendMobSpawn('dragon', mob.position.x, mob.position.y, mob.position.z);
-    } else {
-      this.mobManager.spawnMob(mob);
-    }
-    if (this.chatBox) this.chatBox.add(t('末影龙的咆哮在虚空回荡……'), '#c5f');
+    this.endgame.ensureDragon();
   }
 
   // 末影龙被击败：置标记 + 激活末地奖励（返回门喷泉 + 主岛缘/外岛缘折跃门阵列）
   // 各端独立触发（本地死亡链/远端同步入口）——建门幂等（账本已有即跳过），位置确定性保证一致
   _onDragonDefeated(mob) {
-    if (!this.world) return;
-    this.world.dragonDefeated = true;
-    if (this.chatBox) this.chatBox.add(t('末影龙被击败了！'), '#c5f');
-    if (this.world.dimension === 'end') this._activateEndRewards();
+    this.endgame.onDragonDefeated(mob);
   }
 
   // 龙败奖励：① 出生点旁激活基岩喷泉返程门（踩上回主世界）
   //           ② 主岛缘 + 外岛缘折跃门阵列（角度配对，站入同维传送）
   //           ③ 龙蛋立于主岛中央（原版喷泉柱位；真实方块进账本可挖走）
   _activateEndRewards() {
-    this._ensureEndReturnPad();
-    this._ensureGateways();
-    this._placeDragonEgg();
+    this.endgame.activateEndRewards();
   }
 
   // 龙蛋：主岛中心 (0,0) 从上往下扫首个实心格的顶面放置；幂等（已有方块跳过）
   _placeDragonEgg() {
-    const EGG = BlockRegistry.getId('dragon_egg');
-    for (let y = 80; y > 40; y--) {
-      const id = this.world.getBlock(0, y, 0);
-      if (id !== 0) {
-        if (this.world.getBlock(0, y + 1, 0) === 0) {
-          this.world.setBlock(0, y + 1, 0, EGG);
-          if (this.chatBox) this.chatBox.add(t('一枚龙蛋静静出现在主岛中央……'), '#c8f');
-        }
-        return;
-      }
-    }
+    this.endgame.placeDragonEgg();
   }
 
   // 折跃门阵列（幂等：账本已有 end_gateway 即跳过）
   _ensureGateways() {
-    const GW = BlockRegistry.getId('end_gateway');
-    for (const [, id] of this.world.modifiedBlocks) {
-      if (id === GW) return;
-    }
-    const anchors = this.world.generator && typeof this.world.generator.outerAnchors === 'function'
-      ? this.world.generator.outerAnchors() : [];
-    if (!anchors.length) return;
-    for (const place of gatewayPlacements(anchors, 4)) {
-      buildGatewayPad(this.world, place.inner.x, place.inner.z, { top: 140, platformY: 64 });
-      buildGatewayPad(this.world, place.outer.x, place.outer.z, { top: 140, platformY: 64 });
-    }
-    if (this.chatBox) this.chatBox.add(t('主岛边缘升起了数座折跃门——它们通向外岛'), '#a7f');
+    this.endgame.ensureGateways();
   }
 
   // 盔甲点数合计（armorSlot 未识别/普通物品不计）
@@ -3201,16 +3145,7 @@ export class Game {
 
   // 末影水晶被击碎：范围爆炸（复用怪物爆炸破坏路径）+ 按距离衰减伤害
   _breakCrystal(x, y, z) {
-    const px = x + BLOCK_CENTER, py = y + BLOCK_CENTER, pz = z + BLOCK_CENTER;
-    if (this.mobManager) {
-      this.mobManager.pendingExplosions.push({ x: px, y: py, z: pz, radius: 3 });
-    }
-    const d = this.player.position.distanceTo(new THREE.Vector3(px, py, pz));
-    if (d < 8) {
-      const dmg = Math.round(14 * (1 - d / 8));
-      if (dmg > 0) this.player.hurt(dmg, 'explosion', true);
-    }
-    if (this.chatBox) this.chatBox.add(t('末影水晶碎裂，爆发出紫色的冲击！'), '#c8f');
+    this.endgame.breakCrystal(x, y, z);
   }
 
   // 紫颂果食用后随机短距传送（原版机制）：±8 格水平随机落点，下探找立地面，

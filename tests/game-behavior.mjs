@@ -500,5 +500,164 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
 
   shutdown(dg);
 }
+
+// ── J. 终局域行为：末地回程垫 / 龙蛋 / 末影龙生成守卫 / 击败链路 / 折跃门 / 水晶 ──
+// 轮 8 步 2 的迁移面（Endgame）。迁到控制器后，下列门面必须原样可用、语义逐值不变。
+// 末地维经 loadData.dimension 走**真实启动路径**抵达（start 的维度装配 + 真实生成器 + 真实
+// mobManager），不伪造世界；龙生成/回程垫/折跃门都按真实账本与真实怪物表判定。
+{
+  const e = await boot({
+    mode: 'creative', seed: SEED,
+    loadData: { dimension: 'end', gamemode: 'creative', seed: SEED },   // 有 loadData 时 start 取 loadData.seed/gamemode
+  });
+  track(e.g);
+  const eg = e.g;
+  const eW = eg.world;
+  const eP = eg.player;
+  const EndReg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const EID = {
+    portal: EndReg.getId('end_portal'), egg: EndReg.getId('dragon_egg'),
+    gateway: EndReg.getId('end_gateway'), crystal: EndReg.getId('end_crystal'),
+  };
+  const countLedger = (id) => { let n = 0; for (const [, v] of eW.modifiedBlocks) if (v === id) n++; return n; };
+  const eggColumn = () => {
+    const a = [];
+    for (let y = 41; y <= 80; y++) if (eW.getBlock(0, y, 0) === EID.egg) a.push(y);
+    return a;
+  };
+  const dragons = (gm) => gm.mobManager.mobs.filter((m) => m.typeName === 'dragon' && !m.dead).length;
+
+  const padBefore = eg._endPadExists();
+  const eggsBefore = eggColumn();
+
+  // ── 末影龙生成守卫：末地内 start() 已生成一条，重复调用不得再生成 ──
+  eg._ensureDragon();
+  const dragonsOnce = dragons(eg);
+  eg._ensureDragon();
+  const dragonsTwice = dragons(eg);
+  assert('J1 龙生成守卫：末地内 start() 已生成 1 条龙，重复调用 _ensureDragon() 不重复生成',
+    e.running === true && dragonsOnce === 1 && dragonsTwice === 1,
+    'running=' + e.running + ' 首调后=' + dragonsOnce + ' 再调后=' + dragonsTwice);
+
+  // ── 联机生成守约：非 host 等广播（不生成不广播）；host 走 sendMobSpawn 且本地不生成 ──
+  {
+    const netCalls = [];
+    eg.mobManager.mobs = eg.mobManager.mobs.filter((m) => m.typeName !== 'dragon'); // 腾空位，否则"已有龙"守卫先早退
+    eg.networkMode = true;
+    eg.net = { isHost: false, sendMobSpawn: (...a) => netCalls.push(a) };
+    eg._ensureDragon();
+    const nonHost = { 本地龙: dragons(eg), 广播: netCalls.length };
+    eg.net = { isHost: true, sendMobSpawn: (...a) => netCalls.push(a) };
+    eg._ensureDragon();
+    const host = { 本地龙: dragons(eg), 广播: netCalls.length };
+    eg.networkMode = false;
+    eg.net = null;
+    assert('J2 联机生成守约：非 host 不生成不广播；host 广播 sendMobSpawn 且本地不生成',
+      nonHost.本地龙 === 0 && nonHost.广播 === 0 && host.本地龙 === 0 && host.广播 === 1,
+      '非host=' + JSON.stringify(nonHost) + ' host=' + JSON.stringify(host));
+  }
+
+  // ── 折跃门：生成器无 outerAnchors 能力时静默 no-op（不抛错、不写账本）──
+  const realGenerator = eW.generator;
+  let gatewaysNoAnchor = -1;
+  let gatewaysThrew = null;
+  try {
+    eW.generator = {};
+    eg._ensureGateways();
+    gatewaysNoAnchor = countLedger(EID.gateway);
+  } catch (err) { gatewaysThrew = String(err && err.message); }
+  eW.generator = realGenerator;
+  assert('J3 折跃门：无锚点（生成器无 outerAnchors）时 no-op——不抛错且不写 end_gateway',
+    gatewaysThrew === null && gatewaysNoAnchor === 0,
+    'threw=' + gatewaysThrew + ' gateways=' + gatewaysNoAnchor);
+
+  // ── 击败链路①：末地内 → 置标记 + 激活奖励（回程垫 + 折跃门 + 龙蛋）──
+  eg._onDragonDefeated({ typeName: 'dragon' });
+  const eggsAfterDefeat = eggColumn();
+  assert('J4 击败链路：末地内 _onDragonDefeated 置 world.dragonDefeated 并激活末地奖励（回程垫 + 龙蛋）',
+    eW.dragonDefeated === true && padBefore === false && eg._endPadExists() === true &&
+    eggsBefore.length === 0 && eggsAfterDefeat.length === 1,
+    'flag=' + eW.dragonDefeated + ' 垫前=' + padBefore + ' 垫后=' + eg._endPadExists() +
+    ' 蛋=' + JSON.stringify(eggsAfterDefeat));
+
+  // ── 回程垫幂等：账本已有 end_portal 时重复调用不再写入 ──
+  const portalsBefore = countLedger(EID.portal);
+  eg._ensureEndReturnPad();
+  const portalsAfter = countLedger(EID.portal);
+  assert('J5 回程垫：末地内建垫后 _endPadExists() 为真，重复调用不再写入 end_portal（幂等）',
+    portalsBefore > 0 && portalsAfter === portalsBefore,
+    'end_portal=' + portalsBefore + '->' + portalsAfter);
+
+  // ── 龙蛋放置语义：主岛 (0,·,0) 从 y=80 下扫首个实心格的顶面 ──
+  const eggY = eggsAfterDefeat[0];
+  let airAbove = true;
+  for (let y = eggY + 1; y <= 80; y++) if (eW.getBlock(0, y, 0) !== 0) airAbove = false;
+  const eggBelow = eW.getBlock(0, eggY - 1, 0);
+  assert('J6 龙蛋：按 (0,·,0) 从 y=80 下扫首个实心格的**顶面**放置（下方实心、其上到 y=80 全空气）',
+    airAbove === true && eggBelow !== 0, 'eggY=' + eggY + ' 下方=' + eggBelow + ' 上方全空气=' + airAbove);
+
+  eg._placeDragonEgg();
+  const eggsTwice = eggColumn();
+  assert('J7 龙蛋二次调用：现状为在正上方再叠一枚（**非幂等**——源码注释声称幂等但与实测不符，按现状钉住；若有意修为幂等，请同步更新本条）',
+    eggsTwice.length === 2 && eggsTwice[0] === eggY && eggsTwice[1] === eggY + 1,
+    'eggs=' + JSON.stringify(eggsTwice) + ' 首枚y=' + eggY);
+
+  // ── 折跃门：有锚点则建成阵列，二次调用幂等 ──
+  const gwBefore = countLedger(EID.gateway);
+  eg._ensureGateways();
+  const gwAfter = countLedger(EID.gateway);
+  assert('J8 折跃门：有锚点时建成阵列（end_gateway 进账本），二次调用幂等',
+    gwBefore > 0 && gwAfter === gwBefore, 'end_gateway=' + gwBefore + '->' + gwAfter);
+
+  // ── 末影水晶：走真实瞄准 + 真实左键路径（创造瞬破）→ 真方块被移除 + 爆炸销毁邻域 ──
+  eg.mobManager.mobs = [];   // 清场：怪物在射线上会先抢占左键分支（攻击怪物优先于破方块）
+  eP.pitch = -Math.PI / 2 + 0.05;
+  eP.yaw = 0;
+  await step(eg, 2);
+  let crystalResult = null;
+  const crystalHit = eg.selectedBlock && eg.selectedBlock.block;
+  if (crystalHit) {
+    const H = crystalHit;
+    const neighbors = [];
+    for (let dx = -3; dx <= 3; dx++) {
+      for (let dy = -3; dy <= 3; dy++) {
+        for (let dz = -3; dz <= 3; dz++) {
+          if (dx === 0 && dy === 0 && dz === 0) continue;
+          if (eW.getBlock(H.x + dx, H.y + dy, H.z + dz) !== 0) neighbors.push([dx, dy, dz]);
+        }
+      }
+    }
+    eW.setBlock(H.x, H.y, H.z, EID.crystal);   // 真方块：末影水晶（创造瞬破按 def.name 分流到 _breakCrystal）
+    await step(eg, 2);
+    const aimed = eg.selectedBlock;
+    const crystalAimed = !!aimed && !!aimed.block && aimed.block.x === H.x &&
+      aimed.block.y === H.y && aimed.block.z === H.z && aimed.id === EID.crystal;
+    eg.controls.mouseLeft = true;
+    eg.frame++;
+    eg.update(1 / 60);
+    const removed = eW.getBlock(H.x, H.y, H.z) === 0;
+    await step(eg, 2);
+    let destroyed = 0;
+    for (const [dx, dy, dz] of neighbors) if (eW.getBlock(H.x + dx, H.y + dy, H.z + dz) === 0) destroyed++;
+    crystalResult = { 瞄准水晶: crystalAimed, 方块移除: removed, 邻域实心: neighbors.length, 被炸毁: destroyed };
+  }
+  assert('J9 水晶击碎：真实点击路径移除末影水晶方块，且半径 3 的爆炸销毁邻域方块（爆炸确实入队执行）',
+    !!crystalResult && crystalResult.瞄准水晶 === true && crystalResult.方块移除 === true &&
+    crystalResult.被炸毁 >= 2,
+    JSON.stringify(crystalResult));
+
+  // ── 非末地维守卫：不生成龙、也不在当前维度激活末地奖励 ──
+  const overDragonsBefore = dragons(g);
+  g._ensureDragon();
+  g._onDragonDefeated({ typeName: 'dragon' });
+  let overPortals = 0;
+  for (const [, v] of g.world.modifiedBlocks) if (v === EID.portal) overPortals++;
+  assert('J10 非末地维守卫：主世界调用 _ensureDragon() 不生成末影龙；_onDragonDefeated 只置标记、不在本维度激活末地奖励',
+    overDragonsBefore === 0 && dragons(g) === 0 && g.world.dragonDefeated === true && overPortals === 0,
+    '龙=' + overDragonsBefore + '->' + dragons(g) + ' flag=' + g.world.dragonDefeated + ' end_portal=' + overPortals);
+
+  shutdown(eg);
+}
+
 for (const x of games) shutdown(x);
 finish('game-behavior');
