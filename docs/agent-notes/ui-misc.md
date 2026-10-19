@@ -177,5 +177,14 @@
 - **`controls.mouse*` 是外部契约**：`Controls` / `update()` / `NetworkManager` 都读它，30 处置位语句仍在原位置逐字保留，改协议时**只许改「由谁判断、怎么表达」，不许改置位时机与次数**。注意 `CONSUMED` 与 `ABORT` 目前都归 `exitsMethod()`，两者的区分**只是文档标签**（把某出口的 ABORT 改成 CONSUMED 零行为差异）——真正生效的是原位置位。
 - 新加分支时的规矩：段出口必须显式返回协议状态，**不得**再用「顺手置位当返回值」；跨域基础设施 `_frameRay` / `_anyInputBlockingUI` / `updateRaycast` / `_cellOverlapsPlayer` 仍在 `Game.prototype` 上（`tests/ray-sphere.mjs:145` 借原型直调，别搬走），控制器一律 `g._x(...)` 现取。
 - 既有源码绊线**实测断裂 20 条 / 7 个文件**（`build27-doors-beds` / `build28-block-textures` / `endgame-content` / `ray-sphere` / `build26-fluid` / `endgame-finale` / `build20-fixes`）已改指新模块；`ray-sphere` 的「帧射线 / UI 清单被四处消费」两条改为 `Game + InteractionController` 合计计数。**迁移还会让负向断言退化为恒真式**（`!gameSrc.includes(...)` 的文本已不在 `src/player/`，全仓现 6 条）——改这块时别把恒真式当成还在守。
-- 行为钉子：`tests/game-behavior.mjs` Q 段 36 条（Q1–Q38）。**已知不敏感点**：挖速量级（`dt*speedMul/hardness` 折半仍全绿，Q3 只断言 `prog > 0`）与放置重叠守卫的 0.3 边界（改成 0.0 仍全绿）都只钉了「分支存在」而非量级/边界。**既存缺陷 H1**（放置重叠守卫吞掉弓/掷眼右键）由 Q25 按现状钉住，见 `docs/improvement-plan-b30.md` §十二。
+- 行为钉子：`tests/game-behavior.mjs` Q 段 36 条（Q1–Q38）。**已知不敏感点**：挖速量级（`dt*speedMul/hardness` 折半仍全绿，Q3 只断言 `prog > 0`）与放置重叠守卫的 0.3 边界（改成 0.0 仍全绿）都只钉了「分支存在」而非量级/边界。**既存缺陷 H1**（放置重叠守卫吞掉弓/掷眼右键）**已于 B30 轮 9 步 1 修复**（守卫移入 `if (blockDef)` 内，Q25 改写 + 补 3 条钉子，见下节），原现状钉住记录与步骤拆解见 `docs/improvement-plan-b30.md` §十二。
 - 另见 §十三 H2：`Raycast.cast` 的 `includeFluid` 形参从未被消费（流体在候选过滤里一律被排除），空桶舀水分支经真实射线不可达。
+
+
+### B30 轮 9 步 1 · H1 修复（放置重叠守卫只对可放置方块生效）
+
+- 缺陷与来源：轮 6 实施中发现（非回归，`git show HEAD:src/player/Game.js` 同区结构一致）——右键链的「放置邻格与玩家 AABB 重叠」守卫原本写在 `BlockRegistry.getByName(sel.name)` **之前**，于是玩家只要准星落在脚下方块（放置邻格＝自身所在格），手持弓/末影之眼时右键就被 `return CLICK_ABORT` 静默吞掉（不置位 `controls.mouseRight`、整方法退出）：弓无法起蓄、末影之眼掷不出。
+- 修复：守卫整段（注释 + `px/py/pz` + 判据 + 出口）移入 `if (blockDef) {` 内、置于 `g.hand.swing()` 之前，`placeX/Y/Z` 计算留在原处；真方块行为逐字不变（仍 `CLICK_ABORT` 不消费）。非方块手持物继续走段③的三条后续分支：弓蓄力 / 掷末影之眼 / 末尾兜底消费。段③中在此之前 return 的食物・经验瓶・桶・打火石・工作台・容器・红石等分支完全不受影响。
+- 钉子：Q25 由「蓄力被吞」改写为「进入蓄力」（`_bowCharging=true` 且 `mouseRight` 保持 true）；新增 Q25a（同场景手持 cobblestone → 放置邻格零写入、库存不减、不消费，**正对照**）、Q25b（末影之眼 → 消耗 1 颗、生成 eyeFlight）、Q25c（手持 stick 无专属分支 → 末尾兜底置位消费）。反证：删守卫 → Q25a 红；守卫放回原位 → Q25/Q25b/Q25c 红；守卫出口改为置位消费 → Q25a 红（每次 md5 逐字节还原）。
+- 行为变更（必然推论，已钉死）：手持无专属分支的杂物在重叠格右键，旧「静默不消费」→ 新「末尾兜底置位消费 `mouseRight`」。
+- 文件头注释的「已知既存缺陷 H1」段已改写为「已修复」口径；`tests/game-behavior.mjs` 断言 187 → 190。
