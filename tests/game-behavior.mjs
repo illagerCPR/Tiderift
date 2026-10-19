@@ -1423,6 +1423,345 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
     '0.75s=' + JSON.stringify(gAt075) + ' 1.05s=' + JSON.stringify(gAt105));
 }
 
+// ── O. 放置 / 容器域行为：形制放置与连动破坏 / 箱子与潜影盒内容 / 熔炉推进与点燃态 ──
+// 轮 8 步 6 的迁移面（Placement）。断言全部经 Game 上的同名真实入口驱动
+// （_tryPlaceShaped / _removeShapedPartner / _facingTowardPlayer / _breakChest / _breakShulkerBox /
+// onContainerChanged / updateFurnaces / _syncFurnaceLit / _breakFurnace）；放置与破坏两段走真实
+// aim + updateRaycast + handleMouseInput（不手工写 selectedBlock、不调 world.setBlock 补结果）。
+//
+// 场地：本段自建 boot（独立世界）+ 9×9 石台（顶面 y=200）——玩家站台上不坠落，长挖掘期射线稳定；
+// 目标方块一律摆在 y=201 层（眼高 200+1.62 恰落在 y=201 格），yaw=0 朝 -Z（Controls:122 约定）。
+{
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const Shapes = await import('../src/core/blockShape.js');
+  const { SMELT_TIME, getFuelTime } = await import('../src/core/Smelting.js');
+
+  const oj = await boot({ mode: 'survival', seed: SEED });
+  track(oj.g);
+  const og = oj.g;
+  const inv = og.inventory;
+  const countOf = (name) => inv.slots.reduce((n, s) => (s && s.name === name ? n + s.count : n), 0);
+  const slotOf = (name) => inv.slots.find((s) => s && s.name === name) || null;
+  const drops = og.mobManager.droppedItems;
+  const hold = (name, count = 1) => { inv.slots[inv.hotbarSelected] = { name, count, data: null }; og.hotbar.update(); };
+  // 真实挖掘：mouseLeft 置位后逐帧 update，直到目标格变空（返回帧数 + 本段新增掉落）
+  const mineAt = async (x, y, z, maxFrames) => {
+    const before = drops.length;
+    og.controls.mouseLeft = true;
+    let frames = -1;
+    for (let i = 0; i < maxFrames; i++) {
+      og.frame++;
+      og.update(1 / 60);
+      if (og.world.getBlock(x, y, z) === 0) { frames = i + 1; break; }
+      if (i % 20 === 19) await new Promise((r) => setTimeout(r, 0));
+    }
+    og.controls.mouseLeft = false;
+    return { frames, dropped: drops.slice(before).map((d) => d.name + '×' + d.count).sort() };
+  };
+
+  const bx = Math.floor(og.player.position.x) + 8, bz = Math.floor(og.player.position.z) + 8;
+  const STONE = Reg.getId('stone');
+  for (let dx = -6; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) og.world.setBlock(bx + dx, 199, bz + dz, STONE);
+  og.world.setBlock(bx, 201, bz - 2, STONE);          // 目标墙：射线打它的 +Z 面 → 放置格 (bx,201,bz-1)
+  og.player.position.set(bx + 0.5, 200, bz + 0.5);
+  og.player.velocity.set(0, 0, 0);
+  og.player.yaw = 0; og.player.pitch = 0;             // 水平朝 -Z
+  og.controls.mouseLeft = false; og.controls.mouseRight = false;
+  og.player.setMode('survival');
+  const doorDef = Reg.getByName('oak_door');
+
+  // ── O1 形制放置（门）：真实 aim + 右键 ──
+  hold('oak_door', 1);
+  await step(og, 2);
+  const aimWall = og.selectedBlock ? { ...og.selectedBlock.block } : null;
+  og.controls.mouseRight = true;
+  const placeBad = await step(og, 1);
+  og.controls.mouseRight = false;
+  const loId = og.world.getBlock(bx, 201, bz - 1), upId = og.world.getBlock(bx, 202, bz - 1);
+  const loD = Reg.getById(loId), upD = Reg.getById(upId);
+  assert('O1 形制放置（门）：真实 aim + 右键 → 目标格生成下半、上一格自动补上半；两格同 baseBlock、facing = 玩家方位（玩家在 +Z → s）、id 与 doorId 家族一致；生存消耗 1 个门',
+    placeBad.length === 0 && !!aimWall && aimWall.x === bx && aimWall.y === 201 && aimWall.z === bz - 2 &&
+    !!loD && !!upD && loD.part === 'door_lower' && upD.part === 'door_upper' &&
+    loD.baseBlock === 'oak_door' && upD.baseBlock === 'oak_door' && loD.facing === 's' && upD.facing === 's' &&
+    loId === Shapes.doorId('oak_door', 'lower', 's', false) && upId === Shapes.doorId('oak_door', 'upper', 's', false) &&
+    countOf('oak_door') === 0,
+    'aim=' + JSON.stringify(aimWall) + ' lo=' + loId + '/' + (loD && loD.name) + ' up=' + upId + '/' + (upD && upD.name) + ' 剩=' + countOf('oak_door'));
+
+  // ── O2 形制放置（床）：脚在目标格、头朝远离玩家方向的邻格（两张床：B 用于打「头」、A 用于打「脚」）──
+  const bedDef = Reg.getByName('white_bed');
+  const bedOk = og._tryPlaceShaped(bx - 2, 201, bz, bedDef);           // 床 B（玩家在 +X/+Z 侧 → 头朝 w）
+  og.player.position.set(bx + 0.5, 200, bz + 2.5);                     // 换位后放床 A（同为头朝 w，保证几何确定）
+  const bedAOk = og._tryPlaceShaped(bx - 2, 201, bz + 2, bedDef);
+  og.player.position.set(bx + 0.5, 200, bz + 0.5);
+  const bFoot = og.world.getBlock(bx - 2, 201, bz), bHead = og.world.getBlock(bx - 3, 201, bz);
+  const aFoot = og.world.getBlock(bx - 2, 201, bz + 2), aHead = og.world.getBlock(bx - 3, 201, bz + 2);
+  const bFootD = Reg.getById(bFoot), bHeadD = Reg.getById(bHead), aFootD = Reg.getById(aFoot), aHeadD = Reg.getById(aHead);
+  assert('O2 形制放置（床）：脚在目标格、头自动补在「远离玩家」方向的邻格（玩家在 +X 侧 → 头朝 w），两张床各自成对且家族一致；均返回 true',
+    bedOk === true && bedAOk === true &&
+    !!bFootD && !!bHeadD && !!aFootD && !!aHeadD &&
+    bFootD.part === 'bed_foot' && bHeadD.part === 'bed_head' && aFootD.part === 'bed_foot' && aHeadD.part === 'bed_head' &&
+    bFootD.baseBlock === 'white_bed' && bHeadD.baseBlock === 'white_bed' &&
+    bFoot === Shapes.bedId('foot', 'w') && bHead === Shapes.bedId('head', 'w') &&
+    aFoot === Shapes.bedId('foot', 'w') && aHead === Shapes.bedId('head', 'w'),
+    'ret=' + bedOk + '/' + bedAOk + ' B=' + bFoot + '/' + bHead + ' A=' + aFoot + '/' + aHead + ' ' + (aHeadD && aHeadD.name));
+
+  // ── O2b 连动破坏（床·打头）：从 -X 侧瞄准床 B 的「头」→ 脚同步消失、只掉 1 份 ──
+  const bedBefore = countOf('white_bed');
+  og.player.position.set(bx - 5.5, 200, bz + 0.5);
+  og.player.velocity.set(0, 0, 0);
+  og.player.yaw = -Math.PI / 2;                                       // 朝 +X
+  await step(og, 1);
+  const aimHead = og.selectedBlock ? Reg.getById(og.selectedBlock.id) : null;
+  const headMine = await mineAt(bx - 3, 201, bz, 200);
+  assert('O2b 连动破坏（床·打头）：从 -X 侧瞄准床「头」→ 脚同步消失（不残留半张床）；床家族掉落规则只产出 1 份 white_bed',
+    headMine.frames > 0 && !!aimHead && aimHead.part === 'bed_head' &&
+    og.world.getBlock(bx - 3, 201, bz) === 0 && og.world.getBlock(bx - 2, 201, bz) === 0 &&
+    countOf('white_bed') === bedBefore + 1,
+    'frames=' + headMine.frames + ' aim=' + (aimHead && aimHead.part) + ' head=' + og.world.getBlock(bx - 3, 201, bz) + ' foot=' + og.world.getBlock(bx - 2, 201, bz) + ' 得=' + (countOf('white_bed') - bedBefore));
+
+  // ── O2c 连动破坏（床·打脚）：从 +X 侧瞄准床 A 的「脚」→ 头同步消失、只掉 1 份 ──
+  og.player.position.set(bx + 1.5, 200, bz + 2.5);
+  og.player.velocity.set(0, 0, 0);
+  og.player.yaw = Math.PI / 2;                                        // 朝 -X
+  await step(og, 1);
+  const aimFoot = og.selectedBlock ? Reg.getById(og.selectedBlock.id) : null;
+  const footMine = await mineAt(bx - 2, 201, bz + 2, 200);
+  assert('O2c 连动破坏（床·打脚）：从 +X 侧瞄准床「脚」→ 头同步消失（不残留半张床）；床家族掉落规则只产出 1 份 white_bed',
+    footMine.frames > 0 && !!aimFoot && aimFoot.part === 'bed_foot' &&
+    og.world.getBlock(bx - 2, 201, bz + 2) === 0 && og.world.getBlock(bx - 3, 201, bz + 2) === 0 &&
+    countOf('white_bed') === bedBefore + 2,
+    'frames=' + footMine.frames + ' aim=' + (aimFoot && aimFoot.part) + ' foot=' + og.world.getBlock(bx - 2, 201, bz + 2) + ' head=' + og.world.getBlock(bx - 3, 201, bz + 2) + ' 得=' + (countOf('white_bed') - bedBefore));
+
+  // ── O3 连动破坏（门·打下半）：真实挖掘打掉下半 → 上半同步消失、掉落只 1 份 ──
+  og.player.position.set(bx + 0.5, 200, bz + 0.5);
+  og.player.velocity.set(0, 0, 0);
+  og.player.yaw = 0; og.player.pitch = 0;
+  await step(og, 1);
+  const aimDoorD = og.selectedBlock ? Reg.getById(og.selectedBlock.id) : null;
+  const doorMine = await mineAt(bx, 201, bz - 1, 200);
+  assert('O3 连动破坏（门·打下半）：真实挖掘下半（眼高命中 y=201 格）→ 上半同步消失（不残留半扇门）；门家族掉落规则只产出 1 份 oak_door',
+    doorMine.frames > 0 && og.world.getBlock(bx, 201, bz - 1) === 0 && og.world.getBlock(bx, 202, bz - 1) === 0 &&
+    !!aimDoorD && aimDoorD.part === 'door_lower' && countOf('oak_door') === 1,
+    'frames=' + doorMine.frames + ' lo=' + og.world.getBlock(bx, 201, bz - 1) + ' up=' + og.world.getBlock(bx, 202, bz - 1) + ' 得=' + countOf('oak_door'));
+
+  // ── O3b 连动破坏（门·打上半）：再放一扇门，站高一格（眼高落进 y=202 格）→ 命中上半 → 下半一并消失 ──
+  hold('oak_door', 1);
+  og.controls.mouseRight = true;
+  const placeBad2 = await step(og, 1);
+  og.controls.mouseRight = false;
+  const door2Lo = og.world.getBlock(bx, 201, bz - 1), door2Up = og.world.getBlock(bx, 202, bz - 1);
+  og.world.setBlock(bx, 200, bz, STONE);                            // 台阶：脚 y=201 → 眼 y=202.62
+  og.player.position.set(bx + 0.5, 201, bz + 0.5);
+  og.player.velocity.set(0, 0, 0);
+  await step(og, 1);
+  const aimDoorU = og.selectedBlock ? Reg.getById(og.selectedBlock.id) : null;
+  const upperMine = await mineAt(bx, 202, bz - 1, 200);
+  og.world.setBlock(bx, 200, bz, 0);
+  og.player.position.set(bx + 0.5, 200, bz + 0.5);
+  assert('O3b 连动破坏（门·打上半）：站高一格后真实挖掘上半 → 下半同步消失（不残留半扇门）；门家族掉落规则只产出 1 份 oak_door',
+    placeBad2.length === 0 && door2Lo !== 0 && door2Up !== 0 && !!aimDoorU && aimDoorU.part === 'door_upper' &&
+    upperMine.frames > 0 && og.world.getBlock(bx, 202, bz - 1) === 0 && og.world.getBlock(bx, 201, bz - 1) === 0 &&
+    countOf('oak_door') === 2,
+    '置=' + door2Lo + '/' + door2Up + ' aim=' + (aimDoorU && aimDoorU.part) + ' frames=' + upperMine.frames + ' up=' + og.world.getBlock(bx, 202, bz - 1) + ' lo=' + og.world.getBlock(bx, 201, bz - 1) + ' 得=' + countOf('oak_door'));
+
+  // ── O4 形制放置失败：目标格/上格被占 → 返回 false 且世界零写入（不残留半扇门）──
+  og.world.setBlock(bx, 202, bz - 1, STONE);          // 占住「上半」格
+  const failUpper = og._tryPlaceShaped(bx, 201, bz - 1, doorDef);
+  const wroteUpper = og.world.getBlock(bx, 201, bz - 1) !== 0;
+  og.world.setBlock(bx, 202, bz - 1, 0);
+  og.world.setBlock(bx, 201, bz - 1, STONE);          // 目标格本身被占
+  const failBase = og._tryPlaceShaped(bx, 201, bz - 1, doorDef);
+  og.world.setBlock(bx, 201, bz - 1, 0);
+  assert('O4 形制放置失败：上半格被占 / 目标格被占 → 返回 false 且不写方块（不残留半扇门、不半成品落地）',
+    failUpper === false && wroteUpper === false && failBase === false,
+    'upper=' + failUpper + ' wrote=' + wroteUpper + ' base=' + failBase);
+
+  // ── O5 箱子·创造瞬破：内容不掉落、容器条目清空 ──
+  const ch = { x: bx, y: 201, z: bz - 2 };
+  const chItems = new Array(27).fill(null);
+  chItems[0] = { name: 'diamond', count: 3, data: null };
+  chItems[7] = { name: 'gold_ingot', count: 5, data: null };
+  og.world.setBlock(ch.x, ch.y, ch.z, Reg.getId('chest'));
+  og.world.setContainer(ch.x, ch.y, ch.z, chItems);
+  og.player.setMode('creative');
+  await step(og, 1);
+  const aimChest = og.selectedBlock ? Reg.getNameById(og.selectedBlock.id) : null;
+  const dropsBeforeC = drops.length;
+  og.controls.mouseLeft = true;
+  await step(og, 1);
+  og.controls.mouseLeft = false;
+  assert('O5 箱子破坏·创造瞬破：方块消失、world.containers 条目清空，内容不散落（dropContents=false 不生成任何掉落物）',
+    aimChest === 'chest' && og.world.getBlock(ch.x, ch.y, ch.z) === 0 &&
+    og.world.getContainer(ch.x, ch.y, ch.z) === null && drops.length === dropsBeforeC,
+    'aim=' + aimChest + ' block=' + og.world.getBlock(ch.x, ch.y, ch.z) + ' drops=' + drops.length + '/' + dropsBeforeC);
+
+  // ── O6 箱子·生存破坏：内容逐格掉落到世界 + 容器条目清空 + 箱体自身入背包 ──
+  const chItems2 = new Array(27).fill(null);
+  chItems2[2] = { name: 'emerald', count: 4, data: null };
+  chItems2[11] = { name: 'iron_ingot', count: 9, data: null };
+  og.world.setBlock(ch.x, ch.y, ch.z, Reg.getId('chest'));
+  og.world.setContainer(ch.x, ch.y, ch.z, chItems2);
+  og.player.setMode('survival');
+  await step(og, 1);
+  const chestBefore = countOf('chest');
+  const chestMine = await mineAt(ch.x, ch.y, ch.z, 400);
+  assert('O6 箱子破坏·生存破坏：容器内容逐格掉落到世界（名称/数量与容器一致）+ world.containers 条目清空，箱体自身按 家族→基础名 入背包',
+    chestMine.frames > 0 && og.world.getContainer(ch.x, ch.y, ch.z) === null &&
+    JSON.stringify(chestMine.dropped) === JSON.stringify(['emerald×4', 'iron_ingot×9']) &&
+    countOf('chest') === chestBefore + 1,
+    'frames=' + chestMine.frames + ' dropped=' + JSON.stringify(chestMine.dropped) + ' chest=' + countOf('chest'));
+
+  // ── O7/O8 潜影盒：内容跟随盒体（data 通道），入背包 vs 掉世界 ──
+  const sh1 = { x: bx + 3, y: 201, z: bz - 3 };
+  const boxItems = new Array(27).fill(null);
+  boxItems[0] = { name: 'diamond', count: 2, data: null };
+  boxItems[9] = { name: 'redstone', count: 12, data: null };
+  og.world.setBlock(sh1.x, sh1.y, sh1.z, Reg.getId('shulker_box'));
+  og.world.setContainer(sh1.x, sh1.y, sh1.z, boxItems);
+  og.player.setMode('survival');
+  const dropsBeforeBox = drops.length;
+  og._breakShulkerBox(sh1, true);
+  const boxItem = slotOf('shulker_box');
+  assert('O7 潜影盒·入背包（toInventory=true + 生存）：盒体进背包且 data 逐槽保留（27 槽内容跟随），容器条目清空，不成实体掉落',
+    og.world.getContainer(sh1.x, sh1.y, sh1.z) === null && !!boxItem && boxItem.count === 1 &&
+    JSON.stringify(boxItem.data) === JSON.stringify(boxItems) && drops.length === dropsBeforeBox,
+    'box=' + JSON.stringify(boxItem && { name: boxItem.name, count: boxItem.count }) + ' dataEq=' + (!!boxItem && JSON.stringify(boxItem.data) === JSON.stringify(boxItems)) + ' drops=' + (drops.length - dropsBeforeBox));
+
+  const sh2 = { x: bx + 4, y: 201, z: bz - 3 };
+  const boxItems2 = new Array(27).fill(null);
+  boxItems2[3] = { name: 'emerald', count: 4, data: null };
+  og.world.setBlock(sh2.x, sh2.y, sh2.z, Reg.getId('shulker_box'));
+  og.world.setContainer(sh2.x, sh2.y, sh2.z, boxItems2);
+  const dropsBeforeBox2 = drops.length;
+  og._breakShulkerBox(sh2, false);
+  const boxDrop = drops.slice(dropsBeforeBox2);
+  assert('O8 潜影盒·掉世界（toInventory=false）：生成 1 个内容跟随的盒体掉落（data 与容器逐槽一致），容器条目清空',
+    boxDrop.length === 1 && boxDrop[0].name === 'shulker_box' && boxDrop[0].count === 1 &&
+    JSON.stringify(boxDrop[0].data) === JSON.stringify(boxItems2) && og.world.getContainer(sh2.x, sh2.y, sh2.z) === null,
+    'drops=' + JSON.stringify(boxDrop.map((d) => d.name + '×' + d.count)) + ' dataEq=' + (boxDrop[0] && JSON.stringify(boxDrop[0].data) === JSON.stringify(boxItems2)));
+
+  // ── O9 onContainerChanged（ChestScreen:76/209 的外部调用面）：单机 noop、联机上报 ──
+  const sent = [];
+  const savedNet = og.net, savedNetMode = og.networkMode;
+  og.net = { sendContainerSet: (x, y, z, items) => sent.push([x, y, z, items]) };
+  og.networkMode = false;
+  og.onContainerChanged({ x: 11, y: 12, z: 13 }, boxItems);
+  const singleSent = sent.length;
+  og.networkMode = true;
+  og.onContainerChanged({ x: 11, y: 12, z: 13 }, boxItems);
+  og.net = savedNet; og.networkMode = savedNetMode;
+  assert('O9 onContainerChanged：单机（networkMode=false）不抛且零上报；联机时原样上报坐标与 27 槽内容',
+    singleSent === 0 && sent.length === 1 && sent[0][0] === 11 && sent[0][1] === 12 && sent[0][2] === 13 &&
+    JSON.stringify(sent[0][3]) === JSON.stringify(boxItems),
+    'single=' + singleSent + ' net=' + JSON.stringify(sent.map((s) => s.slice(0, 3))));
+
+  // ── O10/O11 熔炉 tick：点火 → 烧炼推进 → 出产物 → 烧尽回落（点燃态方块边沿切换）──
+  const fp = { x: bx + 5, y: 201, z: bz - 3 };
+  og.world.setBlock(fp.x, fp.y, fp.z, Reg.getId('furnace'));   // 朝北未点燃（facing n）
+  const st = og.world.getOrOpenFurnace(fp.x, fp.y, fp.z);
+  st.input = { name: 'iron_ore', count: 1, data: null };
+  st.fuel = { name: 'coal', count: 1, data: null };
+  const FT = getFuelTime('coal');
+  const litN = Shapes.furnaceLitId('n', true);
+  og.updateFurnaces(1);
+  const f1 = { burn: st.burnTime, max: st.burnMax, cook: st.cookTime, fuel: st.fuel, block: og.world.getBlock(fp.x, fp.y, fp.z) };
+  og.updateFurnaces(SMELT_TIME - 1);
+  const f2 = { burn: st.burnTime, cook: st.cookTime, input: st.input, out: st.output, block: og.world.getBlock(fp.x, fp.y, fp.z) };
+  og.updateFurnaces(FT);
+  const f3 = { burn: st.burnTime, block: og.world.getBlock(fp.x, fp.y, fp.z) };
+  assert('O10 熔炉 tick·点火：燃料点燃即扣 1 个（count 1 → null）、burnMax/burnTime = 煤燃烧时长、cookTime 随 dt 推进；燃烧边沿把方块切成同朝向的点燃态 furnace_lit',
+    FT > 0 && f1.burn === FT && f1.max === FT && f1.cook === 1 && f1.fuel === null && f1.block === litN,
+    'FT=' + FT + ' f1=' + JSON.stringify(f1) + ' lit=' + litN + ' 原=' + Reg.getId('furnace'));
+  assert('O11 熔炉 tick·出产物与熄火：满 SMELT_TIME 产出 iron_ingot×1、输入耗尽并清进度；燃料烧尽后边沿切回未点燃态',
+    !!f2.out && f2.out.name === 'iron_ingot' && f2.out.count === 1 && f2.input === null && f2.cook === 0 &&
+    f2.burn === FT - (SMELT_TIME - 1) && f2.block === litN && f3.burn <= 0 && f3.block === Reg.getId('furnace'),
+    'f2=' + JSON.stringify(f2) + ' f3=' + JSON.stringify(f3));
+
+  // ── O12 点燃态切换的 host/单机权威：客户端燃烧但不写方块 ──
+  const fp2 = { x: bx + 6, y: 201, z: bz - 3 };
+  const fid2 = Shapes.facingId('furnace', 'e');               // 朝东家族（点燃态 id 必须保留朝向）
+  const litE = Shapes.furnaceLitId('e', true);
+  og.world.setBlock(fp2.x, fp2.y, fp2.z, fid2);
+  const st2 = og.world.getOrOpenFurnace(fp2.x, fp2.y, fp2.z);
+  st2.input = { name: 'iron_ore', count: 1, data: null };
+  st2.fuel = { name: 'coal', count: 1, data: null };
+  og.networkMode = true; og.net = { isHost: false };
+  og.updateFurnaces(1);
+  const c1 = { burn: st2.burnTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
+  og.net = savedNet; og.networkMode = savedNetMode;
+  og.updateFurnaces(0.5);
+  const c2 = { burn: st2.burnTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
+  assert('O12 点燃态切换的权威门控：客户端（networkMode 且 net.isHost=false）正常燃烧但不写方块（仍是未点燃态）；恢复单机后同一炉子切成保留朝向的 furnace_lit_e',
+    c1.burn === FT && c1.block === fid2 && c2.burn > 0 && c2.block === litE && litE !== fid2,
+    'c1=' + JSON.stringify(c1) + ' c2=' + JSON.stringify(c2) + ' fid2=' + fid2 + ' litE=' + litE);
+
+  // ── O13 updateFurnaces 早退：无 world（主菜单期）/ 空状态表都不抛 ──
+  const menuO = await createGame();
+  let menuErr = false;
+  try { menuO.g.updateFurnaces(1); } catch (e) { menuErr = String(e && e.message); }
+  shutdown(menuO.g);
+  og.world.furnaces.clear();
+  let emptyErr = false;
+  try { og.updateFurnaces(1); } catch (e) { emptyErr = String(e && e.message); }
+  assert('O13 updateFurnaces 早退：game.world 为 null（主菜单期）与 world.furnaces 空表都不抛异常',
+    menuErr === false && emptyErr === false, 'menu=' + menuErr + ' empty=' + emptyErr);
+
+  // ── O14 _breakFurnace：真实挖掘路径 → 熔炉物品入背包 + 内容逐格掉落 + 状态表条目删除 ──
+  const fb = { x: bx, y: 201, z: bz - 2 };
+  og.world.setBlock(fb.x, fb.y, fb.z, fid2);                  // 朝东熔炉
+  const fst = og.world.getOrOpenFurnace(fb.x, fb.y, fb.z);
+  fst.input = { name: 'iron_ore', count: 2, data: null };
+  fst.fuel = { name: 'coal', count: 5, data: null };
+  fst.output = { name: 'iron_ingot', count: 3, data: null };
+  fst.burnTime = 1000; fst.burnMax = 1000;                    // 大余量：3.5s 挖掘期内不点燃消耗、不产出（内容确定性）
+  og.player.setMode('survival');
+  hold('diamond_pickaxe');
+  await step(og, 1);
+  const furnBefore = countOf('furnace');
+  const furnMine = await mineAt(fb.x, fb.y, fb.z, 500);
+  assert('O14 _breakFurnace（真实挖掘路径）：内容三格逐格掉落（input/fuel/output 原样）+ world.furnaces 条目删除；熔炉方块按 家族→基础名 映射成 furnace 物品入背包（镐 tier 门控通过）',
+    furnMine.frames > 0 && og.world.getFurnace(fb.x, fb.y, fb.z) === null &&
+    JSON.stringify(furnMine.dropped) === JSON.stringify(['coal×5', 'iron_ingot×3', 'iron_ore×2']) &&
+    countOf('furnace') === furnBefore + 1,
+    'frames=' + furnMine.frames + ' dropped=' + JSON.stringify(furnMine.dropped) + ' state=' + !!og.world.getFurnace(fb.x, fb.y, fb.z) + ' furnace=' + countOf('furnace'));
+  // ── O15 形制放置（活板门）：真实 aim + 右键 → 关态、朝向 = 玩家方位，生存消耗 1 个 ──
+  og.world.setBlock(bx, 201, bz - 2, STONE);                    // 复位目标墙（O14 把它挖掉了）
+  og.player.position.set(bx + 0.5, 200, bz + 0.5);
+  og.player.velocity.set(0, 0, 0);
+  og.player.yaw = 0; og.player.pitch = 0;
+  og.player.setMode('survival');
+  hold('oak_trapdoor', 1);
+  await step(og, 2);
+  const aimTd = og.selectedBlock ? Reg.getById(og.selectedBlock.id) : null;
+  og.controls.mouseRight = true;
+  const tdBad = await step(og, 1);
+  og.controls.mouseRight = false;
+  const tdId = og.world.getBlock(bx, 201, bz - 1);
+  const tdD = Reg.getById(tdId);
+  assert('O15 形制放置（活板门）：真实 aim + 右键 → 目标格写关态活板门（朝向 = 玩家方位 s、open=false），生存消耗 1 个 oak_trapdoor',
+    tdBad.length === 0 && !!aimTd && !!tdD && tdD.part === 'trapdoor' && tdD.facing === 's' && tdD.open === false &&
+    tdId === Shapes.trapdoorId('s', false) && countOf('oak_trapdoor') === 0,
+    'aim=' + (aimTd && aimTd.name) + ' td=' + tdId + '/' + (tdD && tdD.name) + ' 剩=' + countOf('oak_trapdoor'));
+
+  // ── O16 _breakChest 界面收口：破坏正开着的箱子 → 界面关闭、容器已销毁不再上报（_changed 提前清）──
+  const cs1 = { x: bx + 8, y: 201, z: bz - 3 };
+  og.world.setBlock(cs1.x, cs1.y, cs1.z, Reg.getId('chest'));
+  const sentBox = [];
+  const netSave2 = og.net, modeSave2 = og.networkMode;
+  og.net = { sendContainerSet: (x, y, z, items) => sentBox.push([x, y, z, items]) };
+  og.networkMode = true;                                        // 联机态：hide() 若走上报路径会打这里
+  og.chestScreen.show(cs1.x, cs1.y, cs1.z);
+  const csShown = { visible: og.chestScreen.visible, controls: og.controls.enabled };
+  og.chestScreen._changed = true;                               // 模拟玩家已改动容器（尚未上报）
+  og._breakChest(cs1, false);
+  const csClosed = { visible: og.chestScreen.visible, controls: og.controls.enabled, pos: og.chestScreen.pos };
+  og.net = netSave2; og.networkMode = modeSave2;
+  assert('O16 _breakChest 界面收口：破坏正开着的箱子 → 界面关闭 / controls 恢复 / pos 清空；容器已销毁时 hide 不再上报（_changed 被提前清掉）→ 零 sendContainerSet',
+    csShown.visible === true && csShown.controls === false && csClosed.visible === false &&
+    csClosed.controls === true && csClosed.pos === null && sentBox.length === 0,
+    'show=' + JSON.stringify(csShown) + ' closed=' + JSON.stringify(csClosed) + ' 上报=' + sentBox.length);
+}
+
 for (const x of games) shutdown(x);
 for (const x of games) shutdown(x);
 finish('game-behavior');

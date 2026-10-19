@@ -15,6 +15,7 @@ import { GlideWind } from './GlideWind.js';
 import { Endgame } from './Endgame.js';
 import { Projectiles } from './Projectiles.js';
 import { Beacon } from './Beacon.js';
+import { Placement } from './Placement.js';
 import { PortalSystem } from './PortalSystem.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
@@ -46,12 +47,11 @@ import { FINALE_TIDE_SEGMENTS, FINALE_TIDE_DURATION, finaleEnvelope, finalePulse
 import { ARRIVAL_PLATFORM, removeConnectedPortals } from '../core/Portals.js';
 import { ringPoints } from '../world/structures/stronghold.js';
 import { matchRecipe } from '../core/Crafting.js';
-import { SMELT_TIME, getSmeltingResult, getFuelTime } from '../core/Smelting.js';
 import { MobManager } from '../entity/MobManager.js';
 import { LocalPlayerModel } from '../entity/LocalPlayerModel.js';
 import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLight.js';
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
-import { doorId, trapdoorId, bedId, facingId, furnaceLitId } from '../core/blockShape.js';
+import { facingId } from '../core/blockShape.js';
 import { SaveSystem } from '../core/SaveSystem.js';
 import { getDimension, setAetherDuskProfile } from '../core/dimensions.js';
 import { DEFAULT_BIOME_SCALE, safeBiomeScale } from '../world/biomes.js';
@@ -123,6 +123,7 @@ export class Game {
     this.endgame = new Endgame(this);
     this.projectiles = new Projectiles(this);
     this.beacon = new Beacon(this);
+    this.placement = new Placement(this);
     this.portalSystem = new PortalSystem(this);
     this.currentSlot = 1;
     this.onExit = null;
@@ -1294,55 +1295,14 @@ export class Game {
     }
   }
 
-  // T5：箱子被本地破坏 → 容器内容散落 + 清容器数据；开着的箱子界面一并关闭
-  _breakChest(block, dropContents) {
-    const items = this.world.getContainer(block.x, block.y, block.z);
-    this.world.removeContainer(block.x, block.y, block.z);
-    if (this.chestScreen && this.chestScreen.visible && this.chestScreen.pos &&
-        this.chestScreen.pos.x === block.x && this.chestScreen.pos.y === block.y &&
-        this.chestScreen.pos.z === block.z) {
-      this.chestScreen._changed = false; // 容器已销毁，hide 不再上报
-      this.chestScreen.hide();
-    }
-    if (!items || !dropContents) return;
-    for (const s of items) {
-      if (!s) continue;
-      if (this.networkMode && this.net) {
-        this.net.sendDropSpawn(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER, s.name, s.count);
-      } else if (this.mobManager) {
-        this.mobManager.spawnDrop(
-          new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER), s.name, s.count, null, { pickupDelay: 0.5 });
-      }
-    }
-  }
+  // breakChest（逻辑在 Placement，见 src/player/Placement.js）
+  _breakChest(block, dropContents) { return this.placement.breakChest(block, dropContents); }
 
-  // Idea-2C：潜影盒破坏——内容不散落，跟随盒体成单一掉落（data 通道）
-  // toInventory：单机生存直接入背包（与普通方块掉落同惯例）；联机/创造走实体掉落
-  _breakShulkerBox(block, toInventory) {
-    const items = this.world.getContainer(block.x, block.y, block.z);
-    this.world.removeContainer(block.x, block.y, block.z);
-    if (this.chestScreen && this.chestScreen.visible && this.chestScreen.pos &&
-        this.chestScreen.pos.x === block.x && this.chestScreen.pos.y === block.y &&
-        this.chestScreen.pos.z === block.z) {
-      this.chestScreen._changed = false; // 容器已销毁，hide 不再上报
-      this.chestScreen.hide();
-    }
-    const data = (items && items.some(s => s)) ? items : null; // 空盒不带 data
-    if (this.networkMode && this.net) {
-      this.net.sendDropSpawn(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER, 'shulker_box', 1, data);
-    } else if (toInventory && this.player.survival) {
-      this.inventory.add('shulker_box', 1, data);
-    } else if (this.mobManager) {
-      this.mobManager.spawnDrop(
-        new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER), 'shulker_box', 1, data, { pickupDelay: 0.5 });
-    }
-    if (this.hotbar) this.hotbar.update();
-  }
+  // breakShulkerBox（逻辑在 Placement，见 src/player/Placement.js）
+  _breakShulkerBox(block, toInventory) { return this.placement.breakShulkerBox(block, toInventory); }
 
-  // T5：容器修改上报出口（ChestScreen 每次改动调用）；联机整箱广播，单机 noop
-  onContainerChanged(pos, items) {
-    if (this.networkMode && this.net) this.net.sendContainerSet(pos.x, pos.y, pos.z, items);
-  }
+  // onContainerChanged（逻辑在 Placement，见 src/player/Placement.js）
+  onContainerChanged(pos, items) { return this.placement.onContainerChanged(pos, items); }
 
   // 各物品 UI 当前悬浮的物品名（R/U 配方查询的作用目标）
   _uiHoverName() {
@@ -1353,84 +1313,14 @@ export class Game {
     return null;
   }
 
-  // 熔炉烧炼推进：遍历当前维度全部已开炉状态（惰性创建，只有打开过/放料过的炉子在表里）
-  // 语义对齐原版：燃料燃尽暂停（进度保温缓慢回退）、输出槽同类未满才续烧、燃料点燃即扣 1 个
-  updateFurnaces(dt) {
-    if (!this.world || !this.world.furnaces) return;
-    // B28 点燃态方块切换仅 host/单机权威（客户端不写方块，靠 block_set 广播收敛——同流体模拟门控）
-    const isClient = !!(this.networkMode && this.net && !this.net.isHost);
-    for (const [key, st] of this.world.furnaces) {
-      const recipe = st.input ? getSmeltingResult(st.input.name) : null;
-      const canSmelt = !!(recipe && (!st.output ||
-        (st.output.name === recipe.output && st.output.count + recipe.count <= 64)));
-      if (st.burnTime > 0) st.burnTime -= dt;
-      // 点火：火焰熄了但还能烧且有燃料
-      if (st.burnTime <= 0 && canSmelt && st.fuel) {
-        const ft = getFuelTime(st.fuel.name);
-        if (ft > 0) {
-          st.burnMax = ft;
-          st.burnTime = ft;
-          st.fuel.count--;
-          if (st.fuel.count <= 0) st.fuel = null;
-        }
-      }
-      if (st.burnTime > 0 && canSmelt) {
-        st.cookTime += dt;
-        // 有界循环：大步长 dt（卡顿/追赶）也能连续产出，不积压 cookTime
-        let guard = 0;
-        while (st.cookTime >= SMELT_TIME && guard++ < 64) {
-          const r = st.input ? getSmeltingResult(st.input.name) : null;
-          if (!r || (st.output && (st.output.name !== r.output || st.output.count + r.count > 64))) break;
-          st.cookTime -= SMELT_TIME;
-          if (st.output) st.output.count += r.count;
-          else st.output = { name: r.output, count: r.count, data: null };
-          st.input.count--;
-          if (st.input.count <= 0) st.input = null;
-        }
-        if (!st.input) st.cookTime = 0; // 断料清进度（原版语义）
-      } else if (st.cookTime > 0) {
-        // 熄火/断料：进度缓慢回退而不是瞬间清零
-        st.cookTime = Math.max(0, st.cookTime - dt * 2);
-      }
-      // B28：燃烧起止边沿切换点燃态方块（保留朝向；light:13 由光照引擎增量更新）
-      if (!isClient) this._syncFurnaceLit(key, st);
-    }
-  }
+  // updateFurnaces（逻辑在 Placement，见 src/player/Placement.js）
+  updateFurnaces(dt) { return this.placement.updateFurnaces(dt); }
 
-  // B28：熔炉点燃态方块同步（key = World.furnaceKey "x,y,z"）。
-  // 只在「方块仍是熔炉家族 + 点燃与否发生变化」时写一次；写走 World.setBlock（账本/联机/光照全路径收口）。
-  _syncFurnaceLit(key, st) {
-    const parts = key.split(',').map(Number);
-    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return;
-    const [x, y, z] = parts;
-    const def = BlockRegistry.getById(this.world.getBlock(x, y, z));
-    if (!def || def.baseBlock !== 'furnace') return; // 已被挖掉/替换：状态表由 _breakFurnace 清理
-    const lit = st.burnTime > 0;
-    if (def.lit === lit) return;
-    const nid = furnaceLitId(def.facing || 'n', lit);
-    if (nid) this.world.setBlock(x, y, z, nid);
-  }
+  // syncFurnaceLit（逻辑在 Placement，见 src/player/Placement.js）
+  _syncFurnaceLit(key, st) { return this.placement.syncFurnaceLit(key, st); }
 
-  // 挖毁熔炉：清理状态 + 内容物散落（箱子同款语义），关掉正开着的炉界面
-  _breakFurnace(block) {
-    const st = this.world.getFurnace(block.x, block.y, block.z);
-    this.world.removeFurnace(block.x, block.y, block.z);
-    if (this.furnaceScreen && this.furnaceScreen.visible && this.furnaceScreen.pos &&
-        this.furnaceScreen.pos.x === block.x && this.furnaceScreen.pos.y === block.y &&
-        this.furnaceScreen.pos.z === block.z) {
-      this.furnaceScreen.hide();
-    }
-    if (!st) return;
-    for (const s of [st.input, st.fuel, st.output]) {
-      if (!s) continue;
-      if (this.networkMode && this.net) {
-        this.net.sendDropSpawn(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER, s.name, s.count);
-      } else if (this.mobManager) {
-        this.mobManager.spawnDrop(
-          new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER), s.name, s.count, null, { pickupDelay: 0.5 });
-      }
-    }
-  }
+  // breakFurnace（逻辑在 Placement，见 src/player/Placement.js）
+  _breakFurnace(block) { return this.placement.breakFurnace(block); }
 
   // Build 20 ③：创造模式中键取物（同原版 pick block）——准星指向的方块进入快捷栏：
   // 热栏已有该物品 → 直接选中那格；否则以 1 个替换当前选中格。仅创造响应，生存/旁观忽略。
@@ -2540,20 +2430,11 @@ export class Game {
     return name ? [{ name, count: 1 }] : [];
   }
 
-  // ── B27 门/床/活板门形制工具 ──────────────────────────────────────────
-  static SHAPED_DIRS = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
+  // facingTowardPlayer（逻辑在 Placement，见 src/player/Placement.js）
+  _facingTowardPlayer(bx, bz) { return this.placement.facingTowardPlayer(bx, bz); }
 
-  // 玩家相对目标格的水平朝向键：门/活板门面板贴"玩家近边"
-  _facingTowardPlayer(bx, bz) {
-    const dx = this.player.position.x - (bx + BLOCK_CENTER);
-    const dz = this.player.position.z - (bz + BLOCK_CENTER);
-    return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'e' : 'w') : (dz > 0 ? 's' : 'n');
-  }
-
-  _facingAwayFromPlayer(bx, bz) {
-    const f = this._facingTowardPlayer(bx, bz);
-    return { n: 's', s: 'n', e: 'w', w: 'e' }[f];
-  }
+  // facingAwayFromPlayer（逻辑在 Placement，见 src/player/Placement.js）
+  _facingAwayFromPlayer(bx, bz) { return this.placement.facingAwayFromPlayer(bx, bz); }
 
   // 目标格是否与玩家 AABB 重叠（同放置主检查口径，供多格形制的第二格使用）
   _cellOverlapsPlayer(x, y, z) {
@@ -2563,66 +2444,14 @@ export class Game {
            z >= Math.floor(pz - 0.3) && z <= Math.floor(pz + 0.3);
   }
 
-  // 形制放置（门=下半贴近边+上半；床=脚+头朝远离玩家方向；活板门=关态贴近边）。
-  // 目标格必须为空气，任一格不满足即整体失败（返回 false，不消耗物品）。
-  _tryPlaceShaped(x, y, z, blockDef) {
-    const DIRS = Game.SHAPED_DIRS;
-    if (this.world.getBlock(x, y, z) !== 0) return false;
-    if (blockDef.part === 'door_lower') {
-      const uy = y + 1;
-      if (this.world.getBlock(x, uy, z) !== 0 || this._cellOverlapsPlayer(x, uy, z)) return false;
-      const facing = this._facingTowardPlayer(x, z);
-      const lid = doorId(blockDef.baseBlock, 'lower', facing, false);
-      const uid = doorId(blockDef.baseBlock, 'upper', facing, false);
-      if (!lid || !uid) return false;
-      this.world.setBlock(x, y, z, lid);
-      this.world.setBlock(x, uy, z, uid);
-      audio.blockPlace(blockDef);
-      if (this.redstone) { this.redstone.onBlockChange(x, y, z); this.redstone.onBlockChange(x, uy, z); }
-      return true;
-    }
-    if (blockDef.part === 'bed_foot') {
-      const facing = this._facingAwayFromPlayer(x, z);
-      const [dx, dz] = DIRS[facing];
-      const hx = x + dx, hz = z + dz;
-      if (this.world.getBlock(hx, y, hz) !== 0 || this._cellOverlapsPlayer(hx, y, hz)) return false;
-      const fid = bedId('foot', facing), hid = bedId('head', facing);
-      if (!fid || !hid) return false;
-      this.world.setBlock(x, y, z, fid);
-      this.world.setBlock(hx, y, hz, hid);
-      audio.blockPlace(blockDef);
-      return true;
-    }
-    if (blockDef.part === 'trapdoor') {
-      const facing = this._facingTowardPlayer(x, z);
-      const tid = trapdoorId(facing, false);
-      if (!tid) return false;
-      this.world.setBlock(x, y, z, tid);
-      audio.blockPlace(blockDef);
-      if (this.redstone) this.redstone.onBlockChange(x, y, z);
-      return true;
-    }
-    return false;
-  }
+  // tryPlaceShaped（逻辑在 Placement，见 src/player/Placement.js）
+  _tryPlaceShaped(x, y, z, blockDef) { return this.placement.tryPlaceShaped(x, y, z, blockDef); }
 
-  // 破坏门/床任一半时连动清除另一半（另一半经家族掉落规则不重复产出）
-  _removeShapedPartner(def, x, y, z) {
-    const DIRS = Game.SHAPED_DIRS;
-    if (def.part === 'door_lower') this._clearIfFamily(x, y + 1, z, def.baseBlock);
-    else if (def.part === 'door_upper') this._clearIfFamily(x, y - 1, z, def.baseBlock);
-    else if (def.part === 'bed_foot') {
-      const [dx, dz] = DIRS[def.facing];
-      this._clearIfFamily(x + dx, y, z + dz, def.baseBlock);
-    } else if (def.part === 'bed_head') {
-      const [dx, dz] = DIRS[def.facing];
-      this._clearIfFamily(x - dx, y, z - dz, def.baseBlock);
-    }
-  }
+  // removeShapedPartner（逻辑在 Placement，见 src/player/Placement.js）
+  _removeShapedPartner(def, x, y, z) { return this.placement.removeShapedPartner(def, x, y, z); }
 
-  _clearIfFamily(x, y, z, baseBlock) {
-    const d = BlockRegistry.getById(this.world.getBlock(x, y, z));
-    if (d && d.baseBlock === baseBlock) this.world.setBlock(x, y, z, 0);
-  }
+  // clearIfFamily（逻辑在 Placement，见 src/player/Placement.js）
+  _clearIfFamily(x, y, z, baseBlock) { return this.placement.clearIfFamily(x, y, z, baseBlock); }
 
   // 半径内是否有存活敌对怪（入睡门控；村民/铁傀儡/动物等 passive 不算）
   _hostileNearby(radius) {

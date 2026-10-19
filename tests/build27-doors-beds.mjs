@@ -191,6 +191,7 @@ function near(a, b, eps = 1e-4) { return Math.abs(a - b) < eps; }
 // ── ⑤ 睡眠与形制交互源码绊线 ──
 {
   const gm = srcOf('../src/player/Game.js');
+  const pm = srcOf('../src/player/Placement.js'); // 轮 8 步 6：放置/容器域已迁出 Game（形制放置）
   ok(gm.includes("this.world.dimension !== 'overworld'") && gm.includes("pendingExplosions.push"), '床：非主世界引爆（爆炸粒子出口）');
   ok(gm.includes('this._hostileNearby(8)'), '床：8 格敌对怪拒绝入睡');
   ok(gm.includes('this.sleepOverlay.show('), '床：黑屏过渡跳时间（废除瞬跳）');
@@ -198,7 +199,7 @@ function near(a, b, eps = 1e-4) { return Math.abs(a - b) < eps; }
   ok(gm.includes('this._removeShapedPartner(def,'), '破坏：门/床任一半连动另一半');
   ok(gm.includes('this._tryPlaceShaped(placeX, placeY, placeZ, blockDef)'), '放置：形制多格分支');
   ok(gm.includes("furnaceDef.part === 'door_lower' || furnaceDef.part === 'door_upper' || furnaceDef.part === 'trapdoor'"), '右键：门/活板门开关分支');
-  ok(gm.includes('doorId(blockDef.baseBlock'), '放置：门用状态 id 家族');
+  ok(pm.includes('doorId(blockDef.baseBlock'), '放置：门用状态 id 家族');
 
   const rsSrc = srcOf('../src/core/RedstoneSystem.js');
   ok(rsSrc.includes('setDoorOpen(x, y, z, !def.open)'), '红石：整扇切换');

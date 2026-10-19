@@ -256,6 +256,7 @@ const def = (n) => BlockRegistry.getById(id(n));
 // ── ⑦ 源码绊线：放置朝向 / 家族判定 / 工具门控 / 熔炉点燃同步 ──
 {
   const gm = srcOf('../src/player/Game.js');
+  const pm = srcOf('../src/player/Placement.js'); // 轮 8 步 6：放置/容器域已迁出 Game（熔炉点燃态同步）
   ok(gm.includes('blockDef.facingBase'), '放置：定向面方块按玩家方位换态');
   ok(gm.includes('this._facingTowardPlayer(placeX, placeZ)'), '放置：正面朝玩家');
   ok(gm.includes("if (def.baseBlock === 'chest') this._breakChest"), '破坏：箱子家族判定（四朝向）');
@@ -267,9 +268,9 @@ const def = (n) => BlockRegistry.getById(id(n));
   ok(gm.includes('const hit = isSkull(placed)'), '凋灵召唤：判层也走家族判定（非基名 === SKULL）');
   ok(!gm.includes('const hit = placed === SKULL'), '凋灵召唤：旧 placed === SKULL 判层已废除');
   ok(gm.includes("d.baseBlock === 'wither_skeleton_skull'"), '凋灵召唤：按 baseBlock 认头颅');
-  ok(gm.includes('this._syncFurnaceLit(key, st)'), '熔炉：燃烧边沿同步点燃态方块');
-  ok(gm.includes('if (!isClient) this._syncFurnaceLit'), '熔炉：点燃态切换 host/单机权威');
-  ok(gm.includes('furnaceLitId(def.facing'), '熔炉：点燃态 id 保留朝向');
+  ok(pm.includes('g._syncFurnaceLit(key, st)'), '熔炉：燃烧边沿同步点燃态方块');
+  ok(pm.includes('if (!isClient) g._syncFurnaceLit'), '熔炉：点燃态切换 host/单机权威');
+  ok(pm.includes('furnaceLitId(def.facing'), '熔炉：点燃态 id 保留朝向');
   ok(gm.includes('(def && def.baseBlock) || BlockRegistry.getNameById'), '中键取物：家族态映射回基础物品');
   ok(/if \(def\.minTier > 0\) \{\s*\n\s*const held = this\._heldToolItem\(\);\s*\n\s*if \(!held \|\| held\.tool !== def\.tool \|\| \(held\.tier \|\| 0\) < def\.minTier\) return \[\];/.test(gm),
     '掉落：家族态方块同样受工具门控（熔炉需镐）');
