@@ -172,98 +172,116 @@ async function buildWorldScene() {
   world.generator.structureManager.disabled = true; // 全景要求画面零建筑
   const allSvgs = { ...BlockSVGDefinitions, ...ItemSVGDefinitions };
   const { atlasTexture, atlasUV } = await SVGTextures.buildAtlas(allSvgs);
-  const waterTexture = await SVGTextures.buildRepeatTexture(allSvgs['water'] || '', 'water');
-  const builder = new ChunkMeshBuilder(world, atlasTexture, atlasUV, waterTexture);
+  let builder = null;
+  try {
+    const waterTexture = await SVGTextures.buildRepeatTexture(allSvgs['water'] || '', 'water');
+    builder = new ChunkMeshBuilder(world, atlasTexture, atlasUV, waterTexture);
 
-  console.log('[Bake] 阶段1: 图集完成(结构生成已禁用)');
-  const spot = pickPanoramaSpot(world.generator);
-  const cx0 = Math.floor(spot.x / CHUNK_SIZE), cz0 = Math.floor(spot.z / CHUNK_SIZE);
-  let i = 0;
-  for (let dx = -RADIUS; dx <= RADIUS; dx++) {
-    for (let dz = -RADIUS; dz <= RADIUS; dz++) {
-      world.ensureChunk(cx0 + dx, cz0 + dz);
-      if (++i % 4 === 0) await new Promise(r => setTimeout(r, 0));
+    console.log('[Bake] 阶段1: 图集完成(结构生成已禁用)');
+    const spot = pickPanoramaSpot(world.generator);
+    const cx0 = Math.floor(spot.x / CHUNK_SIZE), cz0 = Math.floor(spot.z / CHUNK_SIZE);
+    let i = 0;
+    for (let dx = -RADIUS; dx <= RADIUS; dx++) {
+      for (let dz = -RADIUS; dz <= RADIUS; dz++) {
+        world.ensureChunk(cx0 + dx, cz0 + dz);
+        if (++i % 4 === 0) await new Promise(r => setTimeout(r, 0));
+      }
     }
-  }
-  console.log('[Bake] 阶段2: 数据区块完成', world.chunks.size);
-  // 相机架在脚下实测最高点上（±3 小范围；12 格探针已保证周边平整，大范围 max 会
-  // 把远处的山体高度算进机位，导致"山顶俯瞰雾中远景"）
-  let top = 0;
-  for (let dx = -3; dx <= 3; dx++) {
-    for (let dz = -3; dz <= 3; dz++) {
-      top = Math.max(top, surfaceTop(world, spot.x + dx, spot.z + dz).y);
+    console.log('[Bake] 阶段2: 数据区块完成', world.chunks.size);
+    // 相机架在脚下实测最高点上（±3 小范围；12 格探针已保证周边平整，大范围 max 会
+    // 把远处的山体高度算进机位，导致"山顶俯瞰雾中远景"）
+    let top = 0;
+    for (let dx = -3; dx <= 3; dx++) {
+      for (let dz = -3; dz <= 3; dz++) {
+        top = Math.max(top, surfaceTop(world, spot.x + dx, spot.z + dz).y);
+      }
     }
-  }
-  const center = new THREE.Vector3(spot.x + 0.5, top + 6, spot.z + 0.5);
-  const yaw = avoidWaterYaw(world, spot.x, spot.z);
-  console.log('[Bake] 阶段3: 机位选定', spot.x, spot.z, '多样性分', spot.score, '避水yaw', yaw.toFixed(2));
-  sky.clouds.visible = false;
-  i = 0;
-  for (const [, chunk] of world.chunks) {
-    for (const key of ['mesh', 'waterMesh', 'lightMesh']) {
-      if (chunk[key]) { scene.remove(chunk[key]); chunk[key].geometry.dispose(); chunk[key] = null; }
+    const center = new THREE.Vector3(spot.x + 0.5, top + 6, spot.z + 0.5);
+    const yaw = avoidWaterYaw(world, spot.x, spot.z);
+    console.log('[Bake] 阶段3: 机位选定', spot.x, spot.z, '多样性分', spot.score, '避水yaw', yaw.toFixed(2));
+    sky.clouds.visible = false;
+    i = 0;
+    for (const [, chunk] of world.chunks) {
+      for (const key of ['mesh', 'waterMesh', 'lightMesh']) {
+        if (chunk[key]) { scene.remove(chunk[key]); chunk[key].geometry.dispose(); chunk[key] = null; }
+      }
+      const meshes = builder.build(chunk);
+      if (meshes.solid) { chunk.mesh = meshes.solid; scene.add(meshes.solid); }
+      if (meshes.water) { chunk.waterMesh = meshes.water; scene.add(meshes.water); }
+      if (meshes.light) { chunk.lightMesh = meshes.light; scene.add(meshes.light); }
+      chunk.dirty = false;
+      if (++i % 6 === 0) await new Promise(r => setTimeout(r, 0));
     }
-    const meshes = builder.build(chunk);
-    if (meshes.solid) { chunk.mesh = meshes.solid; scene.add(meshes.solid); }
-    if (meshes.water) { chunk.waterMesh = meshes.water; scene.add(meshes.water); }
-    if (meshes.light) { chunk.lightMesh = meshes.light; scene.add(meshes.light); }
-    chunk.dirty = false;
-    if (++i % 6 === 0) await new Promise(r => setTimeout(r, 0));
+    console.log('[Bake] 阶段4: mesh 完成');
+    // 天空状态落地一次：skyMesh 颜色 / 雾色 / 太阳月亮位置 / sunTint 都在 update 里初始化
+    sky.update(0.016, center);
+    // 体素光定格上午
+    VoxelLightUniforms.uDayLight.value = 0.10 + 0.90 * sky.getLightLevel();
+    VoxelLightUniforms.uSunTint.value.copy(sky.sunTint);
+    return { scene, sky, world, builder, atlasTexture, center, yaw };
+  } catch (error) {
+    for (const chunk of world.chunks.values()) {
+      for (const key of ['mesh', 'waterMesh', 'lightMesh']) {
+        if (!chunk[key]) continue;
+        scene.remove(chunk[key]);
+        chunk[key].geometry.dispose();
+        chunk[key] = null;
+      }
+    }
+    builder?.dispose();
+    atlasTexture.dispose();
+    throw error;
   }
-  console.log('[Bake] 阶段4: mesh 完成');
-  // 天空状态落地一次：skyMesh 颜色 / 雾色 / 太阳月亮位置 / sunTint 都在 update 里初始化
-  sky.update(0.016, center);
-  // 体素光定格上午
-  VoxelLightUniforms.uDayLight.value = 0.10 + 0.90 * sky.getLightLevel();
-  VoxelLightUniforms.uSunTint.value.copy(sky.sunTint);
-  return { scene, sky, world, builder, center, yaw };
 }
 
 // 渲染 6 面并返回 { faces: { px: dataURL, ... }, spot }
 export async function bakePanorama(rendererWrapper) {
   const renderer = rendererWrapper.renderer; // Game.renderer 是封装类，THREE 实例在 .renderer
-  const { scene, sky, world, builder, center, yaw } = await buildWorldScene();
-  const camera = new THREE.PerspectiveCamera(90, 1, 0.1, 1000);
-  // 完整档：体积光天体在 layer 1、反射排除层水面在 layer 2（与 Game 相机分层一致）
-  camera.layers.enable(1);
-  camera.layers.enable(2);
+  const { scene, sky, world, builder, atlasTexture, center, yaw } = await buildWorldScene();
   const oldSize = new THREE.Vector2();
-  renderer.getSize(oldSize);
-  const oldPixelRatio = renderer.getPixelRatio();
-  const oldToneMapping = renderer.toneMapping;
-  const oldShadowEnabled = renderer.shadowMap.enabled;
-  renderer.setPixelRatio(1);
-  renderer.setSize(PANO_SIZE, PANO_SIZE);
-  camera.aspect = 1;
-  camera.updateProjectionMatrix();
-  console.log('[Bake] 完整档接线: ACES + PostFX + 真反射 + 太阳阴影');
-  // ---- 光照增强完整档（4 子项全开）----
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
-  renderer.shadowMap.enabled = true;
-  const postfx = new PostFX(renderer);          // 泛光 + 体积光 + 色彩分级（512² RT 同步尺寸）
-  postfx.setSceneCamera(scene, camera);
-  postfx.setEnabled(true);
-  postfx.reflectionEnabled = true;              // 水面真反射（planar RT）
-  const sunShadow = new SunShadow(renderer);
-  sunShadow.init(sky.sunLight, scene);
-  sunShadow.enabled = true;
-  sunShadow.setReceive(true, world);
-  GfxState.shadowReceive = true;
-  // HDR 提亮供泛光取源（与 Game.update 完整档同参）：光源块 2.2 / 太阳盘 1.25；日晕隐藏
-  GfxState.lightBoost = 2.2;
-  builder.lightMaterial.color.setScalar(2.2);
-  if (sky.sun) sky.sun.material.color.setScalar(1.25);
-  if (sky.sunGlow) sky.sunGlow.visible = false;
-  VoxelLightUniforms.uCloudShadow.value = 0;    // 云已隐藏（播放器动态叠加），云影关闭
-  // 预热一帧：首次 shadow pass 建 map，之后 uShadowOn 生效、正式面全带影子
-  sunShadow.update(center, 5);
-  postfx.render(scene, camera);
-  sunShadow.update(center, 5);
-  ShadowUniforms.uShadowOn.value = sunShadow.ready ? 1 : 0;
-  console.log('[Bake] 阶段5: 六面渲染开始 (shadow ready=' + sunShadow.ready + ')');
-  const out = {};
+  let oldPixelRatio;
+  let oldToneMapping;
+  let oldShadowEnabled;
   try {
+    const camera = new THREE.PerspectiveCamera(90, 1, 0.1, 1000);
+    // 完整档：体积光天体在 layer 1、反射排除层水面在 layer 2（与 Game 相机分层一致）
+    camera.layers.enable(1);
+    camera.layers.enable(2);
+    renderer.getSize(oldSize);
+    oldPixelRatio = renderer.getPixelRatio();
+    oldToneMapping = renderer.toneMapping;
+    oldShadowEnabled = renderer.shadowMap.enabled;
+    renderer.setPixelRatio(1);
+    renderer.setSize(PANO_SIZE, PANO_SIZE);
+    camera.aspect = 1;
+    camera.updateProjectionMatrix();
+    console.log('[Bake] 完整档接线: ACES + PostFX + 真反射 + 太阳阴影');
+    // ---- 光照增强完整档（4 子项全开）----
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = true;
+    const postfx = new PostFX(renderer);          // 泛光 + 体积光 + 色彩分级（512² RT 同步尺寸）
+    postfx.setSceneCamera(scene, camera);
+    postfx.setEnabled(true);
+    postfx.reflectionEnabled = true;              // 水面真反射（planar RT）
+    const sunShadow = new SunShadow(renderer);
+    sunShadow.init(sky.sunLight, scene);
+    sunShadow.enabled = true;
+    sunShadow.setReceive(true, world);
+    GfxState.shadowReceive = true;
+    // HDR 提亮供泛光取源（与 Game.update 完整档同参）：光源块 2.2 / 太阳盘 1.25；日晕隐藏
+    GfxState.lightBoost = 2.2;
+    builder.lightMaterial.color.setScalar(2.2);
+    if (sky.sun) sky.sun.material.color.setScalar(1.25);
+    if (sky.sunGlow) sky.sunGlow.visible = false;
+    VoxelLightUniforms.uCloudShadow.value = 0;    // 云已隐藏（播放器动态叠加），云影关闭
+    // 预热一帧：首次 shadow pass 建 map，之后 uShadowOn 生效、正式面全带影子
+    sunShadow.update(center, 5);
+    postfx.render(scene, camera);
+    sunShadow.update(center, 5);
+    ShadowUniforms.uShadowOn.value = sunShadow.ready ? 1 : 0;
+    console.log('[Bake] 阶段5: 六面渲染开始 (shadow ready=' + sunShadow.ready + ')');
+    const out = {};
     for (const [name, dir, up] of FACES) {
       camera.position.copy(center);
       camera.rotation.set(0, 0, 0);
@@ -290,11 +308,23 @@ export async function bakePanorama(rendererWrapper) {
       out[name] = cv.toDataURL('image/jpeg', 0.88);
       await new Promise(r => setTimeout(r, 0));
     }
+    return { faces: out, spot: [center.x, center.y, center.z], yaw };
   } finally {
-    renderer.setPixelRatio(oldPixelRatio);
-    renderer.setSize(oldSize.x, oldSize.y);
-    renderer.toneMapping = oldToneMapping;
-    renderer.shadowMap.enabled = oldShadowEnabled;
+    if (oldPixelRatio !== undefined) {
+      renderer.setPixelRatio(oldPixelRatio);
+      renderer.setSize(oldSize.x, oldSize.y);
+    }
+    if (oldToneMapping !== undefined) renderer.toneMapping = oldToneMapping;
+    if (oldShadowEnabled !== undefined) renderer.shadowMap.enabled = oldShadowEnabled;
+    for (const chunk of world.chunks.values()) {
+      for (const key of ['mesh', 'waterMesh', 'lightMesh']) {
+        if (!chunk[key]) continue;
+        scene.remove(chunk[key]);
+        chunk[key].geometry.dispose();
+        chunk[key] = null;
+      }
+    }
+    builder.dispose();
+    atlasTexture.dispose();
   }
-  return { faces: out, spot: [center.x, center.y, center.z], yaw };
 }

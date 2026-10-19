@@ -96,9 +96,7 @@ async function svgToTexture(svgText, key, transparent = false) {
 }
 
 // 构建纹理图集：所有方块贴图打包到一张 Canvas，UV 映射
-let atlasCanvas = null;
-let atlasTexture = null;
-const atlasUV = new Map(); // name -> {u0,v0,u1,v1}
+let latestAtlasUV = new Map();
 
 async function buildAtlas(svgMap) {
   const names = Object.keys(svgMap);
@@ -106,11 +104,12 @@ async function buildAtlas(svgMap) {
   const cols = Math.ceil(Math.sqrt(count * 2)); // 宽一些
   const rows = Math.ceil(count / cols);
   const cell = TEX_SIZE;
-  atlasCanvas = document.createElement('canvas');
+  const atlasCanvas = document.createElement('canvas');
   atlasCanvas.width = cols * cell;
   atlasCanvas.height = rows * cell;
   const ctx = atlasCanvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+  const atlasUV = new Map();
 
   const imgs = await Promise.all(names.map(n => svgToImage(svgMap[n])));
   imgs.forEach((img, i) => {
@@ -124,16 +123,17 @@ async function buildAtlas(svgMap) {
     atlasUV.set(names[i], { u0, v0, u1, v1 });
   });
 
-  atlasTexture = new THREE.CanvasTexture(atlasCanvas);
+  const atlasTexture = new THREE.CanvasTexture(atlasCanvas);
   atlasTexture.magFilter = THREE.NearestFilter;
   atlasTexture.minFilter = THREE.NearestFilter;
   atlasTexture.colorSpace = THREE.SRGBColorSpace;
   atlasTexture.generateMipmaps = false;
+  latestAtlasUV = atlasUV;
   return { atlasTexture, atlasUV };
 }
 
 function getUV(name) {
-  return atlasUV.get(name) || { u0: 0, v0: 0, u1: 1, v1: 1 };
+  return latestAtlasUV.get(name) || { u0: 0, v0: 0, u1: 1, v1: 1 };
 }
 
 // 单独取一张纹理（用于物品图标等）

@@ -36,6 +36,9 @@ assert('边界用例不抛错（缺 lightMesh / 无 mesh / 未加载区块）', 
 
 const inv = read('src/ui/InventoryScreen.js');
 const game = read('src/player/Game.js');
+const chunkMesh = read('src/render/ChunkMesh.js');
+const svgTextures = read('src/render/SVGTextures.js');
+const panorama = read('src/render/PanoramaBake.js');
 const cursor = read('src/ui/CursorOverlay.js');
 const uiFiles = ['src/ui/ChestScreen.js', 'src/ui/FurnaceScreen.js', 'src/ui/InventoryScreen.js', 'src/ui/TradeScreen.js'];
 
@@ -162,4 +165,19 @@ assert('witherSkulls 数组仅在单点清空一次', count(game, 'this.witherSk
 assert('信标状态仅由单点清除一次', count(game, 'this._clearBeaconState();') === 1, String(count(game, 'this._clearBeaconState();')));
 const disposeSlice = game.slice(game.indexOf('_disposeWorld()'), game.indexOf('async start('));
 assert('清理语句位于 _disposeWorld 内', ['this.eyeFlight', 'this.arrows', 'this.witherSkulls', 'this._clearBeaconState()'].every((s) => disposeSlice.includes(s)));
+assert('世界图集在网格材质之后释放，水纹理只清引用不 dispose',
+  disposeSlice.indexOf('this.chunkBuilder.dispose()') < disposeSlice.indexOf('this.atlasTexture.dispose()') &&
+  disposeSlice.includes('this.waterTexture = null') && !disposeSlice.includes('this.waterTexture.dispose()'));
+const builderDispose = chunkMesh.slice(chunkMesh.indexOf('  dispose() {'), chunkMesh.indexOf('  // 判断方块面是否可见'));
+assert('ChunkMeshBuilder.dispose 幂等并释放三种共享材质',
+  builderDispose.includes('if (this._disposed) return') &&
+  ['this.solidMaterial?.dispose()', 'this.waterMaterial?.dispose()', 'this.lightMaterial?.dispose()'].every((s) => builderDispose.includes(s)));
+assert('SVG atlas 纹理与 canvas 由 buildAtlas 局部创建，UV 查询只保留最新映射',
+  svgTextures.includes('let latestAtlasUV = new Map()') &&
+  svgTextures.includes('const atlasCanvas = document.createElement(\'canvas\')') &&
+  svgTextures.includes('const atlasTexture = new THREE.CanvasTexture(atlasCanvas)') &&
+  !svgTextures.includes('let atlasTexture = null'));
+assert('PanoramaBake 成功或失败退出都会释放网格 builder 与图集',
+  panorama.includes('builder?.dispose();') && panorama.includes('atlasTexture.dispose();') &&
+  panorama.includes('builder.dispose();') && panorama.includes('finally {'));
 finish('leak-guards');

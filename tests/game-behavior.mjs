@@ -21,6 +21,8 @@ import { assert, ok, finish } from './harness.mjs';
 import { boot, createGame, step, quiesce, shutdown, gameClass } from './lib/game-env.mjs';
 import { NetworkManager } from '../src/net/NetworkManager.js';
 import { SaveSystem } from '../src/core/SaveSystem.js';
+import { BlockRegistry } from '../src/core/BlockRegistry.js';
+import { SVGTextures } from '../src/render/SVGTextures.js';
 import { MSG } from '../server/protocol.js';
 
 const SEED = 12345;
@@ -2941,5 +2943,118 @@ const respawnBox = finaleGame.mobManager.droppedItems.find((d) => d.id === 912);
 assert('B32-5 拒绝补发后客户端实体内容逐槽完整',
   JSON.stringify(respawnBox?.data) === JSON.stringify(filledBox));
 finaleGame.returnToMenu(false);
+
+const bedGame = g;
+const initialBuilder = bedGame.chunkBuilder;
+const initialAtlas = initialBuilder.atlasTexture;
+let initialBuilderDisposeCount = 0;
+let initialAtlasDisposeCount = 0;
+for (const material of [initialBuilder.solidMaterial, initialBuilder.waterMaterial, initialBuilder.lightMaterial]) {
+  material.addEventListener('dispose', () => { initialBuilderDisposeCount++; });
+}
+initialAtlas.addEventListener('dispose', () => { initialAtlasDisposeCount++; });
+await bedGame.start('survival', SEED + 31);
+const bedPos = { x: 4, y: 120, z: 4, dimension: 'overworld' };
+bedGame.world.setBlock(bedPos.x, bedPos.y, bedPos.z, BlockRegistry.getId('white_bed'));
+bedGame.bedSpawn = { ...bedPos };
+const switchSnapshot = bedGame._composeSwitchLoadData('nether', null, null);
+assert('B32-7 换维快照保留独立床重生点及原维度',
+  JSON.stringify(switchSnapshot.bedSpawn) === JSON.stringify(bedPos) && switchSnapshot.bedSpawn !== bedGame.bedSpawn);
+await bedGame.switchDimension('nether');
+assert('B32-7 切入下界后保留主世界床重生点',
+  bedGame.world.dimension === 'nether' && JSON.stringify(bedGame.bedSpawn) === JSON.stringify(bedPos));
+assert('B32-8 换维释放旧图集与三种 builder 材质各一次',
+  initialAtlasDisposeCount === 1 && initialBuilderDisposeCount === 3,
+  `atlas=${initialAtlasDisposeCount} materials=${initialBuilderDisposeCount}`);
+SaveSystem.save(bedGame, 5);
+const bedSave = SaveSystem.load(5);
+assert('B32-7 下界存档包含原维度床重生点',
+  JSON.stringify(bedSave?.bedSpawn) === JSON.stringify(bedPos));
+await bedGame.start(bedSave.gamemode, bedSave.seed, bedSave, 5, bedSave.cheatsEnabled);
+assert('B32-7 从下界存档加载后仍保留床重生点',
+  JSON.stringify(bedGame.bedSpawn) === JSON.stringify(bedPos));
+await bedGame.switchDimension('overworld');
+bedGame.respawn();
+assert('B32-7 回主世界死亡重生落在床边',
+  bedGame.world.dimension === 'overworld' && bedGame.player.position.x === bedPos.x + 0.5 &&
+  bedGame.player.position.y === bedPos.y + 1 && bedGame.player.position.z === bedPos.z + 0.5);
+bedGame.world.setBlock(bedPos.x, bedPos.y, bedPos.z, 0);
+bedGame.respawn();
+assert('B32-7 拆床后重生点失效并清除床记录', bedGame.bedSpawn === null &&
+  bedGame.player.position.x === bedGame.world.getSpawnPoint().x);
+SaveSystem.deleteSave(5);
+const legacyBedSave = { ...bedSave };
+delete legacyBedSave.bedSpawn;
+await bedGame.start(legacyBedSave.gamemode, legacyBedSave.seed, legacyBedSave, 5, legacyBedSave.cheatsEnabled);
+assert('B32-7 缺 bedSpawn 的旧存档加载为 null', bedGame.bedSpawn === null);
+
+const failedStartGame = track((await createGame()).g);
+const originalBuildAtlas = SVGTextures.buildAtlas;
+let failedStartWorld = null;
+let failedStartErrors = [];
+const savedConsoleError = console.error;
+console.error = (...args) => { failedStartErrors.push(args.map(String).join(' ')); };
+SVGTextures.buildAtlas = async () => {
+  failedStartWorld = failedStartGame.world;
+  throw new Error('injected atlas failure');
+};
+try {
+  await failedStartGame.start('creative', SEED + 32);
+} finally {
+  SVGTextures.buildAtlas = originalBuildAtlas;
+  console.error = savedConsoleError;
+}
+assert('B32-8 start 中途失败会释放世界、worker 与 mob manager',
+  failedStartGame.world === null && failedStartGame.mobManager === null &&
+  failedStartGame.chunkBuilder === null && failedStartGame.running === false &&
+  failedStartWorld?.terrainWorker === null &&
+  failedStartErrors.some((line) => line.includes('injected atlas failure')));
+
+const cancelStartGame = track((await createGame()).g);
+let atlasReadyResolve;
+let releaseAtlasResolve;
+const atlasReady = new Promise((resolve) => { atlasReadyResolve = resolve; });
+const atlasGate = new Promise((resolve) => { releaseAtlasResolve = resolve; });
+let canceledAtlasDisposeCount = 0;
+SVGTextures.buildAtlas = async (...args) => {
+  const result = await originalBuildAtlas(...args);
+  result.atlasTexture.addEventListener('dispose', () => { canceledAtlasDisposeCount++; });
+  atlasReadyResolve();
+  await atlasGate;
+  return result;
+};
+const pendingStart = cancelStartGame.start('creative', SEED + 33);
+try {
+  await atlasReady;
+  cancelStartGame.returnToMenu(false);
+  releaseAtlasResolve();
+  await pendingStart;
+} finally {
+  releaseAtlasResolve();
+  SVGTextures.buildAtlas = originalBuildAtlas;
+}
+assert('B32-8 退出期间完成的异步图集不会重新挂回世界',
+  canceledAtlasDisposeCount === 1 && cancelStartGame.world === null &&
+  cancelStartGame.atlasTexture === null && cancelStartGame.running === false,
+  `atlasDispose=${canceledAtlasDisposeCount} world=${cancelStartGame.world} texture=${cancelStartGame.atlasTexture}`);
+
+const resourceBuilder = bedGame.chunkBuilder;
+const resourceAtlas = resourceBuilder.atlasTexture;
+const sharedWater = resourceBuilder.waterTexture;
+let resourceMaterialDisposals = 0;
+let resourceAtlasDisposals = 0;
+let sharedWaterDisposals = 0;
+for (const material of [resourceBuilder.solidMaterial, resourceBuilder.waterMaterial, resourceBuilder.lightMaterial]) {
+  material.addEventListener('dispose', () => { resourceMaterialDisposals++; });
+}
+resourceAtlas.addEventListener('dispose', () => { resourceAtlasDisposals++; });
+sharedWater.addEventListener('dispose', () => { sharedWaterDisposals++; });
+bedGame.returnToMenu(false);
+bedGame._disposeWorld();
+const cachedWater = await SVGTextures.buildRepeatTexture(bedGame.blockSvgMap.water, 'water');
+assert('B32-8 重复清理只释放 builder 材质和世界图集一次，水纹理缓存仍可复用',
+  resourceMaterialDisposals === 3 && resourceAtlasDisposals === 1 && sharedWaterDisposals === 0 &&
+  cachedWater === sharedWater && bedGame.chunkBuilder === null && bedGame.atlasTexture === null,
+  `materials=${resourceMaterialDisposals} atlas=${resourceAtlasDisposals} water=${sharedWaterDisposals}`);
 for (const x of games) shutdown(x);
 finish('game-behavior');

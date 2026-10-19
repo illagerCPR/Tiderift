@@ -87,6 +87,11 @@ export class Game {
     applySettings(this);
     this.raycast = null;
     this.chunkBuilder = null;
+    this.atlasTexture = null;
+    this.atlasUV = null;
+    this.waterTexture = null;
+    this._worldStartToken = 0;
+    this._loopToken = 0;
     this.world = null;
     this.hotbar = null;
     this.inventoryScreen = null;
@@ -194,10 +199,18 @@ export class Game {
 
   // 清理旧世界所有 Three.js 资源和 UI DOM，防止切换存档时残留"幽灵方块"等
   _disposeWorld() {
+    this._worldStartToken = (this._worldStartToken || 0) + 1;
+    this._loopToken = (this._loopToken || 0) + 1;
     const scene = this.renderer.scene;
     // B-①/B-②：地形/网格 Worker 随世界销毁（新建型资源，跨存档/换维必须 terminate）
-    if (this.world && this.world.terrainWorker) this.world.terrainWorker.dispose();
-    if (this.world && this.world.meshWorker) this.world.meshWorker.dispose();
+    if (this.world && this.world.terrainWorker) {
+      this.world.terrainWorker.dispose();
+      this.world.terrainWorker = null;
+    }
+    if (this.world && this.world.meshWorker) {
+      this.world.meshWorker.dispose();
+      this.world.meshWorker = null;
+    }
     // 旧区块网格
     if (this.world && this.world.chunks) {
       for (const chunk of this.world.chunks.values()) {
@@ -209,6 +222,7 @@ export class Game {
     // 旧怪物和掉落物 + 释放 type 级共享 mesh/texture/material 资源
     if (this.mobManager) {
       this.mobManager.dispose();
+      this.mobManager = null;
     }
     // 高亮和破坏进度
     this.selectedBlock = null;
@@ -218,6 +232,10 @@ export class Game {
     // 粒子系统（新建型：随世界销毁）
     if (this.particles) { this.particles.dispose(); this.particles = null; }
     if (this.fireParticles) { this.fireParticles.dispose(); this.fireParticles = null; }
+    if (this.chunkBuilder) { this.chunkBuilder.dispose(); this.chunkBuilder = null; }
+    if (this.atlasTexture) { this.atlasTexture.dispose(); this.atlasTexture = null; }
+    this.atlasUV = null;
+    this.waterTexture = null;
     // 投射物与末影之眼飞行（内存级运行时列表，mesh 挂在跨存档共享 scene 上——新建型收口点）
     if (this.eyeFlight) {
       this.renderer.scene.remove(this.eyeFlight.mesh);
@@ -253,12 +271,19 @@ export class Game {
     for (const rp of this.remotePlayers.values()) rp.dispose();
     this.remotePlayers.clear();
     if (this.chatBox) { this.chatBox.dispose(); this.chatBox = null; }
+    this.raycast = null;
+    this.redstone = null;
+    if (this.physics) this.physics.world = null;
+    this.world = null;
   }
 
   async start(mode, seed, loadData = null, slot = 1, cheatsEnabled = false, networkMode = false, biomeScale = DEFAULT_BIOME_SCALE) {
+    let startToken = null;
     try {
     // 清理旧世界资源，防止切换存档时残留
     this._disposeWorld();
+    startToken = this._worldStartToken;
+    const isCurrentStart = () => this._worldStartToken === startToken;
     this.currentSlot = slot;
     this.networkMode = networkMode;
     if (!networkMode) this.finaleInfo = null;
@@ -377,14 +402,23 @@ export class Game {
     // 构建纹理图集（包含怪物纹理）
     const allSvgs = { ...this.blockSvgMap, ...this.itemSvgMap };
     // 先创建 MobManager 并注入怪物 SVG
-    this.mobManager = new MobManager(this.world, this.renderer.scene, null, null);
-    await this.mobManager.init(allSvgs);
+    const mobManager = new MobManager(this.world, this.renderer.scene, null, null);
+    this.mobManager = mobManager;
+    await mobManager.init(allSvgs);
+    if (!isCurrentStart()) return;
     
     const { atlasTexture, atlasUV } = await SVGTextures.buildAtlas(allSvgs);
+    if (!isCurrentStart()) {
+      atlasTexture.dispose();
+      return;
+    }
+    this.atlasTexture = atlasTexture;
     this.atlasUV = atlasUV;
     // 水面独立纹理：RepeatWrapping + 世界坐标 UV 平铺，避免 chunk 边界方格
-    this.waterTexture = await SVGTextures.buildRepeatTexture(allSvgs['water'] || '', 'water');
-    this.chunkBuilder = new ChunkMeshBuilder(this.world, atlasTexture, atlasUV, this.waterTexture);
+    const waterTexture = await SVGTextures.buildRepeatTexture(allSvgs['water'] || '', 'water');
+    if (!isCurrentStart()) return;
+    this.waterTexture = waterTexture;
+    this.chunkBuilder = new ChunkMeshBuilder(this.world, atlasTexture, atlasUV, waterTexture);
     // B-②：网格构建 Worker（维度无关——收集只依赖缓存+图集表；随世界销毁重建）
     this.world.meshWorker = new MeshWorkerClient([...atlasUV.entries()]);
     // 粒子系统（新建型：每次 start 重建，_disposeWorld 释放）
@@ -408,9 +442,10 @@ export class Game {
     // 新建的粒子系统按视频设置套密度（其余项已在构造时套用，跨存档不变）
     applySettings(this);
     // 用图集初始化怪物材质
-    this.mobManager.atlasUV = atlasUV;
-    this.mobManager.atlasTexture = atlasTexture;
-    await this.mobManager.buildMaterials();
+    mobManager.atlasUV = atlasUV;
+    mobManager.atlasTexture = atlasTexture;
+    await mobManager.buildMaterials();
+    if (!isCurrentStart()) return;
     
     // 出生点：存档坐标 > 维度出生点（新建存档 / 换维，dimensionSpawn 标记忽略存档坐标）
     const spawn = this.world.getSpawnPoint();
@@ -430,6 +465,7 @@ export class Game {
       if (loadFill) loadFill.style.width = `${(i / chunks.length) * 100}%`;
       i++;
       await new Promise(r => setTimeout(r, 0));
+      if (!isCurrentStart()) return;
     }
 
     // 玩家位置
@@ -497,6 +533,7 @@ export class Game {
 
     this.hotbar = new Hotbar(this.inventory);
     await this.hotbar.update();
+    if (!isCurrentStart()) return;
     this.inventoryScreen = new InventoryScreen(this.inventory, this.player, this);
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
@@ -561,7 +598,11 @@ export class Game {
     // 末地开局生成末影龙（未击败时；联机由 host 生成广播）
     this._ensureDragon();
     } catch (e) {
+      if (startToken !== null && startToken !== this._worldStartToken) return;
       console.error('游戏启动失败:', e);
+      this.running = false;
+      if (this.controls) this.controls.enabled = false;
+      this._disposeWorld();
       const loading = document.getElementById('loading');
       if (loading) {
         loading.innerHTML = `<div style="color:#f88;font-size:16px;text-align:center;padding:20px;">${t('游戏启动失败: {msg}', { msg: e.message })}<br><br>${t('请按 F5 刷新或清除 localStorage 后重试')}</div>`;
@@ -731,8 +772,8 @@ export class Game {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  loop = () => {
-    if (!this.running) return;
+  loop = (token = this._loopToken) => {
+    if (!this.running || token !== this._loopToken) return;
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
@@ -740,7 +781,7 @@ export class Game {
     if (!this.paused) this.update(dt);
     else if (this._bowCharging) this._cancelBowCharge(); // 暂停/死亡：蓄力作废（防恢复后误射）
     this.renderer.render();
-    requestAnimationFrame(this.loop);
+    requestAnimationFrame(() => this.loop(token));
   };
 
   // 检测眼睛位置是否在水里，更新 inWater / 氧气 / 溺水
@@ -1237,11 +1278,12 @@ export class Game {
       .then((out) => {
         chunk._meshInFlight = false;
         // 过期/世界已换：丢弃（期间被改脏 → 下一帧循环重新派发）
-        if (this.world.getChunk(chunk.cx, chunk.cz) !== chunk || chunk._meshVersion !== version) return;
+        if (!this.world || this.world.getChunk(chunk.cx, chunk.cz) !== chunk || chunk._meshVersion !== version) return;
         this._applyMeshOut(chunk, out);
       })
       .catch(() => {
         chunk._meshInFlight = false;
+        if (!this.world || this.world.getChunk(chunk.cx, chunk.cz) !== chunk || this.chunkBuilder !== builder) return;
         mw.broken = true; // 熔断：后续全部回退同步 build
         this._buildChunkSync(chunk);
       });
@@ -2109,6 +2151,7 @@ export class Game {
       finaleDone: !!this.world.finaleDone, // 听潮完成跨维透传（终局篇 F3：换维重建不丢）
       emblemWorn: !!this.player.emblemWorn, // 纹章佩戴跨维透传（Build 19 K3）
       aetherDusk: !!this.aetherDusk, // 天域复潮状态跨维透传（批次 D：换维重建不丢）
+      bedSpawn: this.bedSpawn ? { ...this.bedSpawn } : null,
       player: playerData,
       inventory: this.inventory.serialize(),
       dimensionBlocks: dimBuckets,
@@ -2254,10 +2297,12 @@ export class Game {
       SaveSystem.save(this);
     }
     this.stop();
+    // 终止潮汐时先完成可能的仪式奖励，再释放其世界对象。
+    this._stopFinaleTide();
     // 清理旧世界 Three.js 资源和 UI DOM，防止回到菜单再进新存档时残留
     this._disposeWorld();
-    // 终局演出窗口随回菜单终止（换维不经过此处——start 重入保留窗口实现追潮）
-    this._stopFinaleTide();
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
     // 联机：断开网络连接并复位联机状态
     if (this.net) this.net.close();
     this.networkMode = false;

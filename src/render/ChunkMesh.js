@@ -117,6 +117,27 @@ export class ChunkMeshBuilder {
     this._blockLCache = new Uint8Array(PAD * CHUNK_HEIGHT * PAD);
     this._curChunk = null;
     this._opaqueLUT = new Uint8Array(256);
+    this._disposed = false;
+  }
+
+  dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    this.solidMaterial?.dispose();
+    this.waterMaterial?.dispose();
+    this.lightMaterial?.dispose();
+    this.solidMaterial = null;
+    this.waterMaterial = null;
+    this.lightMaterial = null;
+    this.world = null;
+    this.atlasTexture = null;
+    this.atlasUV = null;
+    this.waterTexture = null;
+    this._cache = null;
+    this._skyCache = null;
+    this._blockLCache = null;
+    this._opaqueLUT = null;
+    this._curChunk = null;
   }
 
   // 判断方块面是否可见
