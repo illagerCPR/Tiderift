@@ -27,7 +27,7 @@
 | 5 | 联机服务端打磨（限速扩档/皮肤代理/落盘节流/回放打包/删房清理/协议版本/心跳热生效/入口防御） | S6 S7 S8 S9 S10 S11 S12 S13 | 已完成（`4520a7b`，CI run 39091785891 绿） |
 | 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（`d908532`，CI run 39120118156 绿） |
 | 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 已完成（`6f5f3ec`，CI run 39122476650 绿） |
-| 8 | F3 Game.js 拆分（门面委托形态；步 0 回归网已入库，逐域迁移进行中） | F3 | 进行中（评估完成，证据 `.run/round8-{A,B,C}.md`） |
+| 8 | F3 Game.js 拆分（门面委托形态；含步 0 回归网共 9 步） | F3 | 已完成（代码 `488de83`，CI run 39224682211 绿；Game.js 3769 → 2273 行，行为网 38 → 187 断言） |
 | 9 | 既有缺陷 H1：准星指向「放置邻格落在玩家自身 AABB 内」的方块时右键被吞（轮 6 发现，非回归） | H1 | 已排期（用户 2026-10-18 定轮 9） |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
 
@@ -97,6 +97,8 @@
 | 6 | 2026-10-18 | 2026-10-18 | `d908532`（文档另提交） | run 39120118156 绿 | 两波四路（第一波 P/Q/S 并行，第二波 R）；F5 四屏光标层收编 CursorOverlay（leak-guards 47/47）；F6 球体判别式统一 raySphereHit（MobManager 两处 + 远端玩家，消除每怪每帧 new Vector3）；F7 modifiedBlocks 分桶索引（40k 账本 169 区块重放 2356ms→10ms，169×65536 格逐字节等价）；F8 dispose 复用 _removeMobResources（唯一清理实现 + 幂等）；F9 眼高/方块中心/移速常量集中；F10 帧射线缓存 + Boss 列表零分配；F11 _anyInputBlockingUI 唯一清单（六类界面阻断挖掘/攻击/弓蓄力）；F12 红石/流体待处理队列键化；新增三套件 tests/ray-sphere、tests/world-mod-index、tests/mob-ray-select 并入跑批 |
 
 | 7 | 2026-10-18 | 2026-10-18 | `6f5f3ec`（本轮含文档） | run 39122476650 绿 | 三路并行 + 第二波一路；E4 run-all-tests.sh 477→124 行（PURE_NODE_SUITES 清单数组 + for 循环，清单即唯一注册点）；E5 两侧唯一 runner 框架（tests/harness.mjs 覆盖 46 套件 / server/test-lib.mjs 覆盖 16 套件），断言调用点数量顺序文案逐字不变、逐套件 PASS 行 943→949、日志 51.9KB→52.1KB；复审发现并返工一次（首版 ok() 无条件打印使日志涨到 1.30MB → 改 configure({ verbose }) 逐套件还原输出口径）；E6 新增 tests/cw1-mesh-stability.mjs（CW-1 稳定态收敛行为级钉值 34 断言，调度方独立反证：注释 World.js 反向标脏 → 6/34 FAIL）+ tests/ui-audio-smoke.mjs（src/ui 24 + src/audio 1 全量 import + 50 条跨模块具名导出核对，88 断言）+ tests/framework-guard.mjs（runner 唯一化元断言 8 断言）；E8 .nvmrc(24) + 根/server engines ">=18"（依据全局 fetch / AbortSignal.timeout 与 Vite 5 范围）+ CI node-version-file；E12 CI 全量 node --check（197 文件 0 失败）；E9 docs/TODO.md 状态对账 159→52 行（交付项归档、保留未排期 U-1）；E13 test-mp.mjs / build22-fixes.mjs / client-sim.mjs 三处陈旧注释 + docs/bug.md 补 CW 前缀续用约定；验收：npm test 全绿（67 套件段）、逐套件日志与轮前基线对照无断言丢失、73 改动文件 node --check 全过 |
+
+| 8 | 2026-10-19 | 2026-10-19 | `488de83`（文档另提交） | run 39224682211 绿 | 九步串行（步 0 回归网 + 步 1–8 每步一域一提交）：Game.js 3769 → 2273 行（−39.7%），9 个域模块 `src/player/`——Summoning 102 / GlideWind 132 / Endgame 144 / Projectiles 301 / Beacon 127 / PortalSystem 244 / Placement 244 / AetherFinale 371 / InteractionController 514；每步口径＝先钉行为（绿）→ 逐条反证（改坏必红 + md5 逐字节还原）→ 搬家 + 薄门面 → `node --check` → 全量跑批 + 逐套件 PASS 行对照 → 断言数只增不减；行为网 tests/game-behavior.mjs 38 → 187 断言；禁改区（`constructor` / `start` / `update` / `_disposeWorld` / `_frameRay` / `updateRaycast` / `_anyInputBlockingUI`）逐步花括号切片与 HEAD 逐字节核对；调度方每步独立复核（自写扫描器复算 md5 / 独立改坏点 / 自跑全量跑批 / 逐方法 token 级保真比对） |
 
 ## 八、轮 5 · 联机服务端打磨（S6–S13）
 
@@ -243,7 +245,7 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 | 5 | PortalsSystem | 先定「到达回调」接口（`_afterPortalArrival` 被双向调用） | **已完成**：新建 `PortalSystem.js`(244，命名避开 `src/core/Portals.js` 纯函数库)；Game.js 3314 → 3144（+18/−187）；8 方法门面化（点火 / 嵌眼 / 站门计时 / 环境粒子 / 触发 / 折跃门 / 到达落点 / 立地面下探）；`game-behavior` 82 → 96 断言；全量跑批 ALL PASS |
 | 6 | 放置 / 容器 | `build27:195,198,199` + `build28:260-263,270,271` 同步 | **已完成**：新建 `Placement.js`(244)；Game.js 3144 → 2973（+27/−198）；11 方法门面化（门/床/活板门形制放置与连动破坏 / 箱子与潜影盒 / 容器上报 / 熔炉推进与点燃态同步）；`game-behavior` 96 → 115 断言；4 条源码绊线同步改指新模块；全量跑批 ALL PASS |
 | 7 | AetherFinale | 锚定最密（三 endgame 套件 35 条 `gameSrc.includes`）+ 6 个外部调用点 | **已完成**：新建 `AetherFinale.js`(371)；Game.js 2973 → 2705（+41/−309）；13 方法门面化（巨像震地与风拽光环 / 复潮仪式 / 候潮献证 / 听潮门控 / 纹章发放 / 四界同潮窗口与四段粒子 / 复潮状态切换）；演出窗口随迁控制器 `tide` + Game 侧只读访问器 `get _finaleTide()`；`game-behavior` 115 → 151 断言（P1–P36）；17 条锚点改指新模块；全量跑批 ALL PASS |
-| 8 | InteractionController | 最后；前置＝显式化点击消费协议 | 待做 |
+| 8 | InteractionController | 最后；前置＝显式化点击消费协议 | **已完成**：新建 `InteractionController.js`(514)；Game.js 2705 → 2273（+42/−435）；整方法四段化（编排 / 弓蓄力通道 / 左键链 / 右键链）+ 同名薄门面 + 构造期一行；**点击消费协议显式化**（四态 + `exitsMethod()`；30 处置位语句原位置逐字保留）；`game-behavior` 151 → 187 断言（Q1–Q38）；20 条断裂绊线改指新模块（7 个文件，同断言 / 同 message / 总数不变）；全量跑批 ALL PASS |
 
 - 步 1 生命周期判定＝**构造器共享型**（控制器零状态、无资源可收口；`world`/`mobManager`/`inventory`/`hud` 一律在调用点经 `this.game` 现取，不留构造期快照）；内部调用点**一律走门面**（调用面零 diff）；`_trySummonWither` 的「头层判定 + 形状派发」约 14 行**刻意留在门面**（`build28-block-textures.mjs:266-269` 字面钉在 Game.js 文本上）。
 - 反证已做：子代理侧四段（`GLIDE_LIFT` / `GLIDE_DEPLOY_VY` / 凋灵早退 / `GLIDE_DRAG`）＋调度方独立两段（`Summoning.commitWitherSummon` 早退 → I4/I5/I6 FAIL；`_disposeWorld` 的 `arrows` 清理被删 → 4/38 FAIL），还原后 MD5 逐字节一致、`git status src/` 空。子代理自查中还抓到并修掉一条**假钉子**（恒真式在 `GLIDE_LIFT` 6→7 时不报错）。
@@ -271,6 +273,13 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 - 步 5 反证：子代理 16 次改坏 → 14 次 FAIL（删萤石→天域映射 1/96、非法框也填充 1/96、12 眼放宽 ≥11 1/96、下界门阈值 2.0→1.0 2/96、删 armed 闸门 4/96、删 cooldown 闸门 1/96、建门站位 +0.5 1/96、吸附半径 24→240 1/96、无坐标冷却 4→0 2/96、未知维度 −1→64 1/96、折跃门阈值 1.0→2.0 1/96、删构造期实例化 5 FAIL + 帧循环崩、装配接缝改常量 1/96、删「下格实心」1/96），逐例 MD5 逐字节还原；两例（删「上方空气」判定 / 列偏移 +1）**经采样实证为行为等价**（51200 列逐值等价、相邻列恰好同高），非钉子缺陷。**调度方独立一段**：`findPortalNear(..., 24)` → `12` → M4b FAIL（1/96），MD5 逐字节还原（`5e42586297eae0c4869a8dac90c57bc9`）；调度方自跑全量跑批 `RESULT: ALL PASS`（EXIT=0 / 66 套件），除 `game-behavior` 81 → 95 与 `test-hardening-net` 51 → 50（本轮调度方机器命中外网探针 SKIP，按 SKIP 口径非回归）外零差异；`start()`/`_disposeWorld()` 花括号切片与 HEAD 逐字节相同。
 - 步 5 覆盖缺口（不得据此宣称已全覆盖）：真实换维（`switchDimension` 重建世界 + 落点吸附/建门的真机表现）钉子用 stub 拦截；联机双端（`switch_dimension`/`dimension_world`、服务器清洗 pos）未跑；`PortalOverlay` 视觉无覆盖；`updatePortalParticles` 无行为钉子（假环境 chunk.portalCells 恒空，仅由每帧调用链兜 no-throw）。
 
+- 步 8 生命周期判定＝**构造器共享型（控制器零自带状态）**：`this.interactionController = new InteractionController(this)`（Game.js:119，紧随 `aetherFinale`）；控制器正文里 `this.` 实测只出现 `this.game`（构造器 1 + 四段各注入 1）与三个自有段方法自调用，零 Three / 零 DOM / 零监听器 / 零容器 ⇒ `start()` 与 `_disposeWorld()` 零改动。域内互调仍走门面（`g._tryPlaceShaped` / `g._breakChest` / `g._tryTideRitual` / `g._frameRay` …），`world` / `player` / `mobManager` / `inventory` / `hud` / `controls` / `selectedBlock` / `breakingProgress` / `breakMesh` / `hand` / `_bowCharging` / `_bowCharge` / `redstone` 一律调用点现取。
+- 步 8 前置＝**点击消费协议显式化**（本步真正的设计工作，不是搬家附赠）：迁移前是隐式惯例——分支靠顺手置位 `controls.mouseLeft/mouseRight = false` 顺带表达「本次点击已消费」，而置位与 `return` **并不配对**（实测 **30 处置位 / 32 处 return**；计划里的 36/27 是旧 HEAD 口径），423 行单方法一旦切段该区别就丢语义。协议＝四态 `CLICK_CONSUMED`（已消费 + 整方法退出）/ `CLICK_ABORT`（未消费 + 整方法退出）/ `CLICK_CONSUMED_PASS`（已消费 + 交后续段）/ `CLICK_PASS`（未消费 + 交后续段）+ `exitsMethod()` 判据；**置位语句仍在原位置逐字保留**（外部 `Controls` / `update()` / `NetworkManager` 都读 `controls.mouse*`，置位时机与次数不得变），「已消费但继续」由段内 `leftConsumed` 标记发布。逐条对照表见 `.run/step8-evidence.md` §1 与新模块文件头。**注意**：`CONSUMED` 与 `ABORT` 目前都归 `exitsMethod()`，故两者的区分**只是文档标签**（子代理已实证：把某出口的 ABORT 改成 CONSUMED 零行为差异）——行为仍由原位置位承载。
+- 步 8 反证：子代理 38 个改坏点 → 36 个精确让目标钉子变红（无效两例如实报告：一个被外层饱腹门控短路、一个即上条标签问题），逐例 md5 逐字节还原。**调度方独立复核**：① 禁改区 7 段花括号切片与 HEAD 逐字节相同（自写双扫描器：`async start` `c262c4ac…` / `_disposeWorld` `80f120a5…` / `update` `9665f6dc…` / `updateRaycast` / `_frameRay` / `_anyInputBlockingUI` / `_cellOverlapsPlayer`）；② **归一化多重集比对：HEAD 方法体 364 行零丢失零改写**，新模块多出的行恰为 4×`const g = this.game;` + 驱动 3 行 + 4 段头与尾括号 + 6 条新增 `return;`（即段边界，非逻辑改写）；③ 正对照改坏（删食物分支的 `g.inventory.removeSelected(1)`）→ Q11 FAIL（1/187），md5 逐字节还原 `a771a8ad…`；④ 自跑全量跑批 `RESULT: ALL PASS`（EXIT=0 / 66 套件），逐套件对照仅 `game-behavior 150 → 186`（PASS 行 +36）与 `ui-audio-smoke 90 → 91`（+1＝新模块文件，该套件按 `src/**/*.js` 全量 import 计数）。
+- 步 8 **调度方发现的两处「钉子不敏感点」（已记录；非缺陷，属覆盖缺口）**：① **挖速量级未钉**——`g.breakingProgress += dt * speedMul / hardness` → `/(hardness * 2)` 时 187 条全绿（Q3 只断言 `prog > 0`，Q4 的循环上限 200 帧对半速仍够挖穿）；② **放置重叠守卫的 0.3 边界未钉**——`Math.floor(px ∓ 0.3)` → `∓ 0.0` 全绿（Q25 的站位使 `placeX === Math.floor(px)` 恰好成立，守卫仍触发）。共性＝「分支存在性已钉、量级与边界未钉」。
+- 步 8 绊线同步（严格限量，同一断言 / 同一 message / 总数不变）：用「55 个纯 node 套件逐个实跑 + 全仓锚点扫描」定位，**实测断裂 20 条 / 7 个文件**（`build27-doors-beds` 6 / `build28-block-textures` 6 / `endgame-content` 3 / `ray-sphere` 2 / `build26-fluid` 1 / `endgame-finale` 1 / `build20-fixes` 1），逐条改指新模块（`this.` → `g.`）；`ray-sphere` 的「帧射线 / UI 清单被四处消费」两条由单读数改为 `Game + InteractionController` 合计计数（语义不变，消除迁移后必然失配）。逐套件复跑计数不变。
+- 步 8 覆盖缺口（不得据此宣称已全覆盖）：**空桶舀水分支经真实射线路不可达**（见 §十三 H2）；联机互殴用「真实 aim 帧 + 直调真实入口」驱动，PvP 关闭跳过远端检测与真实房间往返未钉；熔炉界面 / 村民交易 / 床在非主世界维度引爆三个分支假环境不可达（仅由保真比对兜底）；视觉与音频零覆盖（`hand.swing()` / `audio.*` 未断言到调用），工具 tier 表 / 金工具 9 倍 / 急迫加速 / 掉落与矿经验未钉；桶岩浆、恒昼祭坛图腾召唤、`_tryListenTide` 吞掉右键三条同源分支未钉；`controls.mouse*` 由测试直接置位，未走真实 DOM 鼠标事件（无浏览器手测）。
+- **实施中发现（未修，待排期）**：① `_placeDragonEgg` 非幂等（见上文）；② 迁移会让 `tests/` 里的**负向断言**退化为恒真式——全仓实测 6 条 `!gameSrc.includes(...)` 的文本已不在 `src/player/` 任何模块中（轮 8 各步累计造成，本步新增 1 条：`build28-block-textures.mjs:265` 的 `if (def.name === 'chest') this._breakChest`），断言仍通过但已无约束力，建议后续对账时改为「新模块也不含」或删除。
 **不动**：L1 世界/网格、L3 物理、L17 维度切换、L2 装配中枢（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI` 等跨域基础设施）。
 
 **每步验收骨架**：① 先为该域加**行为级**钉子（现状必须全绿）；② 反证钉子可证伪（改坏 → FAIL → MD5 逐字节还原）；③ 搬家 + 门面，判定生命周期归属（构造器共享 / `start()` 新建 / 无状态工具，新建型必须在 `_disposeWorld` 收口）；④ 改动文件逐个 `node --check`；⑤ 全量 `npm test` 全绿并与基线 `.run/baseline-round8.log` 逐套件对照（PASS 行数不得丢失；例外＝外网探针类断言，见下方 SKIP 口径）；⑥ `tests/game-behavior.mjs` 断言数只增不减。
@@ -279,10 +288,20 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 
 ## 十二、轮 9 · 既有缺陷 H1（准星指向自身重叠方块时右键被吞）
 
-来源：轮 6 实施中发现（见上文「轮 6 实施中发现」），\`git show HEAD:src/player/Game.js\` 同区结构一致 → 轮前既有行为，非回归。
+来源：轮 6 实施中发现（见上文「轮 6 实施中发现」），`git show HEAD:src/player/Game.js` 同区结构一致 → 轮前既有行为，非回归。**轮 8 步 8 迁移后落点已变**：该分支现在在 `src/player/InteractionController.js` 段③（右键链）的放置重叠守卫处，出口协议状态为 `CLICK_ABORT`（不置位 `controls.mouseRight`）。
 
-**范围**：\`src/player/Game.js\` 的 \`handleMouseInput\` 右键分支——放置重叠守卫（约 1884-1895 行）当前在判定「准星方块是否可放置」之前就对 \`sel && hit\` 早退，导致手持弓 / 末影之眼等非方块物品时，只要准星所指方块的放置邻格落在玩家自身 AABB 内，右键就被静默吞掉（弓无法蓄力、末影之眼掷不出）。
+**范围**：段③的放置重叠守卫当前在判定「准星方块是否可放置」之前就对 `sel && hit` 早退（判据 `placeX/placeZ ∈ [floor(p-0.3), floor(p+0.3)]`），导致手持弓 / 末影之眼等非方块物品时，只要准星所指方块的放置邻格落在玩家自身 AABB 内，右键就被静默吞掉（弓无法蓄力、末影之眼掷不出）。
 
-**最小修复方向**：把重叠检查移入 \`if (blockDef)\` 分支（仅对真正要放置的方块生效），非方块物品继续走后续分支。
+**最小修复方向**：把重叠检查移入 `if (blockDef)` 分支（仅对真正要放置的方块生效），非方块物品继续走后续分支。
 
-**验收标准**：① 复现用例先红后绿：轮 6 变体对照探针（\`.run/round6-f11-diag2.mjs\` 同款手法）在修复前可复现「右键被吞」，修复后同一用例进入蓄力；② 放置路径零回归：贴身放方块仍被拒（重叠守卫对真正的方块放置仍然生效），正常放置不受影响；③ 弓蓄力 / 末影之眼 / 食物 / 工作台 / 红石 / 容器交互全部分支逐一走查并给出对照；④ \`npm test\` 全绿（新增回归套件并入跑批）。
+**验收标准**：① 复现用例先红后绿——`game-behavior` 的 **Q25** 就是该缺陷的现状钉子（修复后必须同步改写成「进入蓄力」，不得直接删除）；② 放置路径零回归：贴身放方块仍被拒（重叠守卫对真正的方块放置仍然生效），Q18/Q24/Q26 全绿；③ 弓蓄力 / 末影之眼 / 食物 / 工作台 / 红石 / 容器交互全部分支逐一走查并给出对照；④ `npm test` 全绿。
+
+## 十三、轮 9 备选 · 既有缺陷 H2（`Raycast.cast` 的 `includeFluid` 形参从未被消费 → 空桶舀水分支经真实射线路不可达）
+
+来源：轮 8 步 8 实施中发现（子代理发现，调度方读码独立复核）。
+
+**事实**：`src/player/Raycast.js:12` 定义 `cast(origin, direction, maxDist = 5, includeFluid = false)`，调用点 `Game.js:1357` 确实按 `!!held && held.name === 'bucket'` 传入该实参，但函数体第 38 行的候选过滤是 `if (def && !def.fluid && (def.solid || def.renderType === 'cross'))`——**流体一律被排除，形参零消费**；而 `selectedBlock` 全仓唯一写入点是 `updateRaycast`，因此 `InteractionController` 里 `targetDef.fluid` **恒假**，空桶舀水分支经真实射线路不可达。
+
+**影响**：手持空桶对准水源 / 岩浆右键不会舀（准星穿透流体 → 顶层早退且不消费右键）；满桶倒出（Q19）不受影响。
+
+**验收标准**：① 先钉现状再修——Q20 已是现状钉子，反证已做（在 `Raycast.js` 里实现 `includeFluid` 会让 Q20 变红）；② 修复后 Q20 改写为「空桶舀水 → 手持变水桶 + 源方块被取走」，并补「岩浆桶」「流动等级不可舀（仅源方块）」两条；③ 准星指向水的其它路径零回归（水下方块选择、水中挖掘、弓对水面蓄力、末影之眼对水面掷出）；④ `npm test` 全绿。

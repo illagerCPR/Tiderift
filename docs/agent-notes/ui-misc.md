@@ -167,5 +167,15 @@
 
 - 单一清单：背包 / 箱子 / 熔炉 / 交易 / 信标 / 石碑六类界面的 `.visible`。挖掘、攻击、弓蓄力与指针锁自动暂停全部问这里——**新增此类界面只改这一处**。
 - 有意变更：信标 / 石碑界面打开时同样阻断挖掘 / 攻击 / 弓蓄力（此前会漏）。
-- **弓蓄力仍要求背包有箭**（`player.creative || slots.some(s => s.name === 'arrow')`，`Game.js` 约 1939 行）：无箭时右键被吞、根本不进蓄力。用探针验「界面阻断蓄力」时**必须先给箭**，否则正对照为空、负对照无意义（轮 6 曾因此误判为产品失败，实为探针缺箭）。
-- 确定性探针口径：蓄力通道可脱离浏览器用 node 驱动真实方法——`Game.prototype.handleMouseInput.call(fakeCtx, dt)`，fakeCtx 需要 `controls / inventory / hand / hotbar / player / breakMesh / _cancelBowCharge / _anyInputBlockingUI / _frameRay`；正负对照见 `.run/round6-f11-bow.mjs`（32/32）。
+- **弓蓄力仍要求背包有箭**（`player.creative || slots.some(s => s.name === 'arrow')`；B30 轮 8 步 8 起该判定在 `InteractionController.js:493`）：无箭时右键被吞、根本不进蓄力。用探针验「界面阻断蓄力」时**必须先给箭**，否则正对照为空、负对照无意义（轮 6 曾因此误判为产品失败，实为探针缺箭）。
+- 确定性探针口径：蓄力通道可脱离浏览器用 node 驱动真实方法——`InteractionController.prototype.handleMouseInput.call(fakeCtx, dt)`（B30 轮 8 步 8 起方法体已迁出 `Game.prototype`，旧路径直接抛错），fakeCtx 需要 `controls / inventory / hand / hotbar / player / breakMesh / _cancelBowCharge / _anyInputBlockingUI / _frameRay`；正负对照见 `.run/round6-f11-bow.mjs`（32/32）。
+
+### B30 轮 8 步 8 · 鼠标交互域迁出（`src/player/InteractionController.js`）+「点击已消费」协议
+
+- 原 `Game.handleMouseInput`（423 行单方法）整段迁入 `InteractionController`，Game 侧只留同名薄门面 `handleMouseInput(dt) { return this.interactionController.handleMouseInput(dt); }`（`update()` 的调用点不动）。方法内拆四段：编排（UI 门控 + 未命中早退）/ 弓蓄力通道 / 左键链 / 右键链；段切点只取连续整块，段内语句与控制流逐字未动。
+- **调用面契约＝四态「点击已消费」协议**（迁移前的隐式惯例：分支顺手把 `controls.mouseLeft/mouseRight` 置 false 当出口，而置位与 `return` 并不配对）：`CLICK_CONSUMED`（已消费 + 整方法退出）/ `CLICK_ABORT`（未消费 + 整方法退出）/ `CLICK_CONSUMED_PASS`（已消费 + 交后续段，用段内 `leftConsumed` 标记发布）/ `CLICK_PASS`（未消费 + 交后续段），判据 `exitsMethod()`。
+- **`controls.mouse*` 是外部契约**：`Controls` / `update()` / `NetworkManager` 都读它，30 处置位语句仍在原位置逐字保留，改协议时**只许改「由谁判断、怎么表达」，不许改置位时机与次数**。注意 `CONSUMED` 与 `ABORT` 目前都归 `exitsMethod()`，两者的区分**只是文档标签**（把某出口的 ABORT 改成 CONSUMED 零行为差异）——真正生效的是原位置位。
+- 新加分支时的规矩：段出口必须显式返回协议状态，**不得**再用「顺手置位当返回值」；跨域基础设施 `_frameRay` / `_anyInputBlockingUI` / `updateRaycast` / `_cellOverlapsPlayer` 仍在 `Game.prototype` 上（`tests/ray-sphere.mjs:145` 借原型直调，别搬走），控制器一律 `g._x(...)` 现取。
+- 既有源码绊线**实测断裂 20 条 / 7 个文件**（`build27-doors-beds` / `build28-block-textures` / `endgame-content` / `ray-sphere` / `build26-fluid` / `endgame-finale` / `build20-fixes`）已改指新模块；`ray-sphere` 的「帧射线 / UI 清单被四处消费」两条改为 `Game + InteractionController` 合计计数。**迁移还会让负向断言退化为恒真式**（`!gameSrc.includes(...)` 的文本已不在 `src/player/`，全仓现 6 条）——改这块时别把恒真式当成还在守。
+- 行为钉子：`tests/game-behavior.mjs` Q 段 36 条（Q1–Q38）。**已知不敏感点**：挖速量级（`dt*speedMul/hardness` 折半仍全绿，Q3 只断言 `prog > 0`）与放置重叠守卫的 0.3 边界（改成 0.0 仍全绿）都只钉了「分支存在」而非量级/边界。**既存缺陷 H1**（放置重叠守卫吞掉弓/掷眼右键）由 Q25 按现状钉住，见 `docs/improvement-plan-b30.md` §十二。
+- 另见 §十三 H2：`Raycast.cast` 的 `includeFluid` 形参从未被消费（流体在候选过滤里一律被排除），空桶舀水分支经真实射线不可达。

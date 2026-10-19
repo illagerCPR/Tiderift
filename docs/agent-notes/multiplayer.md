@@ -31,7 +31,7 @@
 
 ### 阶段 11 关键实现备忘（防回退）—— 挥动联动 + 头顶快捷栏 + 白名单/权限 + 抖动自适应
 
-- **挥动周期与挖掘进度联动**：`Game.handleMouseInput` 生存挖掘分支把 `hardness/speedMul`（实际挖穿秒数，钳 0.1~10）写入 `hand.miningPeriod`（再钳 0.25~1.0s），`FirstPersonHand` 自动挥动周期与挥速都用它（挥速 = 3.2×0.3/period，单次挥动时长≈周期）；放置/攻击/进食的单次 `swing()` 不受影响。`_miningActive` 在 `handleMouseInput` 入口统一复位、仅生存挖掘分支置 true（早退分支自然复位，勿在别处手动清）。
+- **挥动周期与挖掘进度联动**：`InteractionController`（B30 轮 8 步 8 起；原 `Game.handleMouseInput`）生存挖掘分支把 `hardness/speedMul`（实际挖穿秒数，钳 0.1~10）写入 `hand.miningPeriod`（再钳 0.25~1.0s），`FirstPersonHand` 自动挥动周期与挥速都用它（挥速 = 3.2×0.3/period，单次挥动时长≈周期）；放置/攻击/进食的单次 `swing()` 不受影响。`_miningActive` 在 `handleMouseInput` 入口统一复位、仅生存挖掘分支置 true（早退分支自然复位，勿在别处手动清）。
 - **远端挖掘摆臂**：`player_state` 增 `mine`（0/1，服务器透传不进 joinInfo）；`RemotePlayer` 用 `_mineAmp`（目标 0/1，`dt*10` 平滑）+ `_minePhase`（`dt*21`≈0.3s 周期）驱动 armR 叠加摆动——勿直接写死 rotation（会丢行走摆臂叠加），respawn 复位三态。
 - **头顶快捷栏 sprite（`src/render/RemoteHotbarSprite.js`）**：每实例独享 texture/material（**dispose 必须释放**，图标 Image 是模块级缓存不释放）；重绘节流靠内容/选中槽指纹比较（20Hz player_state 只做字符串比较）；图标解析链与 Hotbar 同口径（`itemSvgMap[name]` → `blockSvgMap[block.side||block.top]`），`svgToImage` 异步到位后**整幅补画**（onLoaded 回调 → `_redraw`）；全空快捷栏 `_empty` 隐藏；sprite y=+2.62（昵称 +2.3 之上）。**RemotePlayer 构造里 sprite 的 position 赋值必须放在 `_target` 初始化之后**（曾把 position.set 插在构造前段引用 undefined `_target`）。
 - **白名单/Op 名单存 config.json**（`roomWhitelist`/`roomOps`，`sanitizeRoomNameMap`：≤32 房 × 16 名、trim 去重、非法整体丢弃）——勿搬到房间快照（管理面板实时改 + 与房间存档生命周期解耦）。入房拦截在 index.mjs 的 CREATE/JOIN_ROOM 前用**trimmed 房间名**查名单（名单 key 已 trim）；kicked 拒绝（客户端 `_explicitClose` 停自动重连）；switch_room 游戏内用聊天拒绝（与"房间已满"同款，不踢线）。`Room.isOperator()` = host 或昵称在 `roomOps[房间名]`，gamemode/set_time/world_reset 三处走它；拒绝**必须给系统聊天提示**（原为静默忽略）。

@@ -67,7 +67,7 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 
 - `src/main.js` -> 创建 `Game` 实例和 `MenuScreen`，`window.game`、`window.BlockRegistry`、`window.ItemRegistry`、`window.SaveSystem` 暴露用于调试。
 - `src/player/Game.js` 是中央枢纽：持有所有子系统（World、Renderer、Physics、Controls、Inventory、MobManager、RedstoneSystem、Hotbar、InventoryScreen、Hud、InfoBar、PauseMenu、DeathScreen），`update(dt)` 每帧驱动所有子系统。
-- **F3 上帝类拆分进行中（B30 轮 8 起）**：形态＝**门面委托**——逻辑迁到 `src/player/*` 新模块，Game 保留同名薄门面（签名不变），外部依赖面（NetworkManager / CommandPanel / BeaconScreen / `window.game` / tests 源码绊线）保持不变。已迁出：召唤（`Summoning.js`）、滑翔与气流（`GlideWind.js`）、终局（`Endgame.js`：末影龙生成守卫 / 龙败奖励链 / 回程垫 / 折跃门阵列 / 龙蛋 / 末影水晶击碎）、弹射物（`Projectiles.js`：箭 / 末影之眼 / 弓蓄力 / 凋灵之首 / 风弹）、信标（`Beacon.js`：金字塔等级 / 效果脉冲 / 光柱）、放置与容器（`Placement.js`：门/床/活板门形制放置与连动破坏 / 箱子与潜影盒内容散落 / 容器改动上报 / 熔炉推进与点燃态同步；域状态 `World.furnaces`/`World.containers` 仍归 World）、传送门（`PortalSystem.js`：点火 / 末影之眼嵌框 / 站门计时 / 到达落点与返程门 / 立地面下探；穿越三件套 `_portalTimer`/`_portalArmed`/`_portalCooldown` 与 `portalOverlay` 仍留 Game）、天域终局与复潮（`AetherFinale.js`：守誓巨像震地与风拽光环 / 复潮仪式 / 候潮献证 / 听潮门控 / 纹章发放 / 四界同潮演出窗口与四段粒子；演出窗口随迁控制器 `tide`，Game 侧保留只读访问器 `get _finaleTide()` 供 CommandPanel 探针）；跨域基础设施（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI`）不动。迁移顺序、不变量与每步验收骨架见 `docs/improvement-plan-b30.md` §十一。
+- **F3 上帝类拆分已完成（B30 轮 8，共 9 步＝步 0 行为回归网 + 8 个域模块；Game.js 3769 → 2273 行）**：形态＝**门面委托**——逻辑迁到 `src/player/*` 新模块，Game 保留同名薄门面（签名不变），外部依赖面（NetworkManager / CommandPanel / BeaconScreen / `window.game` / tests 源码绊线）保持不变。已迁出：召唤（`Summoning.js`）、滑翔与气流（`GlideWind.js`）、终局（`Endgame.js`：末影龙生成守卫 / 龙败奖励链 / 回程垫 / 折跃门阵列 / 龙蛋 / 末影水晶击碎）、弹射物（`Projectiles.js`：箭 / 末影之眼 / 弓蓄力 / 凋灵之首 / 风弹）、信标（`Beacon.js`：金字塔等级 / 效果脉冲 / 光柱）、放置与容器（`Placement.js`：门/床/活板门形制放置与连动破坏 / 箱子与潜影盒内容散落 / 容器改动上报 / 熔炉推进与点燃态同步；域状态 `World.furnaces`/`World.containers` 仍归 World）、传送门（`PortalSystem.js`：点火 / 末影之眼嵌框 / 站门计时 / 到达落点与返程门 / 立地面下探；穿越三件套 `_portalTimer`/`_portalArmed`/`_portalCooldown` 与 `portalOverlay` 仍留 Game）、天域终局与复潮（`AetherFinale.js`：守誓巨像震地与风拽光环 / 复潮仪式 / 候潮献证 / 听潮门控 / 纹章发放 / 四界同潮演出窗口与四段粒子；演出窗口随迁控制器 `tide`，Game 侧保留只读访问器 `get _finaleTide()` 供 CommandPanel 探针）、鼠标交互（`InteractionController.js`：整段 `handleMouseInput`——UI 门控与未命中早退 / 弓蓄力通道 / 左键链（创造瞬破・生存挖掘・攻击・联机互殴）/ 右键链（食用・经验瓶・工作台・容器・红石・形制与普通放置・耕种・桶・弓・掷眼・上床・祭坛献证・石碑听潮）；Game 侧保留同名薄门面，域内调用面契约＝四态「点击已消费」协议 `CONSUMED`/`ABORT`/`CONSUMED_PASS`/`PASS` + `exitsMethod()`，30 处 `controls.mouse*` 置位语句仍在原位置逐字保留）；跨域基础设施（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI`）不动。迁移顺序、不变量与每步验收骨架见 `docs/improvement-plan-b30.md` §十一。
 - 主循环受 `this.paused` 门控：暂停 / 死亡 / 物品栏打开时 `loop()` 仍渲染但跳过 `update()`。
 - `game.onExit = () => menu.show()` 由 `main.js` 注册；`game.start(mode, seed, loadData, slot)` 启动，`game.returnToMenu(save=true)` 关闭所有 UI 并触发 `onExit`。`controls.enabled` 是 UI 进入/退出的统一开关，新加 UI 必须在 show/hide 中维护它。
 
@@ -146,7 +146,7 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 ### 食物与饥饿
 
 - `Player.eat(itemDef)` 是统一食用入口：创造/旁观 / `food >= maxFood` 时拒绝；否则 `food += itemDef.food`、`saturation += food * 0.6`，都 clamp 到 `maxFood`。返回 true 表示成功吃下。
-- `Game.handleMouseInput` 右键分支**优先**检查食物：玩家 survival + 手持物品 `itemDef.food > 0` + `food < maxFood` 时调 `eat` 并消耗 1 个（`inventory.removeSelected(1)` + `hotbar.update()`）。饱腹时跳过食用分支继续走工作台/红石/放方块逻辑（与原版一致）。
+- `InteractionController`（B30 轮 8 步 8 起；原 `Game.handleMouseInput`）右键分支**优先**检查食物：玩家 survival + 手持物品 `itemDef.food > 0` + `food < maxFood` 时调 `eat` 并消耗 1 个（`inventory.removeSelected(1)` + `hotbar.update()`）。饱腹时跳过食用分支继续走工作台/红石/放方块逻辑（与原版一致）。
 - 饥饿衰减在 `Game.updateSurvival()`：`saturation > 0` 优先扣 saturation，否则扣 food；`food >= 18` 缓慢回血，`food <= 0` 持续掉血到 1。
 - 物品 `food` 字段在 `ItemDefs.js` 注册：面包=5、苹果=4、牛排=8 等。新增食物必须填 `food` 数值。
 
@@ -159,7 +159,7 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 
 - `src/core/RedstoneSystem.js`：信号传播与方块交互。
 - 支持：lever（拉杆切换）、button（1秒后自动关闭）、redstone_wire（信号传播）、redstone_torch/block（恒定电源）、piston/sticky_piston（推出/收回活塞头）、redstone_lamp（充能指示）、TNT（引爆）、door/trapdoor（切换状态）。
-- `Game.js` 右键点击 lever/button 时调用 `redstone.onBlockInteract()`；放置/破坏方块时调用 `redstone.onBlockChange()`；`update()` 中每帧调用 `redstone.update(dt)`。
+- 右键点击 lever/button 时调用 `redstone.onBlockInteract()`（右键路径 B30 轮 8 步 8 起在 `InteractionController.js`，Game 侧同名门面）；放置/破坏方块时调用 `redstone.onBlockChange()`；`update()` 中每帧调用 `redstone.update(dt)`。
 
 ### 存档系统（多槽位）
 
@@ -231,6 +231,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
 | `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、UI 图标链 |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关、B30 轮 5 服务端打磨（落盘节流/回放打包/协议版本/限速扩档/皮肤代理加固/心跳活读/入口防御） | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关、落盘与回放、握手版本 |
-| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控 | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏 |
+| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控、B30 轮 8 步 8 鼠标交互域迁出（InteractionController + 点击消费协议） | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏、鼠标交互域（点击消费协议） |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

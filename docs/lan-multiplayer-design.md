@@ -270,6 +270,8 @@ this._applyingRemote = false;
 
 ### 6.3 `src/player/Game.js` 改造点
 
+> 位置说明（B30 轮 8 步 8 起）：`handleMouseInput` 已迁至 `src/player/InteractionController.js`（Game 侧保留同名薄门面）；下表是该阶段的改造点记录，源码落点以当前实现为准。
+
 | 位置 | 改动 |
 |---|---|
 | `constructor` | 创建 `this.remotePlayers = new Map()`；`this.net = null` |

@@ -19,7 +19,7 @@
 - **容器惰性生成不变量**：箱子内容不在结构求解时生成——solve 只放 chest 方块并在 `meta.chests` 声明 `[x,y,z,表名]`；`StructureManager` 求解记录时注册进 `sm.chests` Map（**只增不减、幂等，不受布局缓存 LRU 驱逐影响**，与 recordsNear 缓存机制不同）。玩家打开箱子时 `World.getOrOpenContainer` 才按 `(seed, 表名, 坐标)` 生成 27 槽 loot；查不到注册 = 玩家自放箱子 = 空容器。`chestLoot`/`villagerTrades` 是纯函数（loot.js），任何改动都会改变全服所有箱子内容——两端一致性的根基，勿引入 Math.random。
 - **联机容器同步**：`container_set` 整箱 27 槽 last-write-wins（与方块账本同策略）；服务器 `sanitizeStack` 将 count<1 清为 null 空槽（曾钳到 1 出过幻影物品，勿改回 Math.max(1,...)）；挖箱 `block_set id=0` 时服务器顺带删容器账本（内容散落由挖掘方 drop_spawn 上报，其他端不重复散落）；joinRoom 回放容器账本（只回放动过的箱子）。客户端收到远端挖箱（applyRemoteBlock）要清本地容器 + 关开着的 ChestScreen。
 - **TradeScreen 交易种子**：`villagerTradeSeed(ax, az, i)` 是单机与 mob_spawn 广播共用的唯一派生函数——**勿在调用处各自造哈希**（两端表不一致即 bug）。`createMobFromNet` 接收广播值；`spawnMob` 内位置哈希只是旧广播/命令面板的兜底。村民不进存档 → 交易进度也不持久化（会话内），与村民生命周期一致。
-- **新建型 UI 惯例**：ChestScreen/TradeScreen 与 InventoryScreen 同组——`start()` 重建、`_disposeWorld()` dispose；ChestScreen 保存 document 监听器引用并在 dispose 移除（InventoryScreen 的 document mousemove 监听器有跨存档残留，属存量问题）。E/ESC 关闭 + `pauseOnUnlock` 防护 + `handleMouseInput` 开头 guard 三处都要挂新 UI 的 visible 检查。
+- **新建型 UI 惯例**：ChestScreen/TradeScreen 与 InventoryScreen 同组——`start()` 重建、`_disposeWorld()` dispose；ChestScreen 保存 document 监听器引用并在 dispose 移除（InventoryScreen 的 document mousemove 监听器有跨存档残留，属存量问题）。E/ESC 关闭 + `pauseOnUnlock` 防护 + 世界输入 gate（B30 轮 8 步 8 起在 `InteractionController`，经 `g._anyInputBlockingUI()` 现取）三处都要挂新 UI 的 visible 检查。
 - **测试**：`tests/loot-determinism.mjs`（5 表确定性/交易表发散/51 箱坐标-表名-方块三向一致/两端 chests 注册表一致）与 `server/test-t5.mjs`（容器协议 14 断言含脏包消毒/挖箱清账/回放/tradeSeed 透传/store 落盘）均接入 `run-all-tests.sh`。
 
 ### W 批次备忘（防回退）—— 水面叠加修复 / 建筑显示与探索 / 自然洞穴
