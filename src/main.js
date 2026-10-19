@@ -93,8 +93,17 @@ if (location.search.includes('bake-panorama')) {
 
   // M4：联机维度切换落地——服务器 dimension_world 回执（目标维度权威账本）→ 重建本地世界
   // 迭代 M2：pos 为传送门落点回传（applyDimensionWorld 据此吸附既有门/自动建返程门）
-  net.on('dimension_world', ({ dim, blocks, containers, pos }) => {
-    if (game.running) game.applyDimensionWorld(dim, blocks, containers, pos);
+  net.on('dimension_world', ({ dim, blocks, containers, pos, recoveryId }) => {
+    if (!game.running) {
+      if (recoveryId) net.completeWorldRecovery(recoveryId, false);
+      return;
+    }
+    const applied = game.applyDimensionWorld(dim, blocks, containers, pos);
+    if (recoveryId) {
+      Promise.resolve(applied)
+        .then((ok) => net.completeWorldRecovery(recoveryId, ok === true))
+        .catch(() => net.completeWorldRecovery(recoveryId, false));
+    }
   });
 
   // 联机连接状态提示

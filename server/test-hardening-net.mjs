@@ -109,7 +109,7 @@ console.log('服务器加固（网络层）回归 ================');
 // --- 用例 1（S11）：协议版本校验 ---
 {
   console.log('[1] S11：协议版本校验');
-  for (const bad of ['0.1', 2]) {
+  for (const bad of ['0.1', PROTOCOL_VERSION + 1]) {
     const p = open();
     await opened(p);
     p.ws.send(JSON.stringify({ t: 'hello', name: 'ver-bad' + tag, version: bad }));

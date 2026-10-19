@@ -35,6 +35,14 @@ const g = track(b1.g);
 ok(b1.running === true,
   'A1 boot：start() 跑完且 running=true（start 内部吞异常，必须用 running 判定而非"没抛错"）');
 
+const recoveryGate = Object.create(gameClass.prototype);
+recoveryGate.networkMode = true;
+recoveryGate.net = { isRecovering: true };
+let recoveryWorldAdvanced = false;
+recoveryGate._updateWaterState = () => { recoveryWorldAdvanced = true; };
+try { recoveryGate.update(1 / 60); } catch { /* 旧实现会继续进入未构造的世界更新链 */ }
+assert('B32-3 重连握手期间 Game.update 不推进世界模拟', !recoveryWorldAdvanced);
+
 assert('A2 boot：worker 桩全部加载成功',
   b1.workerStats.failed === 0 && b1.workerStats.created >= 2,
   'created=' + b1.workerStats.created + ' failed=' + b1.workerStats.failed + ' ' + JSON.stringify(b1.workerStats.errors.slice(0, 1)));

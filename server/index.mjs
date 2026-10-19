@@ -850,6 +850,10 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // B32：恢复握手完成前，拒绝旧世界写入/位置/档案消息；允许确认、心跳与主动离房/换房。
+    const recoveryExitChat = msg.t === MSG.CHAT && /^\/room(?:\s|$)/i.test(String(msg.text || '').trim());
+    if (player._recovery && ![MSG.WORLD_READY, MSG.PING, MSG.SWITCH_ROOM, MSG.LEAVE_ROOM].includes(msg.t) && !recoveryExitChat) return;
+
     if (msg.t === MSG.CREATE_ROOM) {
       const roomKey = normalizeRoomName(msg.room);
       if (!whitelistAllows(roomKey, player.name)) { rejectByWhitelist(player, roomKey); return; } // 阶段11：白名单

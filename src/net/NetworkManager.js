@@ -22,9 +22,15 @@ export class NetworkManager {
     this._stateInterval = 0.05; // 20Hz 状态上报
     this._applyingRemote = false;
     this._ready = false;          // 世界已就绪（可创建远端玩家/落地方块与掉落物）
+    this.isRecovering = false;    // B32：确认维度账本前暂停世界模拟
+    this._recoveryId = null;
+    this._recoveryDim = null;
+    this._recoveryPhase = 'idle';
+    this._recoverySeq = 0;
     this._pendingPlayers = [];    // 世界就绪前的玩家加入缓存
     this._pendingSkins = new Map(); // Build 21 M2：世界就绪前的远端皮肤缓存（id → msg）
     this._pendingBlocks = [];     // 世界就绪前的 block_change 缓存（修复首次加入丢包）
+    this._pendingContainers = []; // 世界快照应用期间的容器变更
     this._pendingDrops = [];      // 世界就绪前的 drop_* 缓存
     this._pendingMobs = [];       // 世界就绪前的 mob_spawn 缓存
     this._pendingOpen = [];       // 连接打开前的待发消息
@@ -65,9 +71,14 @@ export class NetworkManager {
     this._url = url;
     this._reconnectAttempt = 0;
     this._ready = false;
+    this.isRecovering = false;
+    this._recoveryId = null;
+    this._recoveryDim = null;
+    this._recoveryPhase = 'idle';
     this._pendingPlayers = [];
     this._pendingSkins = new Map(); // Build 21 M2：新连接重置皮肤缓存
     this._pendingBlocks = [];
+    this._pendingContainers = [];
     this._pendingDrops = [];
     this._pendingMobs = [];
     this._pendingOpen = [];
@@ -86,13 +97,20 @@ export class NetworkManager {
 
     ws.onopen = () => {
       this.connected = true;
-      this._reconnectAttempt = 0; // 连接成功，重连计数清零
+      if (!isReconnect) this._reconnectAttempt = 0;
       this._send(MSG.HELLO, { name: this.name, version: PROTOCOL_VERSION });
       if (isReconnect) {
-        // 重连：世界已在运行，不重启，直接重新加入房间（服务器回放方块/掉落物账本）
-        // 必须携带 room 名——曾发空 payload 落到 default 房（房间静默漂移，村民/方块全对不上）
-        this._pendingPlayers = [];
-        this._send(MSG.JOIN_ROOM, { room: this.room });
+        // 重连固定当前维度和位置；账本落地并双向确认后才恢复游戏状态。
+        this._recoveryId = `${Date.now().toString(36)}-${(++this._recoverySeq).toString(36)}`;
+        this._recoveryDim = this.game.world?.dimension || this.dim || 'overworld';
+        this._recoveryPhase = 'joining';
+        this._clearPendingWorldMessages();
+        const p = this.game.player;
+        const resumePos = p && p.position ? {
+          x: p.position.x, y: p.position.y, z: p.position.z, yaw: p.yaw, pitch: p.pitch,
+        } : null;
+        this._send(MSG.JOIN_ROOM, { room: this.room, recoveryId: this._recoveryId,
+          resumeDim: this._recoveryDim, resumePos });
         if (this.onStatusChange) this.onStatusChange('connected', '已重新连接服务器');
       } else {
         for (const q of this._pendingOpen) this._send(q.type, q.data);
@@ -101,6 +119,7 @@ export class NetworkManager {
       }
     };
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
       // S13：脏包/空值在 netMessage 单点收口（解析失败 / 非对象 / t 非字符串一律丢弃）
       const m = parseServerMessage(ev.data);
       if (m) this._handle(m);
@@ -108,7 +127,8 @@ export class NetworkManager {
     ws.onclose = () => {
       if (this.ws !== ws) return; // 旧 socket 的关闭事件忽略（已被替换/主动关闭）
       this.connected = false;
-      if (this._ready && !this._explicitClose) this._scheduleReconnect();
+      if (this._ready && !this._explicitClose) this._beginRecovery();
+      if ((this._ready || this.isRecovering) && !this._explicitClose) this._scheduleReconnect();
       else if (this.onStatusChange) this.onStatusChange('closed', '与服务器断开连接');
     };
     ws.onerror = () => {};
@@ -126,7 +146,43 @@ export class NetworkManager {
     this._reconnectTimer = setTimeout(() => this._connectSocket(true), delay);
   }
 
+  _clearPendingWorldMessages() {
+    this._pendingPlayers = [];
+    this._pendingSkins = new Map();
+    this._pendingBlocks = [];
+    this._pendingContainers = [];
+    this._pendingDrops = [];
+    this._pendingMobs = [];
+    this._pendingProfile = null;
+  }
+
+  _beginRecovery() {
+    this.isRecovering = true;
+    this._ready = false;
+    this._recoveryId = null;
+    this._recoveryDim = null;
+    this._recoveryPhase = 'joining';
+    this._clearPendingWorldMessages();
+    this.clearFluidBatch();
+    for (const id of this.game.remotePlayers ? [...this.game.remotePlayers.keys()] : []) this._removeRemote(id);
+    this._remoteDims.clear();
+  }
+
+  completeWorldRecovery(recoveryId, applied) {
+    if (!this.isRecovering || recoveryId !== this._recoveryId || this._recoveryPhase !== 'applying') return false;
+    if (!applied || !this.connected || !this.ws || this.ws.readyState !== 1 || !this.game.world ||
+        this.game.world.dimension !== this._recoveryDim) {
+      this._recoveryPhase = 'failed';
+      if (this.ws) { try { this.ws.close(); } catch {} }
+      return false;
+    }
+    this._recoveryPhase = 'awaiting_ack';
+    this._send(MSG.WORLD_READY, { recoveryId, dim: this._recoveryDim });
+    return true;
+  }
+
   _send(type, data) {
+    if (this.isRecovering && ![MSG.HELLO, MSG.JOIN_ROOM, MSG.WORLD_READY, MSG.PONG, MSG.PING, MSG.SWITCH_ROOM, MSG.LEAVE_ROOM, MSG.CHAT].includes(type)) return;
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify({ t: type, ...data }));
   }
 
@@ -137,7 +193,7 @@ export class NetworkManager {
   }
 
   // 世界就绪后调用（Game.start 完成后）：落地缓存的远端玩家/方块/掉落物/怪物
-  onWorldStarted() {
+  onWorldStarted({ preserveProfilePosition = false } = {}) {
     this._ready = true;
     for (const info of this._pendingPlayers) this._addRemote(info);
     this._pendingPlayers = [];
@@ -146,6 +202,8 @@ export class NetworkManager {
     this._pendingSkins.clear();
     for (const b of this._pendingBlocks) this.applyRemoteBlock(b.x, b.y, b.z, b.id);
     this._pendingBlocks = [];
+    for (const c of this._pendingContainers) this._applyContainer(c);
+    this._pendingContainers = [];
     for (const d of this._pendingDrops) {
       if (d.type === 'spawn') this._spawnDrop(d.msg);
       else this._takeDrop(d.msg);
@@ -157,13 +215,13 @@ export class NetworkManager {
     if (this._pendingProfile) {
       const prof = this._pendingProfile;
       this._pendingProfile = null;
-      this.applyPlayerProfile(prof);
+      this.applyPlayerProfile(prof, { preservePosition: preserveProfilePosition });
     }
   }
 
   // Idea-3C：把服务器档案应用到本地（inventory 走 SaveSystem 同款 serialize 格式）。
   // 位置仅在同维度时应用（异维档案的坐标无意义）；死亡掉落等后续流程按 last-write-wins 覆盖。
-  applyPlayerProfile(prof) {
+  applyPlayerProfile(prof, { preservePosition = false } = {}) {
     const g = this.game;
     if (!g.running || !g.player || !g.inventory) return;
     try {
@@ -174,7 +232,7 @@ export class NetworkManager {
       if (typeof prof.saturation === 'number') p.saturation = Math.min(20, Math.max(0, prof.saturation));
       if (typeof prof.xp === 'number') p.xp = Math.max(0, prof.xp);
       if (typeof prof.xpLevel === 'number') p.xpLevel = Math.max(0, prof.xpLevel);
-      if (prof.position && g.world && prof.dim === g.world.dimension) {
+      if (!preservePosition && prof.position && g.world && prof.dim === g.world.dimension) {
         p.position.set(prof.position.x, prof.position.y, prof.position.z);
         p.velocity.set(0, 0, 0);
       }
@@ -202,10 +260,12 @@ export class NetworkManager {
   _addRemote(info) {
     if (info.id === this.selfId) return;
     // M4：异维度玩家不创建实体（记录维度表，等 player_dimension 回同维时再建）
-    if (info.dim) {
-      this._remoteDims.set(info.id, info.dim);
+    const knownDim = this._remoteDims.get(info.id);
+    if (info.dim || knownDim) {
+      const dim = knownDim || info.dim;
+      this._remoteDims.set(info.id, dim);
       const own = this.game.world ? this.game.world.dimension : 'overworld';
-      if (info.dim !== own) return;
+      if (dim !== own) return;
     }
     if (this.game.remotePlayers.has(info.id)) return;
     const rp = new RemotePlayer(this.game.renderer.scene, info.id, info.name, info.pos, this.game);
@@ -236,6 +296,16 @@ export class NetworkManager {
   _takeDrop(msg) {
     if (!this.game.mobManager) return;
     this.game.mobManager.removeDropById(msg.id);
+  }
+
+  _applyContainer(msg) {
+    if (!this.game.world || !Array.isArray(msg.items) || msg.items.length !== 27) return;
+    this.game.world.setContainer(msg.x, msg.y, msg.z, msg.items);
+    const cs = this.game.chestScreen;
+    if (cs && cs.visible && cs.pos && cs.pos.x === msg.x && cs.pos.y === msg.y && cs.pos.z === msg.z) {
+      cs._changed = false;
+      cs.refresh(msg.items);
+    }
   }
 
   _spawnMob(msg) {
@@ -273,28 +343,53 @@ export class NetworkManager {
             done: !!msg.finale.done,
           };
         }
-        if (this._ready && this.game && this.game.world && this.game.running) {
-          if (msg.restart) {
-            // 阶段5：世界内换房 / 重建世界 —— 重启本地世界（保持连接），期间缓存远端数据
-            // M4：换房/重建 = 新世界，维度状态复位（恒回主世界）
-            this.dim = 'overworld';
-            this._remoteDims = new Map();
-            this._ready = false;
-            this.isHost = (msg.hostId === this.selfId);
-            this._emit('restart_world', msg);
-          } else {
-            // 断线重连成功：世界已在运行，不重启，仅同步时间/模式并刷新远端玩家
-            this.isHost = (msg.hostId === this.selfId);
-            if (this.game.sky) this.game.sky.time = msg.time;
-            if (msg.mode && this.game.player) this.game.player.setMode(msg.mode);
-            this.onWorldStarted();
-            this._emit('system', `已重新连接服务器（房间 ${this.room}）`);
-            this.sendPlayerFull();
-          }
+        if (msg.restart && this.game && this.game.world && this.game.running) {
+          // 换房/重建：取消旧恢复态，按新世界消息重启本地世界。
+          this.isRecovering = false;
+          this._recoveryId = null;
+          this._recoveryDim = null;
+          this._recoveryPhase = 'idle';
+          this.dim = 'overworld';
+          this._remoteDims = new Map();
+          this._clearPendingWorldMessages();
+          this._ready = false;
+          this.isHost = (msg.hostId === this.selfId);
+          this._emit('restart_world', msg);
+        } else if (this.isRecovering) {
+          if (msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim) break;
+          this._ready = false;
+          this._recoveryPhase = 'syncing';
+          this.isHost = (msg.hostId === this.selfId);
+          if (this.game.sky) this.game.sky.time = msg.time;
+          if (msg.mode && this.game.player) this.game.player.setMode(msg.mode);
+        } else if (this._ready && this.game && this.game.world && this.game.running) {
+          // 兼容同一连接内的普通世界信息刷新；自动重连走带代次的恢复握手。
+          this.isHost = (msg.hostId === this.selfId);
+          if (this.game.sky) this.game.sky.time = msg.time;
+          if (msg.mode && this.game.player) this.game.player.setMode(msg.mode);
+          this.onWorldStarted();
+          this._emit('system', `已重新连接服务器（房间 ${this.room}）`);
+          this.sendPlayerFull();
         } else {
           this.isHost = (msg.hostId === this.selfId);
           this._emit('world_info', msg);   // 首次进入：由 main.js 用该 seed 启动世界
         }
+        break;
+      case MSG.WORLD_RESUMED:
+        if (!this.isRecovering || this._recoveryPhase !== 'awaiting_ack' ||
+            msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim ||
+            !this.game.world || this.game.world.dimension !== msg.dim) break;
+        this.dim = msg.dim;
+        this._recoveryId = null;
+        this._recoveryDim = null;
+        this._recoveryPhase = 'idle';
+        this.isRecovering = false;
+        this._reconnectAttempt = 0;
+        this.onWorldStarted({ preserveProfilePosition: true });
+        this._emit('system', `已重新连接服务器（房间 ${this.room}）`);
+        if (this.onStatusChange) this.onStatusChange('connected', `已重新连接服务器（房间 ${this.room}）`);
+        this.sendPlayerFull();
+        this.sendSkin();
         break;
       case MSG.PLAYER_JOIN:
         this._queueOrAdd(msg);
@@ -322,6 +417,7 @@ export class NetworkManager {
       case MSG.PLAYER_LEAVE:
         this._remoteDims.delete(msg.id);
         this._removeRemote(msg.id);
+        this._pendingPlayers = this._pendingPlayers.filter((p) => p.id !== msg.id);
         this._emit('system', { parts: [{ text: msg.name || '玩家', color: playerColorCss(msg.id) }, { text: ' 离开了游戏' }] });
         break;
       case MSG.BLOCK_CHANGE:
@@ -403,15 +499,11 @@ export class NetworkManager {
         }
         break;
       case MSG.CONTAINER_SET: {
-        // T5：他人修改箱子 → 覆盖本地容器缓存，开着的同箱界面刷新（M4：异维度忽略）
+        // T5：恢复快照在异步维度链落地前，先缓存后续容器改动，避免快照覆盖新值。
         if (!this.game.world || !Array.isArray(msg.items) || msg.items.length !== 27) break;
         if (msg.d && msg.d !== this.game.world.dimension) break;
-        this.game.world.setContainer(msg.x, msg.y, msg.z, msg.items);
-        const cs = this.game.chestScreen;
-        if (cs && cs.visible && cs.pos && cs.pos.x === msg.x && cs.pos.y === msg.y && cs.pos.z === msg.z) {
-          cs._changed = false; // 已收敛到远端状态，hide 不回发
-          cs.refresh(msg.items);
-        }
+        if (this._ready) this._applyContainer(msg);
+        else this._pendingContainers.push(msg);
         break;
       }
       case MSG.PLAYER_DIMENSION: {
@@ -432,6 +524,11 @@ export class NetworkManager {
       }
       case MSG.DIMENSION_WORLD:
         // M4：自己的换维回执（服务器权威账本）→ Game 用它重建本地世界
+        if (msg.recoveryId) {
+          if (!this.isRecovering || this._recoveryPhase !== 'syncing' ||
+              msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim) break;
+          this._recoveryPhase = 'applying';
+        }
         this.dim = msg.dim;
         this._emit('dimension_world', msg);
         break;
@@ -629,7 +726,7 @@ export class NetworkManager {
 
   // 每帧调用：节流上报本地玩家状态 + RTT 直测
   update(dt) {
-    if (!this.connected || !this.game.world) return;
+    if (!this.connected || !this.game.world || this.isRecovering) return;
     // Idea-3C：15s 周期档案上报（观战/死亡期间也发——死亡掉落流程随后覆盖，last-write-wins）
     this._profileTimer -= dt;
     if (this._profileTimer <= 0) {
@@ -661,6 +758,7 @@ export class NetworkManager {
   }
 
   sendPlayerFull() {
+    if (!this._ready || this.isRecovering) return;
     const p = this.game.player;
     const sel = this.game.inventory.getSelected();
     // 阶段10：上报完整快捷栏（9 槽快照），服务器记录并在 joinRoom 回放给新加入者
@@ -726,6 +824,10 @@ export class NetworkManager {
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）
+    this.isRecovering = false;
+    this._recoveryId = null;
+    this._recoveryDim = null;
+    this._recoveryPhase = 'idle';
     if (this.ws) { try { this.ws.close(); } catch {} this.ws = null; }
     this.connected = false;
   }

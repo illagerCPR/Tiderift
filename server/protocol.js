@@ -3,7 +3,7 @@
 
 // S11：协议版本号——客户端在 HELLO 里上报，服务端不匹配即 KICKED（提示刷新页面）。
 // 任何改变两端消息语义的改动都要递增此常量（纯新增消息类型不必）。
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const MSG = {
   // 握手与房间
@@ -20,6 +20,8 @@ export const MSG = {
   SWITCH_DIMENSION: 'switch_dimension',   // C2S {dim, pos?}：请求切换维度（pos=传送门落点，原样回传本人）
   PLAYER_DIMENSION: 'player_dimension',   // S2C {id, dim, name, pos}：玩家维度变更广播
   DIMENSION_WORLD: 'dimension_world',     // S2C {dim, blocks, containers, pos?}：目标维度账本下发（换维者本地世界收敛用）
+  WORLD_READY: 'world_ready',             // C2S {recoveryId, dim}：客户端已应用重连世界快照
+  WORLD_RESUMED: 'world_resumed',         // S2C {recoveryId, dim}：服务端确认恢复，重新开放联机状态
   ROOM_CREATED: 'room_created',
   WORLD_INFO: 'world_info',
   PLAYER_JOIN: 'player_join',

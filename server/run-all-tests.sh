@@ -54,6 +54,7 @@ PURE_NODE_SUITES=(
     room-persist-replay        # 落盘节流 + 账本回放打包（纯 node：Room 直接实例化，不依赖服务器进程）
     net-message-guard          # 客户端消息入口防御（纯 node：parseServerMessage 脏输入 + _handle 空值不抛）
     net-block-ledger           # B32-2：远端方块修改写本地账本 + 区块卸载重载后保留且不回环
+    net-reconnect              # B32-3：重连恢复握手顺序、档案位置优先级与世界门控
     ray-sphere                 # 共享球体射线纯函数（纯 node：命中/未命中/背向/相切/非单位方向口径 + 帧射线缓存与 UI 阻断清单唯一性）
     game-behavior              # Game.js node 级行为回归（轮 8 路标 B：boot/帧循环/射线链/生存挖掘/重开生命周期/地形确定性/无人守契约；假环境见 tests/lib/game-env.mjs）
     world-mod-index            # 修改方块账本分桶索引与热路径坐标键（纯 node：索引一致性 + 与旧全量扫描实现等价性对照）
@@ -100,7 +101,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-skinlog test-hardening-net test-hardening-edge test-hardening-store; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

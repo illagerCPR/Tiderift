@@ -824,6 +824,7 @@ export class Game {
   }
 
   update(dt) {
+    if (this.networkMode && this.net && this.net.isRecovering) return;
     // 检测玩家是否在水中（眼睛位置）
     this._updateWaterState(dt);
     // 检测玩家是否在上升气流柱内（天域批次 B：足部/身体任一格为 wind_current）

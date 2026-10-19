@@ -110,6 +110,7 @@ export class Room {
     this.config = config;
     this._worldDirty = false; // S8：世界账本脏标记（高频路径只标脏，由 flushWorld / 后台扫描落盘）
     this.players = new Map();   // id -> player
+    this._blockReplayTasks = new Map(); // playerId -> 当前方块回放任务
     // M4 维度分桶账本：dim -> Map("x,y,z" -> id)；同坐标跨维度互不干扰
     this.dimensionBlocks = new Map();
     this.dimensionContainers = new Map(); // dim -> Map("x,y,z" -> 27 槽数组)
@@ -275,6 +276,7 @@ export class Room {
     p.selected = 0; p.heldItem = null; p.alive = true;
     p.hotbar = null; // 阶段10：完整快捷栏快照（player_full 上报；joinRoom 回放给新加入者）
     p._diedDrops = false; // 阶段6：本次死亡周期的掉落是否已产出（防重复上报刷掉落）
+    p._recovery = null; // B32：重连恢复期间只接受匹配的 world_ready
     this.players.set(p.id, p);
     return true;
   }
@@ -297,6 +299,23 @@ export class Room {
     if (p && p.ws && p.ws.readyState === 1) p.ws.send(JSON.stringify({ t: type, ...data }));
   }
 
+  _cancelBlockReplay(player) {
+    if (!player) return;
+    const task = this._blockReplayTasks.get(player.id);
+    if (!task || task.player !== player) return;
+    task.cancelled = true;
+    if (task.timer) clearTimeout(task.timer);
+    this._blockReplayTasks.delete(player.id);
+  }
+
+  _cancelAllBlockReplays() {
+    for (const task of this._blockReplayTasks.values()) {
+      task.cancelled = true;
+      if (task.timer) clearTimeout(task.timer);
+    }
+    this._blockReplayTasks.clear();
+  }
+
   broadcast(type, data, exceptId = null) {
     for (const p of this.players.values()) {
       if (p.id === exceptId) continue;
@@ -315,6 +334,8 @@ export class Room {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
+    this._cancelBlockReplay(p);
+    p._recovery = null;
     this.players.delete(id);
     this.playerSkins.delete(id); // Build 21 M2：皮肤为内存态（重连后客户端重发）
     this.broadcast(MSG.PLAYER_LEAVE, { id, name: p.name });
@@ -388,37 +409,58 @@ export class Room {
 
   // opts.restart=true 表示世界内换房/重建：客户端收到 WORLD_INFO 后重启本地世界（保持连接）
   joinRoom(player, msg, opts = {}) {
+    let recovery = null;
+    if (msg && msg.recoveryId !== undefined) {
+      const recoveryId = typeof msg.recoveryId === 'string' ? msg.recoveryId : '';
+      const dim = typeof msg.resumeDim === 'string' ? msg.resumeDim : '';
+      if (!/^[a-z0-9-]{1,64}$/i.test(recoveryId) || !DIMENSIONS[dim] || !DIMENSIONS[dim].implemented) {
+        this.sendTo(player, MSG.KICKED, { reason: '重连恢复信息无效，请重新连接' });
+        setTimeout(() => { try { player.ws.close(); } catch {} }, 50);
+        return false;
+      }
+      recovery = { recoveryId, dim };
+      player.dim = dim;
+      player._recovery = { ...recovery, ready: false };
+      const pos = msg.resumePos;
+      if (pos && typeof pos === 'object' &&
+          ['x', 'y', 'z', 'yaw', 'pitch'].every((key) => typeof pos[key] === 'number' && Number.isFinite(pos[key])) &&
+          Math.abs(pos.x) <= 30000000 && Math.abs(pos.z) <= 30000000 && pos.y >= -300 && pos.y <= 1000) {
+        player.pos = { x: pos.x, y: pos.y, z: pos.z, yaw: pos.yaw, pitch: pos.pitch };
+      }
+    }
     // 房间世界不存在（尚未创建/无存档）时，首个加入者自动成为 host 并随机生成世界
     if (this.seed === null) {
-      this.createRoom(player, { seed: Math.floor(Math.random() * 2147483647), mode: 'survival', restart: !!opts.restart });
-      return;
+      if (recovery) {
+        this.seed = Math.floor(Math.random() * 2147483647);
+        if (this.biomeScale === null) this.biomeScale = safeBiomeScale(msg.biomeScale);
+      } else {
+        this.createRoom(player, { seed: Math.floor(Math.random() * 2147483647), mode: 'survival', restart: !!opts.restart });
+        return true;
+      }
     }
     // 无 host 时（如房间从磁盘恢复且暂无玩家在线）首个加入者接管 host
     if (this.hostId === null || !this.players.has(this.hostId)) this.hostId = player.id;
-    this.sendTo(player, MSG.WORLD_INFO, { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: !!opts.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
-    // 回放现存玩家：加入者立即可见房间内已有玩家（阶段10：附带选中槽位/手持物/完整快捷栏）
-    for (const p of this.players.values()) {
-      if (p.id === player.id) continue;
-      this.sendTo(player, MSG.PLAYER_JOIN, this.joinInfo(p));
+    const info = { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: !!opts.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() };
+    if (recovery) { info.recoveryId = recovery.recoveryId; info.dim = recovery.dim; }
+    this.sendTo(player, MSG.WORLD_INFO, info);
+    if (recovery) {
+      this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
+    } else {
+      // 回放现存玩家：加入者立即可见房间内已有玩家（阶段10：附带手持物/快捷栏）
+      for (const p of this.players.values()) {
+        if (p.id === player.id) continue;
+        this.sendTo(player, MSG.PLAYER_JOIN, this.joinInfo(p));
+      }
+      // 回放方块账本：按玩家当前维度读取，背压时不丢项。
+      this.replayBlocks(player);
+      // 回放容器账本（T5）：未动过的箱子由确定性生成对齐。
+      for (const [key, items] of this.dimBucket(this.dimensionContainers, player.dim)) {
+        const [x, y, z] = key.split(',').map(Number);
+        this.sendTo(player, MSG.CONTAINER_SET, { x, y, z, items, by: 0 });
+      }
+      this.replayDrops(player, player.dim);
     }
-    // 回放方块账本：新玩家加入即见世界现状（M4：只回放其所在维度的桶）
-    // S9：打包成 BLOCK_CHANGE_BATCH（512 格/条）+ 发送缓冲背压
-    this.replayBlocks(player);
-    // 回放容器账本（T5）：玩家动过的箱子；未动过的箱子两端由确定性生成对齐，无需回放
-    for (const [key, items] of this.dimBucket(this.dimensionContainers, player.dim)) {
-      const [x, y, z] = key.split(',').map(Number);
-      this.sendTo(player, MSG.CONTAINER_SET, { x, y, z, items, by: 0 });
-    }
-    // 回放当前掉落物：新玩家加入即见现存掉落物（M4：只回放同维度的；阶段10：携带归属锁剩余毫秒）
-    for (const [id, d] of this.drops) {
-      if ((d.dim || DEFAULT_DIMENSION) !== player.dim) continue;
-      const remainLock = d.ownerUntil > Date.now() && d.owner ? Math.ceil(d.ownerUntil - Date.now()) : 0;
-      const back = { id, x: d.x, y: d.y, z: d.z, name: d.name, count: d.count, d: player.dim };
-      if (d.owner && remainLock > 0) { back.owner = d.owner; back.ownerLock = remainLock; }
-      if (d.vx != null) { back.vx = d.vx; back.vy = d.vy; back.vz = d.vz; } // Build 10：抛掷初速回放
-      this.sendTo(player, MSG.DROP_SPAWN, back);
-    }
-    this.broadcast(MSG.PLAYER_JOIN, { id: player.id, name: player.name, mode: player.mode, pos: player.pos }, player.id);
+    this.broadcast(MSG.PLAYER_JOIN, this.joinInfo(player), player.id);
     // Idea-3C：进房下发该昵称已有档案（仅发本人；客户端在世界就绪后应用）
     const prof = this.playerProfiles[player.name];
     if (prof) this.sendTo(player, MSG.PLAYER_PROFILE, { profile: prof });
@@ -428,12 +470,16 @@ export class Room {
       this.sendTo(player, MSG.SKIN_SET, { id, data: sk.data, model: sk.model });
     }
     console.log(`[+] ${player.name} 加入房间「${this.name}」seed=${this.seed} (${this.players.size}人)`);
+    return true;
   }
 
   // S9：方块账本回放——先快照格位列表，再按 512 格分块发 BLOCK_CHANGE_BATCH（{list:[[x,y,z,id]], by:0, d}）
   // 未超背压阈值时逐块同步推进（首块与既有「加入即见世界」同 tick）；超阈值则 setTimeout 让出事件循环等排空，不丢项
   replayBlocks(player) {
-    const bucket = this.dimBucket(this.dimensionBlocks, player.dim);
+    this._cancelBlockReplay(player);
+    const ws = player.ws;
+    const dim = player.dim;
+    const bucket = this.dimBucket(this.dimensionBlocks, dim);
     const pending = [];
     for (const key of bucket.keys()) {
       const [x, y, z] = key.split(',').map(Number);
@@ -441,11 +487,19 @@ export class Room {
     }
     if (!pending.length) return; // 账本为空不发任何消息（保持既有语义）
     let i = 0;
+    const task = { player, ws, dim, timer: null, cancelled: false };
+    this._blockReplayTasks.set(player.id, task);
+    const finish = () => {
+      if (this._blockReplayTasks.get(player.id) === task) this._blockReplayTasks.delete(player.id);
+    };
+    const active = () => !task.cancelled && this._blockReplayTasks.get(player.id) === task &&
+      this.players.get(player.id) === player && player.ws === ws && player.dim === dim && ws?.readyState === 1;
     const step = () => {
+      task.timer = null;
+      if (!active()) { task.cancelled = true; finish(); return; }
       while (i < pending.length) {
-        const ws = player.ws;
         // 背压：发送缓冲积压超阈值先让出 50ms，再从当前块继续
-        if (ws && ws.bufferedAmount > REPLAY_BACKPRESSURE_BYTES) { setTimeout(step, 50); return; }
+        if (ws.bufferedAmount > REPLAY_BACKPRESSURE_BYTES) { task.timer = setTimeout(step, 50); return; }
         const list = [];
         while (i < pending.length && list.length < REPLAY_CHUNK) {
           const [key, x, y, z] = pending[i++];
@@ -453,10 +507,51 @@ export class Room {
           const live = bucket.get(key);
           list.push([x, y, z, live === undefined ? 0 : live]);
         }
-        this.sendTo(player, MSG.BLOCK_CHANGE_BATCH, { list, by: 0, d: player.dim });
+        this.sendTo(player, MSG.BLOCK_CHANGE_BATCH, { list, by: 0, d: dim });
       }
+      finish();
     };
     step();
+  }
+
+  replayDrops(player, dim) {
+    for (const [id, d] of this.drops) {
+      if ((d.dim || DEFAULT_DIMENSION) !== dim) continue;
+      const remainLock = d.ownerUntil > Date.now() && d.owner ? Math.ceil(d.ownerUntil - Date.now()) : 0;
+      const back = { id, x: d.x, y: d.y, z: d.z, name: d.name, count: d.count, d: dim };
+      if (d.owner && remainLock > 0) { back.owner = d.owner; back.ownerLock = remainLock; }
+      if (d.vx != null) { back.vx = d.vx; back.vy = d.vy; back.vz = d.vz; }
+      this.sendTo(player, MSG.DROP_SPAWN, back);
+    }
+  }
+
+  sendDimensionSnapshot(player, dim, pos = null, recoveryId = null) {
+    const blocks = [];
+    for (const [key, id] of this.dimBucket(this.dimensionBlocks, dim)) {
+      const [x, y, z] = key.split(',').map(Number);
+      blocks.push({ x, y, z, id });
+    }
+    const containers = [];
+    for (const [key, items] of this.dimBucket(this.dimensionContainers, dim)) {
+      const [x, y, z] = key.split(',').map(Number);
+      containers.push({ x, y, z, items });
+    }
+    const snapshot = { dim, blocks, containers, pos };
+    if (recoveryId) snapshot.recoveryId = recoveryId;
+    this.sendTo(player, MSG.DIMENSION_WORLD, snapshot);
+    this.replayDrops(player, dim);
+    for (const p of this.players.values()) {
+      if (p.id === player.id || p.dim !== dim) continue;
+      this.sendTo(player, MSG.PLAYER_JOIN, this.joinInfo(p));
+    }
+  }
+
+  onWorldReady(player, msg) {
+    const recovery = player && player._recovery;
+    if (!recovery || recovery.ready || this.players.get(player.id) !== player ||
+        player.ws?.readyState !== 1 || msg.recoveryId !== recovery.recoveryId || msg.dim !== recovery.dim || player.dim !== recovery.dim) return;
+    player._recovery = null;
+    this.sendTo(player, MSG.WORLD_RESUMED, { recoveryId: recovery.recoveryId, dim: recovery.dim });
   }
 
   // Idea-3C：档案上报（last-write-wins；只存内存+标脏，10s 扫描节流落盘）
@@ -508,6 +603,11 @@ export class Room {
   // 重建当前房间世界（阶段5，仅 host 可触发）：新种子 + 清空方块/掉落/时间，
   // 广播 WORLD_INFO(restart) 让所有端重启本地世界，并重放 PLAYER_JOIN 让各端重建远端玩家
   resetWorld() {
+    this._cancelAllBlockReplays();
+    for (const p of this.players.values()) {
+      p._recovery = null;
+      p.dim = DEFAULT_DIMENSION;
+    }
     this.seed = Math.floor(Math.random() * 2147483647);
     this.dimensionBlocks.clear();
     this.dimensionContainers.clear();
@@ -525,6 +625,7 @@ export class Room {
 
   // 玩家消息路由
   handle(player, msg) {
+    if (player._recovery && msg.t !== MSG.WORLD_READY && msg.t !== MSG.PING) return;
     switch (msg.t) {
       case MSG.BLOCK_SET: this.onBlockSet(player, msg); break;
       case MSG.BLOCK_SET_BATCH: this.onBlockSetBatch(player, msg); break;
@@ -548,6 +649,7 @@ export class Room {
       case MSG.RESPAWN: this.onRespawn(player, msg); break;
       case MSG.GAMEMODE: this.onGamemode(player, msg); break;
       case MSG.SWITCH_DIMENSION: this.onSwitchDimension(player, msg); break;
+      case MSG.WORLD_READY: this.onWorldReady(player, msg); break;
       case MSG.SET_TIME: this.onSetTime(player, msg); break;
       case MSG.CHAT: this.onChat(player, msg); break;
       case MSG.PING:
@@ -919,20 +1021,10 @@ export class Room {
     }
     const dim = raw;
     if (player.dim === dim) return;
+    this._cancelBlockReplay(player);
     player.dim = dim;
     // 广播给所有人（含切换者）：异维端移除其实体、同维端重建
     this.broadcast(MSG.PLAYER_DIMENSION, { id: player.id, dim, name: player.name, pos: player.pos, selected: player.selected, held: player.heldItem });
-    // 目标维度账本（blocks/containers）下发，切换者据此收敛本地世界
-    const blocks = [];
-    for (const [key, id] of this.dimBucket(this.dimensionBlocks, dim)) {
-      const [x, y, z] = key.split(',').map(Number);
-      blocks.push({ x, y, z, id });
-    }
-    const containers = [];
-    for (const [key, items] of this.dimBucket(this.dimensionContainers, dim)) {
-      const [x, y, z] = key.split(',').map(Number);
-      containers.push({ x, y, z, items });
-    }
     // 传送门落点（迭代 M2/M3）：原样回传给换维者本人。带 x/z（下界/天域换算落点）或仅 portal
     // 标记（末地出生点链）均可；服务器不校验语义，非法类型清洗
     let pos = null;
@@ -943,20 +1035,7 @@ export class Room {
         portal: typeof msg.pos.portal === 'string' ? msg.pos.portal.slice(0, 16) : null,
       };
     }
-    this.sendTo(player, MSG.DIMENSION_WORLD, { dim, blocks, containers, pos });
-    // 回放目标维度的现存掉落物（M4：与 joinRoom 同口径，含归属锁剩余毫秒）
-    for (const [id, d] of this.drops) {
-      if ((d.dim || DEFAULT_DIMENSION) !== dim) continue;
-      const remainLock = d.ownerUntil > Date.now() && d.owner ? Math.ceil(d.ownerUntil - Date.now()) : 0;
-      const back = { id, x: d.x, y: d.y, z: d.z, name: d.name, count: d.count, d: dim };
-      if (d.owner && remainLock > 0) { back.owner = d.owner; back.ownerLock = remainLock; }
-      this.sendTo(player, MSG.DROP_SPAWN, back);
-    }
-    // 回放同维度玩家（切换者重建同维远端玩家；joinInfo 携带 dim）
-    for (const p of this.players.values()) {
-      if (p.id === player.id || p.dim !== dim) continue;
-      this.sendTo(player, MSG.PLAYER_JOIN, this.joinInfo(p));
-    }
+    this.sendDimensionSnapshot(player, dim, pos);
     this.save();
     console.log(`[维度] ${player.name} → ${dim}（房间「${this.name}」）`);
   }

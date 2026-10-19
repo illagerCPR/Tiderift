@@ -162,4 +162,60 @@ const bpBatches = slow.ws.sent.filter((m) => m.t === 'block_change_batch');
 assert('缓冲排空后全部块送达（3 条 / 1200 格）',
   bpBatches.length === 3 && bpBatches.reduce((n, b) => n + b.list.length, 0) === 1200,
   `${bpBatches.length}条/${bpBatches.reduce((n, b) => n + b.list.length, 0)}格`);
+
+// ── B32-4：等待背压时状态变化必须取消旧维度/旧房间回放 ──────────────────
+const staleWorld = new Room('t-replay-stale');
+staleWorld.addPlayer(fakePlayer(1, 'Host'));
+staleWorld.restore({ seed: 17, dimensionBlocks: { overworld: LEDGER, nether: [['9,64,9', 4]] } });
+const moving = fakePlayer(2, 'Moving');
+staleWorld.addPlayer(moving);
+moving.ws.bufferedAmount = 2 * 1024 * 1024;
+staleWorld.joinRoom(moving, {}, {});
+staleWorld.onSwitchDimension(moving, { dim: 'nether' });
+moving.ws.bufferedAmount = 0;
+await sleep(120);
+const staleDimBatches = moving.ws.sent.filter((m) => m.t === 'block_change_batch' && m.by === 0);
+assert('背压等待期间换维会取消旧回放，不把主世界批次标成下界', staleDimBatches.length === 0,
+  `旧回放批次数=${staleDimBatches.length}`);
+
+const movedRoom = new Room('t-replay-moved-room');
+const movingRoom = fakePlayer(4, 'MovingRoom');
+staleWorld.addPlayer(movingRoom);
+movingRoom.ws.bufferedAmount = 2 * 1024 * 1024;
+staleWorld.joinRoom(movingRoom, {}, {});
+staleWorld.removePlayer(movingRoom.id);
+movedRoom.addPlayer(movingRoom);
+movedRoom.joinRoom(movingRoom, {}, {});
+movingRoom.ws.bufferedAmount = 0;
+await sleep(120);
+assert('离开旧房间后该房间的等待回放不再发包',
+  !movingRoom.ws.sent.some((m) => m.t === 'block_change_batch' && m.by === 0));
+
+const replayAgain = new Room('t-replay-again');
+replayAgain.addPlayer(fakePlayer(1, 'Host'));
+replayAgain.restore({ seed: 18, dimensionBlocks: { overworld: LEDGER } });
+const replayTwice = fakePlayer(3, 'ReplayTwice');
+replayAgain.addPlayer(replayTwice);
+replayTwice.ws.bufferedAmount = 2 * 1024 * 1024;
+replayAgain.joinRoom(replayTwice, {}, {});
+replayAgain.replayBlocks(replayTwice);
+replayTwice.ws.bufferedAmount = 0;
+await sleep(120);
+const twiceBatches = replayTwice.ws.sent.filter((m) => m.t === 'block_change_batch' && m.by === 0);
+assert('同一玩家启动新回放会替代旧任务，账本不重复发送',
+  twiceBatches.length === 3 && twiceBatches.reduce((n, b) => n + b.list.length, 0) === 1200,
+  `${twiceBatches.length}条/${twiceBatches.reduce((n, b) => n + b.list.length, 0)}格`);
+
+const resetReplay = new Room('t-replay-reset');
+resetReplay.addPlayer(fakePlayer(1, 'Host'));
+resetReplay.restore({ seed: 19, dimensionBlocks: { overworld: LEDGER } });
+const resetJoiner = fakePlayer(5, 'ResetJoiner');
+resetReplay.addPlayer(resetJoiner);
+resetJoiner.ws.bufferedAmount = 2 * 1024 * 1024;
+resetReplay.joinRoom(resetJoiner, {}, {});
+resetReplay.resetWorld();
+resetJoiner.ws.bufferedAmount = 0;
+await sleep(120);
+assert('房间世界重建取消全部旧账本回放',
+  !resetJoiner.ws.sent.some((m) => m.t === 'block_change_batch' && m.by === 0));
 finish('room-persist-replay');
