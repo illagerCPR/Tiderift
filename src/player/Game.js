@@ -14,6 +14,7 @@ import { Summoning } from './Summoning.js';
 import { GlideWind } from './GlideWind.js';
 import { Endgame } from './Endgame.js';
 import { Projectiles } from './Projectiles.js';
+import { Beacon } from './Beacon.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
@@ -24,7 +25,7 @@ import { Hud } from '../ui/Hud.js';
 import { InfoBar } from '../ui/InfoBar.js';
 import { InventoryScreen } from '../ui/InventoryScreen.js';
 import { ChestScreen } from '../ui/ChestScreen.js';
-import { BeaconScreen, BEACON_EFFECTS } from '../ui/BeaconScreen.js';
+import { BeaconScreen } from '../ui/BeaconScreen.js';
 import { SteleScreen } from '../ui/SteleScreen.js';
 import { t } from '../i18n/index.js';
 import { tName } from '../i18n/name.js';
@@ -68,12 +69,6 @@ import { playerColorCss } from '../net/playerColor.js';
 
 // 工具挖掘速度倍率（按物品 tier；金质单独 9 倍——原版金工具挖得快但等级低）
 const TOOL_TIER_SPEED = { 1: 2, 2: 4, 3: 6, 4: 8 };
-
-// 信标效果名（英文）→ 当前语言显示名（语言包键 = 效果中文 label，见 BeaconScreen.BEACON_EFFECTS）
-function beaconEffectLabel(name) {
-  const e = BEACON_EFFECTS.find(x => x[0] === name);
-  return t(e ? e[1] : name);
-}
 
 // 挖矿经验（原版口径：煤/红石/青金/钻/绿宝给，铁金不给；门控掉落成功才结算）
 const ORE_XP = {
@@ -131,6 +126,7 @@ export class Game {
     this.glideWind = new GlideWind(this);
     this.endgame = new Endgame(this);
     this.projectiles = new Projectiles(this);
+    this.beacon = new Beacon(this);
     this.currentSlot = 1;
     this.onExit = null;
     this.mobManager = null;
@@ -2397,105 +2393,18 @@ export class Game {
     return this.summoning.commitWitherSummon(hit);
   }
 
-  // ── 信标（Idea-2D-③）────────────────────────────────────────
+  // ── 信标（Idea-2D-③）：门面委托 Beacon（金字塔等级 / 效果脉冲 / 光柱）─────
   // 金字塔基座（铁/金/钻石/绿宝石块 1~4 层）激活；右键 BeaconScreen 选效果后
   // 每 4s 给范围内玩家刷新效果（12s 时长，金字塔等级决定强度与范围）。
-  // 效果选择为内存级状态（随会话）；方块本身走账本；光柱为纯视觉 mesh。
-
-  // 金字塔等级：从信标正下方逐层向上检测（层 1=3×3 … 层 4=9×9），断层即停
-  // Build 5 修复：与原版一致，首层 3×3 起（原误为 5×5 起，整塔多耗 40 块）
-  _getBeaconPower(x, y, z) {
-    if (!this.world) return 0;
-    const VALID = new Set(['iron_block', 'gold_block', 'diamond_block', 'emerald_block'].map(n => BlockRegistry.getId(n)));
-    let power = 0;
-    for (let l = 1; l <= 4; l++) {
-      const half = l; // 层 1 → 3×3，层 2 → 5×5，层 3 → 7×7，层 4 → 9×9
-      let ok = true;
-      for (let dx = -half; dx <= half && ok; dx++) {
-        for (let dz = -half; dz <= half && ok; dz++) {
-          if (!VALID.has(this.world.getBlock(x + dx, y - l, z + dz))) ok = false;
-        }
-      }
-      if (!ok) break;
-      power = l;
-    }
-    return power;
-  }
-
-  // BeaconScreen 确认回调：记录激活状态 + 建光柱 + 立即脉冲一次
-  setBeaconEffect(x, y, z, name, level) {
-    const key = `${x},${y},${z}`;
-    this.beacons.set(key, { x, y, z, effect: name, level, lastPower: level });
-    this._ensureBeaconBeam(key, x, y, z);
-    this._pulseBeacon(this.beacons.get(key), level);
-    if (this.chatBox) this.chatBox.add(t('信标已激活：{n} ×{l}', { n: beaconEffectLabel(name), l: Math.min(2, level) }), '#ffd');
-  }
-
-  _pulseBeacon(b, power) {
-    const range = 10 * power;
-    const p = this.player;
-    if (!p || p.dead) return;
-    const dx = p.position.x - (b.x + BLOCK_CENTER), dy = p.position.y - b.y, dz = p.position.z - (b.z + BLOCK_CENTER);
-    if (dx * dx + dy * dy + dz * dz <= range * range) {
-      p.applyEffect(b.effect, Math.min(2, power), 12); // 12s 时长 > 4s 脉冲周期，效果无缝续期
-    }
-  }
-
-  _updateBeaconPulse(dt) {
-    if (!this.beacons || !this.beacons.size) return;
-    this._beaconPulseTimer = (this._beaconPulseTimer || 0) - dt;
-    if (this._beaconPulseTimer > 0) return;
-    this._beaconPulseTimer = 4;
-    for (const [key, b] of this.beacons) {
-      const power = this._getBeaconPower(b.x, b.y, b.z);
-      if (power <= 0) {
-        // 基座被拆：信标失效（清效果选择 + 光柱）
-        this.beacons.delete(key);
-        this._removeBeaconBeam(key);
-        continue;
-      }
-      if (power !== b.lastPower) {
-        b.lastPower = power;
-        b.level = Math.min(2, power); // 基座变化实时调整效果等级
-        this._ensureBeaconBeam(key, b.x, b.y, b.z);
-      }
-      this._pulseBeacon(b, power);
-    }
-  }
-
-  _ensureBeaconBeam(key, x, y, z) {
-    if (!this.renderer || !this.renderer.scene) return;
-    this._removeBeaconBeam(key);
-    const h = Math.max(16, 250 - y);
-    const geo = new THREE.BoxGeometry(0.4, h, 0.4);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xf2f0dc, transparent: true, opacity: 0.22, depthWrite: false });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x + BLOCK_CENTER, y + h / 2, z + BLOCK_CENTER);
-    this.renderer.scene.add(mesh);
-    this._beaconBeams.set(key, mesh);
-  }
-
-  _removeBeaconBeam(key) {
-    const mesh = this._beaconBeams && this._beaconBeams.get(key);
-    if (!mesh) return;
-    this.renderer.scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
-    this._beaconBeams.delete(key);
-  }
-
-  _breakBeacon(x, y, z) {
-    const key = `${x},${y},${z}`;
-    if (this.beacons) this.beacons.delete(key);
-    this._removeBeaconBeam(key);
-  }
-
-  _clearBeaconState() {
-    if (!this._beaconBeams) this._beaconBeams = new Map();
-    for (const key of [...this._beaconBeams.keys()]) this._removeBeaconBeam(key);
-    this.beacons = new Map();
-    this._beaconPulseTimer = 0;
-  }
+  // 激活表 / 光柱表 / 脉冲计时随控制器持有；换世界仍由 _disposeWorld 清光柱。
+  _getBeaconPower(x, y, z) { return this.beacon.getBeaconPower(x, y, z); }
+  setBeaconEffect(x, y, z, name, level) { return this.beacon.setBeaconEffect(x, y, z, name, level); }
+  _pulseBeacon(b, power) { return this.beacon.pulseBeacon(b, power); }
+  _updateBeaconPulse(dt) { return this.beacon.updateBeaconPulse(dt); }
+  _ensureBeaconBeam(key, x, y, z) { return this.beacon.ensureBeam(key, x, y, z); }
+  _removeBeaconBeam(key) { return this.beacon.removeBeam(key); }
+  _breakBeacon(x, y, z) { return this.beacon.breakBeacon(x, y, z); }
+  _clearBeaconState() { return this.beacon.clearBeaconState(); }
 
   // 打火石点火传送门：点击框体 → 内部候选格 = 点击面外邻格 → 框校验 → 填充门方块。
   // 返回 true 表示本次右键已被处理（无论点火成败——打火石无"生火"语义可回退）。

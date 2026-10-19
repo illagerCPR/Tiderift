@@ -943,6 +943,183 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
   }
 }
 
+// ── L. 信标域行为：金字塔等级 / 效果选择与 4s 脉冲 / 光柱资源 ──────────────
+// 轮 8 步 4 的迁移面（Beacon）。断言全部经 Game 上的同名真实入口驱动
+// （_getBeaconPower / setBeaconEffect / _updateBeaconPulse / _ensureBeaconBeam /
+// _removeBeaconBeam / _breakBeacon / _clearBeaconState），并单独钉住 BeaconScreen 的两处外部调用面
+// （:60 show() 读 _getBeaconPower、:49 确认回调按 min(2,max(1,power)) 调 setBeaconEffect）。
+//
+// 两处刻意的设计：
+//   1) 用独立 boot：本段往世界写方块、往 scene 挂光柱，借 A–H 段的共享 g 会污染其 children/区块数比值。
+//   2) 信标塔建在 y=200 的纯空气层（避开地形与结构），玩家位置直接 set 到塔旁做距离判定——
+//      本段不驱动帧循环，物理不会把玩家拉走。
+{
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const IRON = Reg.getId('iron_block');
+  const STONE = Reg.getId('stone');
+  const lj = await boot({ mode: 'creative', seed: SEED });
+  track(lj.g);
+  const lg = lj.g;
+  const lScene = lg.renderer.scene;
+  const bx = Math.floor(lg.player.position.x), bz = Math.floor(lg.player.position.z), by = 200;
+  const isBeam = (o) => !!(o && o.isMesh && o.material && o.material.color && o.material.color.getHex() === 0xf2f0dc &&
+    o.material.opacity === 0.22 && o.geometry && o.geometry.parameters && o.geometry.parameters.width === 0.4);
+  const beams = () => lScene.children.filter(isBeam);
+  const inScene = (m) => lScene.children.includes(m);
+  const layer = (l, id) => { for (let dx = -l; dx <= l; dx++) for (let dz = -l; dz <= l; dz++) lg.world.setBlock(bx + dx, by - l, bz + dz, id); };
+
+  // ── L1 金字塔真值表：空基座 0 → 逐层 3×3/5×5/7×7/9×9 = 1/2/3/4；断层即停；非白名单方块不算 ──
+  const p0 = lg._getBeaconPower(bx, by, bz);
+  layer(1, IRON); const p1 = lg._getBeaconPower(bx, by, bz);
+  layer(2, IRON); const p2 = lg._getBeaconPower(bx, by, bz);
+  layer(3, IRON); const p3 = lg._getBeaconPower(bx, by, bz);
+  layer(4, IRON); const p4 = lg._getBeaconPower(bx, by, bz);
+  lg.world.setBlock(bx + 1, by - 1, bz + 1, STONE); const cut1 = lg._getBeaconPower(bx, by, bz);
+  lg.world.setBlock(bx + 1, by - 1, bz + 1, IRON);
+  lg.world.setBlock(bx + 2, by - 2, bz + 2, STONE); const cut2 = lg._getBeaconPower(bx, by, bz);
+  lg.world.setBlock(bx + 2, by - 2, bz + 2, IRON);
+  const restored = lg._getBeaconPower(bx, by, bz);
+  assert('L1 _getBeaconPower 真值表：空基座 0 → 3×3/5×5/7×7/9×9 = 1/2/3/4；首层缺角（换成不在白名单的石头）=0、二层缺角=1、补回=4',
+    p0 === 0 && p1 === 1 && p2 === 2 && p3 === 3 && p4 === 4 && cut1 === 0 && cut2 === 1 && restored === 4,
+    `p=${[p0, p1, p2, p3, p4].join('/')} 缺角1=${cut1} 缺角2=${cut2} 复原=${restored}`);
+  layer(2, 0); layer(3, 0); layer(4, 0); // 收到 3×3（power=1），供后续激活/脉冲段使用
+
+  // ── L2 主菜单期（world 尚未创建）：守卫返回 0 且不抛（构造期漏实例化控制器会在这里炸）──
+  const lMenu = await createGame();
+  let menuPower = -1;
+  try { menuPower = lMenu.g._getBeaconPower(bx, by, bz); } catch (err) { menuPower = 'throw:' + (err && err.message); }
+  shutdown(lMenu.g);
+  assert('L2 主菜单期 game.world 为 null 时 _getBeaconPower 返回 0', menuPower === 0, 'menuPower=' + String(menuPower));
+
+  // ── L3 BeaconScreen 外部调用面：show() 用 _getBeaconPower 填 power 并吞掉输入，hide() 恢复 ──
+  const chat = [];
+  const savedChat = lg.chatBox;
+  lg.chatBox = { add: (text, color) => chat.push([text, color]) };
+  const pulses = [];
+  const origApply = lg.player.applyEffect.bind(lg.player);
+  lg.player.applyEffect = (n, l, d) => { pulses.push([n, l, d]); return origApply(n, l, d); };
+  const snap = () => { const e = lg.player.effects.get('speed'); return { pulses: pulses.length, time: e ? e.time : 0, level: e ? e.level : 0 }; };
+  lg.player.effects.clear();
+  lg.player.position.set(bx + 0.5, by, bz + 0.5); // 站到塔旁
+  layer(1, 0);                                    // 拆掉唯一一层 → 无基座
+  lg.beaconScreen.show(bx, by, bz);
+  const noBase = { power: lg.beaconScreen.power, visible: lg.beaconScreen.visible, controls: lg.controls.enabled };
+  lg.beaconScreen.hide();
+  const restoredControls = lg.controls.enabled;
+  layer(1, IRON);                                 // 3×3 → power=1
+  lg.beaconScreen.show(bx, by, bz);
+  const withBase = { power: lg.beaconScreen.power, controls: lg.controls.enabled };
+  assert('L3 BeaconScreen 外部面：show() 用 _getBeaconPower 填 power（无基座 0 / 3×3 为 1）并置 controls.enabled=false，hide() 恢复；setBeaconEffect 仍可从外部直接调',
+    noBase.power === 0 && noBase.visible === true && noBase.controls === false &&
+    restoredControls === true && withBase.power === 1 && withBase.controls === false &&
+    typeof lg.setBeaconEffect === 'function',
+    '无基座=' + JSON.stringify(noBase) + ' 有基座=' + JSON.stringify(withBase) + ' 恢复=' + restoredControls);
+
+  // ── L4 setBeaconEffect（按 BeaconScreen:49 的调用形态驱动）：写 player.effects + 建光柱 + 立即脉冲 + 播报 ──
+  const sceneBefore = lScene.children.length;
+  lg.setBeaconEffect(bx, by, bz, 'speed', Math.min(2, Math.max(1, lg.beaconScreen.power)));
+  lg.beaconScreen.hide();
+  lg.chatBox = savedChat;
+  const eff0 = lg.player.effects.get('speed');
+  const beam0 = beams();
+  const m0 = beam0[0];
+  assert('L4 setBeaconEffect：写 player.effects {level=1,time=12} 并立即脉冲一次；建光柱 1 条（高 max(16,250-y)=50、位于 y+h/2、opacity 0.22/transparent/depthWrite=false）；chatBox 存在时播报 1 条含「速度 ×1」的 #ffd 提示',
+    !!eff0 && eff0.level === 1 && eff0.time === 12 &&
+    pulses.length === 1 && pulses[0][0] === 'speed' && pulses[0][1] === 1 && pulses[0][2] === 12 &&
+    beam0.length === 1 && inScene(m0) && lScene.children.length === sceneBefore + 1 &&
+    m0.geometry.parameters.height === 50 && m0.position.x === bx + 0.5 && m0.position.y === by + 25 && m0.position.z === bz + 0.5 &&
+    m0.material.transparent === true && m0.material.opacity === 0.22 && m0.material.depthWrite === false &&
+    chat.length === 1 && chat[0][1] === '#ffd' && chat[0][0].includes('速度') && chat[0][0].includes('×1'),
+    'eff=' + JSON.stringify(eff0) + ' pulses=' + JSON.stringify(pulses) + ' beams=' + beam0.length + ' chat=' + JSON.stringify(chat));
+
+  // ── L5 4s 脉冲节奏 + 12s 无缝续期（12s > 4s：效果绝不掉线）──
+  const advance = (n, dt) => { for (let i = 0; i < n; i++) { lg.player.tickEffects(dt); lg._updateBeaconPulse(dt); } };
+  advance(16, 0.25);                              // t=4.00s：首帧（timer 由 0 起）补第 1 次脉冲
+  const at4 = snap();
+  advance(1, 0.25);                               // t=4.25s：timer 归零 → 补第 2 次，时长刷回 12s
+  const at425 = snap();
+  advance(15, 0.25);                              // t=8.00s：周期未到，一次都不补
+  const at8 = snap();
+  advance(1, 0.25);                               // t=8.25s：补第 3 次
+  const at825 = snap();
+  assert('L5 脉冲节奏：激活后 4.0s 内只补脉冲 1 次、再 3.75s 一次都不补、t=8.25s 补第 3 次；每次补脉冲把时长刷回 12s（12s > 4s = 无缝续期，等级恒 1）',
+    at4.pulses === 2 && at4.time === 8.25 && at425.pulses === 3 && at425.time === 12 &&
+    at8.pulses === 3 && at8.time === 8.25 && at825.pulses === 4 && at825.time === 12 &&
+    at825.level === 1,
+    `4.00s=${JSON.stringify(at4)} 4.25s=${JSON.stringify(at425)} 8.00s=${JSON.stringify(at8)} 8.25s=${JSON.stringify(at825)}`);
+
+  // ── L6 范围 = 10×power 且边界含等号；基座 1→2 级后脉冲按 level=2 续期并重建光柱 ──
+  lg.player.effects.clear();
+  lg.player.position.set(bx + 0.5 + 10, by, bz + 0.5);   // 距离恰 10
+  const nNear = pulses.length;
+  lg._updateBeaconPulse(5);
+  const ne = lg.player.effects.get('speed');
+  const near = { pulses: pulses.length - nNear, level: ne ? ne.level : 0, time: ne ? ne.time : 0 };
+  lg.player.effects.clear();
+  lg.player.position.set(bx + 0.5 + 10.5, by, bz + 0.5); // 距离 10.5
+  const nFar = pulses.length;
+  lg._updateBeaconPulse(5);
+  const far = { pulses: pulses.length - nFar, has: lg.player.effects.has('speed') };
+  lg.player.position.set(bx + 0.5, by, bz + 0.5);
+  const mBefore = beams()[0];
+  layer(2, IRON);                                        // 基座 1 → 2 级
+  lg.player.effects.clear();
+  lg._updateBeaconPulse(5);
+  const up = { args: pulses[pulses.length - 1], beams: beams().length, replaced: beams()[0] !== mBefore, oldInScene: inScene(mBefore) };
+  assert('L6 范围=10×power 且边界含等号：距离 10 生效（level=1/time=12）、10.5 不生效（applyEffect 零调用）；基座 1→2 级后补脉冲按 level=2 续期（范围 20）并重建光柱（旧 mesh 摘除）',
+    near.pulses === 1 && near.level === 1 && near.time === 12 && far.pulses === 0 && far.has === false &&
+    up.args[0] === 'speed' && up.args[1] === 2 && up.args[2] === 12 &&
+    up.beams === 1 && up.replaced === true && up.oldInScene === false,
+    '近=' + JSON.stringify(near) + ' 远=' + JSON.stringify(far) + ' 升级=' + JSON.stringify(up));
+
+  // ── L7 _breakBeacon：只清该 key 的激活态与光柱（别的 key 的光柱不动）──
+  lg._ensureBeaconBeam('stray', bx + 8, by, bz + 8);
+  const keyMesh = beams().find((m) => m.position.x === bx + 0.5);
+  const strayMesh = beams().find((m) => m.position.x === bx + 8.5);
+  let keyGeoDisposed = 0, keyMatDisposed = 0;
+  const okGeo = keyMesh.geometry.dispose.bind(keyMesh.geometry);
+  keyMesh.geometry.dispose = () => { keyGeoDisposed++; okGeo(); };
+  const okMat = keyMesh.material.dispose.bind(keyMesh.material);
+  keyMesh.material.dispose = () => { keyMatDisposed++; okMat(); };
+  lg._breakBeacon(bx, by, bz);
+  const broken = {
+    beams: beams().length, keyGone: !inScene(keyMesh), strayStill: inScene(strayMesh),
+    geoDisposed: keyGeoDisposed, matDisposed: keyMatDisposed,
+  };
+  lg.player.effects.clear();
+  const nBroken = pulses.length;
+  lg._updateBeaconPulse(5);
+  const noMore = { pulses: pulses.length - nBroken, has: lg.player.effects.has('speed') };
+  assert('L7 挖掉信标 _breakBeacon：该 key 的光柱摘出 scene 且 geometry/material 各 dispose 1 次、另一 key 的光柱不受影响；激活态被清 → 之后补脉冲不再给玩家上效果',
+    broken.beams === 1 && broken.keyGone === true && broken.strayStill === true &&
+    broken.geoDisposed === 1 && broken.matDisposed === 1 && noMore.pulses === 0 && noMore.has === false,
+    '断后=' + JSON.stringify(broken) + ' 脉冲=' + JSON.stringify(noMore));
+
+  // ── L8 _clearBeaconState：清光柱（含非激活 key 的 stray）+ 激活表，二次调用幂等 ──
+  let strayGeoDisposed = 0;
+  const osGeo = strayMesh.geometry.dispose.bind(strayMesh.geometry);
+  strayMesh.geometry.dispose = () => { strayGeoDisposed++; osGeo(); };
+  lg.setBeaconEffect(bx, by, bz, 'haste', 2);            // 重新激活：激活表 + 光柱各 1 条
+  const beforeClear = { beams: beams().length, activated: lg.player.effects.has('haste') };
+  lg._clearBeaconState();
+  lg.player.effects.clear();
+  const nClear = pulses.length;
+  lg._updateBeaconPulse(5);
+  const afterClear = {
+    beams: beams().length, strayGone: !inScene(strayMesh), strayDisposed: strayGeoDisposed,
+    pulses: pulses.length - nClear, has: lg.player.effects.has('haste'),
+  };
+  lg._clearBeaconState();                                // 幂等：不抛、不再重复 dispose
+  const twice = { beams: beams().length, strayDisposed: strayGeoDisposed };
+  lg.player.applyEffect = origApply;
+  assert('L8 _clearBeaconState：场景里所有光柱（激活 key + stray）摘出并各 dispose、激活表清空后补脉冲不再触发效果；二次调用幂等（不抛、不重复 dispose）',
+    beforeClear.beams === 2 && beforeClear.activated === true &&
+    afterClear.beams === 0 && afterClear.strayGone === true && afterClear.strayDisposed === 1 &&
+    afterClear.pulses === 0 && afterClear.has === false &&
+    twice.beams === 0 && twice.strayDisposed === 1,
+    '清前=' + JSON.stringify(beforeClear) + ' 清后=' + JSON.stringify(afterClear) + ' 二次=' + JSON.stringify(twice));
+}
+
 for (const x of games) shutdown(x);
 for (const x of games) shutdown(x);
 finish('game-behavior');
