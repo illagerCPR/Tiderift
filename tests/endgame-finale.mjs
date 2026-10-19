@@ -46,8 +46,8 @@ ok(storeSrc.includes('finaleOffered: !!room.finaleOffered,') && storeSrc.include
 const netSrc = readFileSync('./src/net/NetworkManager.js', 'utf8');
 ok(netSrc.includes('sendFinaleState(payload) {'), '客户端发送口在场');
 ok(netSrc.includes('case MSG.FINALE_STATE:'), '客户端接收 case 在场');
-ok(netSrc.includes('this.game.finaleInfo = {'), 'WORLD_INFO 先达暂存 finaleInfo（start 前时序安全）');
-ok(gameSrc.includes('if (this.finaleInfo) {'), 'start 落地 finaleInfo（aetherDusk 同款时序）');
+ok(netSrc.includes('this.game.finaleInfo = msg.finale && typeof msg.finale ==='), 'WORLD_INFO 先达暂存 finaleInfo（缺字段清空）');
+ok(gameSrc.includes('this.finaleInfo.room === this.net?.room'), 'start 只落地当前联机房间的 finaleInfo');
 
 // ── ④ 仪式演出绊线 ──
 ok(gameSrc.includes('_tryListenTide(block) {'), '听潮门控方法在场');

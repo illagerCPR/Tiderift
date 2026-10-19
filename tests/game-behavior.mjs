@@ -19,6 +19,9 @@
 
 import { assert, ok, finish } from './harness.mjs';
 import { boot, createGame, step, quiesce, shutdown, gameClass } from './lib/game-env.mjs';
+import { NetworkManager } from '../src/net/NetworkManager.js';
+import { SaveSystem } from '../src/core/SaveSystem.js';
+import { MSG } from '../server/protocol.js';
 
 const SEED = 12345;
 
@@ -2871,5 +2874,72 @@ for (const x of games) shutdown(x);
   pg.particles = realParticles;
 }
 
+const finaleGame = track((await createGame()).g);
+const finaleNet = new NetworkManager(finaleGame);
+finaleGame.net = finaleNet;
+const doneInfo = { offered: true, x: 17, y: 82, z: -9, done: true };
+finaleNet._handle({ t: MSG.WORLD_INFO, room: 'finished-room', seed: SEED, finale: doneInfo });
+await finaleGame.start('creative', SEED, null, 0, false, true);
+finaleGame.stop();
+assert('B32-6 联机 WORLD_INFO 先于 start 到达仍恢复同房终局',
+  finaleGame.running === false && finaleGame.world?.finaleDone === true &&
+  JSON.stringify(finaleGame.world.finalePrimordial) === JSON.stringify({ x: 17, y: 82, z: -9 }));
+finaleGame.returnToMenu(false);
+assert('B32-6 返回菜单清除联机终局缓存', finaleGame.finaleInfo === null);
+await finaleGame.start('creative', SEED + 1, null, 1, false, false);
+finaleGame.stop();
+assert('B32-6 新建单机未继承联机完成标记与祭坛坐标',
+  !finaleGame.world.finaleDone && finaleGame.world.finalePrimordial === null);
+SaveSystem.save(finaleGame, 6);
+const cleanSave = SaveSystem.load(6);
+assert('B32-6 新单机保存不持久化污染', cleanSave?.finaleDone === false && cleanSave?.finalePrimordial === null);
+finaleGame.returnToMenu(false);
+await finaleGame.start('creative', SEED + 1, cleanSave, 6, false, false);
+finaleGame.stop();
+assert('B32-6 未通关单机加载后仍未通关', !finaleGame.world.finaleDone && finaleGame.world.finalePrimordial === null);
+finaleGame.world.finaleDone = true;
+finaleGame.world.finalePrimordial = { x: 4, y: 75, z: 4 };
+SaveSystem.save(finaleGame, 5);
+const ownSave = SaveSystem.load(5);
+finaleGame.returnToMenu(false);
+await finaleGame.start('creative', SEED + 1, ownSave, 5, false, false);
+finaleGame.stop();
+assert('B32-6 已通关单机仍从自身存档恢复终局',
+  finaleGame.world.finaleDone && JSON.stringify(finaleGame.world.finalePrimordial) === JSON.stringify({ x: 4, y: 75, z: 4 }));
+finaleNet._handle({ t: MSG.WORLD_INFO, room: 'empty-room', seed: SEED + 2, restart: true });
+await finaleGame.start('creative', SEED + 2, null, 0, false, true);
+finaleGame.stop();
+assert('B32-6 换房且消息缺终局字段时不沿用上一房间状态',
+  !finaleGame.world.finaleDone && finaleGame.world.finalePrimordial === null);
+const filledBox = new Array(27).fill(null);
+filledBox[2] = { name: 'diamond', count: 2 };
+filledBox[24] = { name: 'bread', count: 5 };
+const otherBox = new Array(27).fill(null);
+otherBox[2] = { name: 'stone', count: 1 };
+finaleGame.inventory.add('shulker_box', 1, otherBox);
+finaleNet.selfId = 7;
+const pickMsgs = [];
+finaleNet._send = (t, payload) => pickMsgs.push({ t, ...payload });
+const px = finaleGame.player.position;
+finaleGame.mobManager.spawnRemoteDrop(912, px.x, px.y, px.z, 'shulker_box', 1, null, 0, filledBox);
+const pickupDrop = finaleGame.mobManager.droppedItems.find((d) => d.id === 912);
+pickupDrop.pickupDelay = 0;
+pickupDrop.velocity.set(0, 0, 0);
+finaleGame.mobManager.onPickup = (name, count, data) => finaleGame.inventory.add(name, count, data);
+finaleGame.mobManager.updateDroppedItems(0, finaleGame.player);
+const pendingBox = finaleGame.mobManager._pendingPickup.get(912);
+assert('B32-5 客户端拾取完整盒子时留档数量和内容',
+  pendingBox?.count === 1 && JSON.stringify(pendingBox.data) === JSON.stringify(filledBox) &&
+  pickMsgs.filter((m) => m.t === MSG.DROP_TAKEN && m.id === 912).length === 1);
+finaleNet._emit('drop_deny', { id: 912 });
+const boxesAfterDeny = finaleGame.inventory.slots.filter((s) => s?.name === 'shulker_box');
+assert('B32-5 拒绝拾取只扣回目标盒子，保留原背包另一盒',
+  boxesAfterDeny.length === 1 && JSON.stringify(boxesAfterDeny[0].data) === JSON.stringify(otherBox));
+finaleNet._spawnDrop({ id: 912, x: px.x, y: px.y, z: px.z,
+  name: 'shulker_box', count: 1, d: 'overworld', data: filledBox });
+const respawnBox = finaleGame.mobManager.droppedItems.find((d) => d.id === 912);
+assert('B32-5 拒绝补发后客户端实体内容逐槽完整',
+  JSON.stringify(respawnBox?.data) === JSON.stringify(filledBox));
+finaleGame.returnToMenu(false);
 for (const x of games) shutdown(x);
 finish('game-behavior');

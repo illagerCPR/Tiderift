@@ -61,11 +61,12 @@ export class Inventory {
   }
 
   // 阶段10：按名称从背包扣除（deny 回滚用），从末尾槽向前扣；返回实际扣除数量
-  removeItems(name, count = 1) {
+  removeItems(name, count = 1, data = undefined) {
     let left = count;
+    const dataKey = data === undefined ? null : JSON.stringify(data ?? null);
     for (let i = this.size - 1; i >= 0 && left > 0; i--) {
       const s = this.slots[i];
-      if (s && s.name === name) {
+      if (s && s.name === name && (data === undefined || JSON.stringify(s.data ?? null) === dataKey)) {
         const take = Math.min(s.count, left);
         s.count -= take;
         left -= take;

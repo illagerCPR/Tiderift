@@ -202,12 +202,14 @@ export class Room {
     for (const d of (Array.isArray(snap.drops) ? snap.drops : [])) {
       if (!d || typeof d.id !== 'number' || !d.name) continue;
       if (now - safeNum(d.spawnedAt, now) > ttl) continue; // 过期掉落物不恢复
+      const data = sanitizeItemData(d.data);
       this.drops.set(d.id, {
         x: safeNum(d.x), y: safeNum(d.y), z: safeNum(d.z),
         name: String(d.name).slice(0, 32),
         count: Math.min(64, Math.max(1, safeInt(d.count, 1))),
         dim: Room.safeDim(d.dim),
         spawnedAt: safeNum(d.spawnedAt, now),
+        ...(data ? { data } : {}),
         // 阶段10：归属锁恢复（ownerId 需为正整数；过期锁自动失效）
         owner: Number.isInteger(d.owner) && d.owner > 0 ? d.owner : null,
         ownerUntil: safeNum(d.ownerUntil, 0),
@@ -514,14 +516,22 @@ export class Room {
     step();
   }
 
+  dropMessage(id, drop) {
+    const back = { id, x: drop.x, y: drop.y, z: drop.z, name: drop.name,
+      count: drop.count, d: drop.dim || DEFAULT_DIMENSION };
+    if (drop.data) back.data = drop.data;
+    if (drop.vx != null && drop.vy != null && drop.vz != null) {
+      back.vx = drop.vx; back.vy = drop.vy; back.vz = drop.vz;
+    }
+    const remaining = drop.owner && drop.ownerUntil ? Math.ceil(drop.ownerUntil - Date.now()) : 0;
+    if (remaining > 0) { back.owner = drop.owner; back.ownerLock = remaining; }
+    return back;
+  }
+
   replayDrops(player, dim) {
     for (const [id, d] of this.drops) {
       if ((d.dim || DEFAULT_DIMENSION) !== dim) continue;
-      const remainLock = d.ownerUntil > Date.now() && d.owner ? Math.ceil(d.ownerUntil - Date.now()) : 0;
-      const back = { id, x: d.x, y: d.y, z: d.z, name: d.name, count: d.count, d: dim };
-      if (d.owner && remainLock > 0) { back.owner = d.owner; back.ownerLock = remainLock; }
-      if (d.vx != null) { back.vx = d.vx; back.vy = d.vy; back.vz = d.vz; }
-      this.sendTo(player, MSG.DROP_SPAWN, back);
+      this.sendTo(player, MSG.DROP_SPAWN, this.dropMessage(id, d));
     }
   }
 
@@ -720,16 +730,14 @@ export class Room {
     const id = this.nextDropId++;
     const dim = player.dim;
     const entry = { x, y, z, name, count, dim, spawnedAt: Date.now() };
-    const back = { id, x, y, z, name, count, d: dim };
-    if (data) { entry.data = data; back.data = data; }
+    if (data) entry.data = data;
     // Build 10：可选真实初速（Q 丢弃抛掷透传）；非法/缺省不带 → 各端按 id 哈希派生，向后兼容旧客户端
     if ([msg.vx, msg.vy, msg.vz].every(v => typeof v === 'number' && Number.isFinite(v))) {
       const clamp = (v) => Math.max(-16, Math.min(16, v));
       entry.vx = clamp(msg.vx); entry.vy = clamp(msg.vy); entry.vz = clamp(msg.vz);
-      back.vx = entry.vx; back.vy = entry.vy; back.vz = entry.vz;
     }
     this.drops.set(id, entry);
-    this.broadcastDim(MSG.DROP_SPAWN, back, dim);
+    this.broadcastDim(MSG.DROP_SPAWN, this.dropMessage(id, entry), dim);
     this.saveSoon();
     console.log(`[掉落] ${player.name} 生成 ${name}x${count} @(${x},${y},${z}) id=${id} [${dim}]`);
   }
@@ -752,10 +760,7 @@ export class Room {
     if (d.owner && d.ownerUntil > Date.now() && player.id !== d.owner) {
       this.sendTo(player, MSG.DROP_DENY, { id, owner: d.owner });
       // 补发实体数据（客户端若已抢先本地拾取移除，凭此重建；数据以服务器账本为准）
-      this.sendTo(player, MSG.DROP_SPAWN, {
-        id, x: d.x, y: d.y, z: d.z, name: d.name, count: d.count,
-        owner: d.owner, ownerLock: Math.ceil(d.ownerUntil - Date.now()),
-      });
+      this.sendTo(player, MSG.DROP_SPAWN, this.dropMessage(id, d));
       return;
     }
     this.drops.delete(id);
@@ -981,10 +986,9 @@ export class Room {
       const ownerUntil = Date.now() + ownerLockMs;
       const dim = player.dim; // M4：死亡掉落落在死者当前维度
       const entry = { x: x + ox, y, z: z + oz, name, count, dim, spawnedAt: Date.now(), owner: player.id, ownerUntil };
-      const back = { id, x: x + ox, y, z: z + oz, name, count, owner: player.id, ownerLock: ownerLockMs, d: dim };
-      if (data) { entry.data = data; back.data = data; }
+      if (data) entry.data = data;
       this.drops.set(id, entry);
-      this.broadcastDim(MSG.DROP_SPAWN, back, dim);
+      this.broadcastDim(MSG.DROP_SPAWN, this.dropMessage(id, entry), dim);
       n++;
     }
     if (n) this.saveSoon();

@@ -957,9 +957,9 @@ export class MobManager {
 
   // 阶段10：记录本地已发起拾取的远程掉落物（全量拾取并已上报 drop_taken 的）
   // 服务器归属锁拒绝（drop_deny）时凭此记录从背包扣回，配合补发 drop_spawn 重建实体
-  recordPendingPickup(id, name, count) {
+  recordPendingPickup(id, name, count, data = null) {
     if (!this._pendingPickup) this._pendingPickup = new Map();
-    this._pendingPickup.set(id, { name, count });
+    this._pendingPickup.set(id, { name, count, data });
     if (this._pendingPickup.size > 64) {
       // 防御性清理：只保留最近 32 条
       const keys = [...this._pendingPickup.keys()].slice(0, this._pendingPickup.size - 32);
@@ -1131,13 +1131,14 @@ export class MobManager {
           if (dist < 0.9 && this.onPickup) {
             // onPickup 返回未放入的剩余数量（0 = 全部拾取）
             const remaining = this.onPickup(drop.name, drop.count, drop.data);
+            const pickedCount = drop.count - remaining;
             drop.count = remaining;
             if (remaining <= 0) {
               // 全部拾取
               if (drop.mesh) this.scene.remove(drop.mesh);
               this.droppedItems.splice(i, 1);
               if (drop.id != null && this.onDropTaken) {
-                this.recordPendingPickup(drop.id, drop.name, drop.count); // 阶段10：留档供 deny 回滚
+                this.recordPendingPickup(drop.id, drop.name, pickedCount, drop.data); // 阶段10：留档供 deny 回滚
                 this.onDropTaken(drop.id); // 联机：通知服务器移除
               }
               audio.pop();

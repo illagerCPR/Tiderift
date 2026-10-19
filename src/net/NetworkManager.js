@@ -67,6 +67,7 @@ export class NetworkManager {
 
   // 建立连接并发送 hello；name 为昵称（每次新连接重置状态，不触发自动重连）
   connect(url, name) {
+    if (this.game) this.game.finaleInfo = null;
     this.name = name || '玩家';
     this._url = url;
     this._reconnectAttempt = 0;
@@ -325,6 +326,8 @@ export class NetworkManager {
         if (msg.legacy === true && this.onStatusChange) this.onStatusChange('connected', '服务器未启用协议版本校验');
         break;
       case MSG.WORLD_INFO:
+        if (this.isRecovering && !msg.restart &&
+            (msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim)) break;
         this.room = msg.room || this.room;
         // Idea-4A：房间开关随 world_info 下发（首次进入/换房/重连三条路径统一在此更新）
         if (msg.settings && typeof msg.settings === 'object') {
@@ -336,12 +339,13 @@ export class NetworkManager {
         }
         // 终局篇 F3：候潮/听潮状态随 world_info 下发（WORLD_INFO 可能先于 start 到达——
         // 暂存 game.finaleInfo，Game.start 建 world 后落地，aetherDusk 同款时序）
-        if (this.game && msg.finale) {
-          this.game.finaleInfo = {
+        if (this.game) {
+          this.game.finaleInfo = msg.finale && typeof msg.finale === 'object' ? {
+            room: this.room,
             offered: !!msg.finale.offered,
             x: msg.finale.x | 0, y: msg.finale.y | 0, z: msg.finale.z | 0,
             done: !!msg.finale.done,
-          };
+          } : null;
         }
         if (msg.restart && this.game && this.game.world && this.game.running) {
           // 换房/重建：取消旧恢复态，按新世界消息重启本地世界。
@@ -821,6 +825,7 @@ export class NetworkManager {
   sendSwitchDimension(dim, pos = null) { this._send(MSG.SWITCH_DIMENSION, { dim, pos: pos || null }); }
 
   close() {
+    if (this.game) this.game.finaleInfo = null;
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）

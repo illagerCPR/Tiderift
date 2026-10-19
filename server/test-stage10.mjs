@@ -115,7 +115,12 @@ const HOTBAR = [
   send(B, 'join_room', { room: 's10-owner' });
   await sleep(150);
 
-  send(A, 'player_died', { x: 5, y: 65, z: 5, drops: [{ name: 'diamond', count: 2 }] });
+  const boxData = new Array(27).fill(null);
+  boxData[0] = { name: 'diamond', count: 3 };
+  boxData[13] = { name: 'bread', count: 4 };
+  boxData[26] = { name: 'iron_ingot', count: 7 };
+  send(A, 'player_died', { x: 5, y: 65, z: 5,
+    drops: [{ name: 'diamond', count: 2 }, { name: 'shulker_box', count: 1, data: boxData }] });
   const bSpawn = await waitFor(B, (m) => m.t === 'drop_spawn' && m.name === 'diamond');
   assert('B 收到死亡掉落 drop_spawn', !!bSpawn, JSON.stringify(bSpawn || {}));
   assert('drop_spawn 带 owner=A.id', !!bSpawn && bSpawn.owner === A.id, JSON.stringify(bSpawn && bSpawn.owner));
@@ -134,6 +139,21 @@ const HOTBAR = [
   send(A, 'drop_taken', { id: bSpawn.id });
   const aTaken = await waitFor(A, (m) => m.t === 'drop_taken' && m.id === bSpawn.id);
   assert('owner 本人拾取成功（drop_taken 广播）', !!aTaken && aTaken.by === A.id, JSON.stringify(aTaken || {}));
+
+  const boxSpawn = await waitFor(B, (m) => m.t === 'drop_spawn' && m.name === 'shulker_box');
+  assert('死亡潜影盒实时掉落保留稀疏 27 槽数据',
+    !!boxSpawn && JSON.stringify(boxSpawn.data) === JSON.stringify(boxData));
+  send(B, 'drop_taken', { id: boxSpawn.id });
+  const boxDeny = await waitFor(B, (m) => m.t === 'drop_deny' && m.id === boxSpawn.id);
+  const boxResend = await waitFor(B, (m) => m.t === 'drop_spawn' && m.id === boxSpawn.id && m !== boxSpawn);
+  assert('归属锁拒绝后补发潜影盒内容、维度与剩余锁时长',
+    !!boxDeny && !!boxResend && JSON.stringify(boxResend.data) === JSON.stringify(boxData) &&
+    boxResend.d === 'overworld' && boxResend.ownerLock > 0);
+  send(A, 'drop_taken', { id: boxSpawn.id });
+  const boxTaken = await waitFor(A, (m) => m.t === 'drop_taken' && m.id === boxSpawn.id);
+  const boxTakenB = await waitFor(B, (m) => m.t === 'drop_taken' && m.id === boxSpawn.id);
+  assert('主人合法拾取潜影盒只广播一次', !!boxTaken && !!boxTakenB &&
+    B.inbox.filter((m) => m.t === 'drop_taken' && m.id === boxSpawn.id).length === 1);
 
   // 用例 5：普通挖矿掉落（无 owner）先到先得
   send(A, 'drop_spawn', { x: 1.5, y: 65, z: 1.5, name: 'stone', count: 1 });

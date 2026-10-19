@@ -119,6 +119,21 @@ function waitFor(p, pred, timeout = 3000) {
     got ? `slots=${JSON.stringify(got.data)}` : '');
   assert('盒体掉落账本带 data（回执含）', !!got && Array.isArray(got.data) && got.data.length === 4);
 
+  const late = await connect('i2-晚加入');
+  send(late, 'join_room', { room });
+  const lateBox = await waitFor(late, (m) => m.t === 'drop_spawn' && m.id === got?.id);
+  assert('晚加入从真实服务端回放盒体内容', !!lateBox && JSON.stringify(lateBox.data) === JSON.stringify(CONTENT));
+  send(late, 'switch_dimension', { dim: 'nether' });
+  await waitFor(late, (m) => m.t === 'dimension_world' && m.dim === 'nether');
+  late.inbox.length = 0;
+  send(late, 'switch_dimension', { dim: 'overworld' });
+  const backBox = await waitFor(late, (m) => m.t === 'drop_spawn' && m.id === got?.id);
+  assert('换维返回后从真实服务端回放盒体内容', !!backBox && JSON.stringify(backBox.data) === JSON.stringify(CONTENT) && backBox.d === 'overworld');
+  send(late, 'drop_taken', { id: got?.id });
+  const takenBox = await waitFor(late, (m) => m.t === 'drop_taken' && m.id === got?.id);
+  assert('晚加入者拾取盒体只得到一次成功回执', !!takenBox &&
+    late.inbox.filter((m) => m.t === 'drop_taken' && m.id === got?.id).length === 1);
+
   // 嵌套 data（盒中盒）→ 服务器拒绝，降级为普通掉落（无 data 字段）
   b.inbox.length = 0;
   send(a, 'drop_spawn', { x: 1.5, y: 70, z: 1.5, name: 'shulker_box', count: 1,
@@ -144,7 +159,7 @@ function waitFor(p, pred, timeout = 3000) {
   assert('容器内盒体 data 保留', !!box && box.name === 'shulker_box' && JSON.stringify(box.data) === JSON.stringify(CONTENT),
     box ? JSON.stringify(box).slice(0, 80) : 'missing');
 
-  a.ws.close(); b.ws.close();
+  a.ws.close(); b.ws.close(); late.ws.close();
 }
 
 const { total, passed } = counts();

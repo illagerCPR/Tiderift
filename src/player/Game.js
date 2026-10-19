@@ -261,6 +261,7 @@ export class Game {
     this._disposeWorld();
     this.currentSlot = slot;
     this.networkMode = networkMode;
+    if (!networkMode) this.finaleInfo = null;
     this.paused = false;
     this.running = false;
     this.spectating = false;        // 阶段4：新世界默认不观战
@@ -301,7 +302,7 @@ export class Game {
     this.world.finaleDone = !!(loadData && loadData.finaleDone); // 听潮完成（终局篇 F3：存档恢复）
     this.player.emblemWorn = !!(loadData && loadData.emblemWorn) && this.world.finaleDone; // 佩戴状态（Build 19 K3：仅通关存档有效）
     // LAN：WORLD_INFO 先于 start 到达的候潮/听潮状态（NetworkManager 暂存 finaleInfo）在此落地
-    if (this.finaleInfo) {
+    if (this.networkMode && this.finaleInfo && this.finaleInfo.room === this.net?.room) {
       if (this.finaleInfo.offered && !this.world.finalePrimordial) {
         this.world.finalePrimordial = { x: this.finaleInfo.x, y: this.finaleInfo.y, z: this.finaleInfo.z };
       }
@@ -526,7 +527,7 @@ export class Game {
       this.net.on('drop_deny', ({ id }) => {
         const info = this.mobManager ? this.mobManager.takePendingPickup(id) : null;
         if (!info) return; // 未抢先拾取（本地预判已拦下），无需回滚
-        this.inventory.removeItems(info.name, info.count);
+        this.inventory.removeItems(info.name, info.count, info.data ?? null);
         if (this.hotbar) this.hotbar.update();
         if (this.chatBox) this.chatBox.add(t('该掉落物仍归属其主人，已归还。'), '#fa8');
       });
@@ -2261,6 +2262,7 @@ export class Game {
     if (this.net) this.net.close();
     this.networkMode = false;
     this.aetherDusk = false; // Build 20 ⑦：回菜单复位复潮状态（防跨存档残留；全局档案在下次进天域 start 时按存档重设）
+    this.finaleInfo = null;
     if (this.infoBar) this.infoBar.hide();
     if (this.hud) { this.hud.setUnderwater(false); this.hud.hideAll(); }
     this.paused = false;

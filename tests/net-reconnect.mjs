@@ -37,10 +37,19 @@ let worldInfoCount = 0;
 let dimensionSnapshot = null;
 net.on('world_info', () => { worldInfoCount++; });
 net.on('dimension_world', (msg) => { dimensionSnapshot = msg; });
+game.finaleInfo = { room: 'resume-room', offered: false, done: false };
+net.room = 'resume-room';
+net._handle({ t: MSG.WORLD_INFO, room: 'stale-room', seed: 4, finale: { offered: true, done: true },
+  recoveryId: 'stale-id', dim: 'nether' });
+assert('过时恢复消息不能改写房间或终局缓存',
+  net.room === 'resume-room' && game.finaleInfo.room === 'resume-room' && !game.finaleInfo.done);
 net._handle({ t: MSG.WORLD_INFO, room: 'resume-room', seed: 4, mode: 'survival', time: 0.6,
-  hostId: 7, recoveryId: 'resume-1', dim: 'nether' });
+  hostId: 7, recoveryId: 'resume-1', dim: 'nether',
+  finale: { offered: true, x: 9, y: 80, z: -4, done: true } });
 assert('重连 WORLD_INFO 不直接解锁旧世界', net.isRecovering && !net._ready);
 assert('恢复中的 WORLD_INFO 不触发首次进房建世界事件', worldInfoCount === 0);
+assert('同房重连保留当前房间权威终局状态',
+  game.finaleInfo?.room === 'resume-room' && game.finaleInfo.done && game.finaleInfo.x === 9);
 
 const profile = {
   inventory: { slots: [], armor: [] }, position: { x: 900, y: 90, z: 900 }, dim: 'nether',

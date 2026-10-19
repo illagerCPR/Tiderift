@@ -218,4 +218,59 @@ resetJoiner.ws.bufferedAmount = 0;
 await sleep(120);
 assert('房间世界重建取消全部旧账本回放',
   !resetJoiner.ws.sent.some((m) => m.t === 'block_change_batch' && m.by === 0));
+
+const contents = new Array(27).fill(null);
+contents[0] = { name: 'diamond', count: 3 };
+contents[8] = { name: 'bread', count: 5 };
+contents[26] = { name: 'iron_ingot', count: 12 };
+const contentEq = (m) => JSON.stringify(m?.data) === JSON.stringify(contents);
+const dropsRoom = new Room('t-shulker-replay');
+dropsRoom.seed = 123;
+const owner = fakePlayer(1, 'Owner', 'nether');
+const visitor = fakePlayer(2, 'Visitor', 'nether');
+dropsRoom.addPlayer(owner);
+dropsRoom.addPlayer(visitor);
+owner.dim = 'nether'; visitor.dim = 'nether';
+dropsRoom.onDropSpawn(owner, { x: 2, y: 70, z: 3, name: 'shulker_box', count: 1,
+  data: contents, vx: 1.25, vy: 2, vz: -0.5 });
+const live = visitor.ws.sent.find((m) => m.t === 'drop_spawn');
+assert('实时掉落含逐槽内容、维度和初速', contentEq(live) && live.d === 'nether' && live.vx === 1.25);
+const late = fakePlayer(3, 'Late', 'nether');
+dropsRoom.addPlayer(late);
+late.dim = 'nether';
+dropsRoom.joinRoom(late, {}, {});
+const joined = late.ws.sent.find((m) => m.t === 'drop_spawn' && m.id === live?.id);
+assert('晚加入回放保留潜影盒逐槽内容与初速', contentEq(joined) && joined.vz === -0.5);
+const switcher = fakePlayer(4, 'Switcher', 'overworld');
+dropsRoom.addPlayer(switcher);
+dropsRoom.onSwitchDimension(switcher, { dim: 'nether' });
+const switched = switcher.ws.sent.find((m) => m.t === 'drop_spawn' && m.id === live?.id);
+assert('换维回放保留潜影盒逐槽内容', contentEq(switched) && switched.d === 'nether');
+const deathOwner = fakePlayer(5, 'DeathOwner', 'nether');
+dropsRoom.addPlayer(deathOwner);
+deathOwner.dim = 'nether';
+dropsRoom.onPlayerDied(deathOwner, { x: 4, y: 70, z: 5,
+  drops: [{ name: 'shulker_box', count: 1, data: contents }] });
+const deathDrop = visitor.ws.sent.find((m) => m.t === 'drop_spawn' && m.owner === deathOwner.id);
+assert('死亡实时掉落含逐槽内容和归属锁', contentEq(deathDrop) && deathDrop.ownerLock > 0);
+dropsRoom.onDropTaken(visitor, { id: deathDrop?.id });
+const denial = visitor.ws.sent.find((m) => m.t === 'drop_deny' && m.id === deathDrop?.id);
+const resent = visitor.ws.sent.filter((m) => m.t === 'drop_spawn' && m.id === deathDrop?.id).at(-1);
+assert('锁内拒绝后账本仍在，补发完整内容、维度和剩余锁时长',
+  !!denial && dropsRoom.drops.has(deathDrop?.id) && contentEq(resent) && resent.d === 'nether' && resent.ownerLock > 0);
+dropsRoom.onDropTaken(deathOwner, { id: deathDrop?.id });
+assert('合法拾取只广播一次并移除账本',
+  !dropsRoom.drops.has(deathDrop?.id) &&
+  visitor.ws.sent.filter((m) => m.t === 'drop_taken' && m.id === deathDrop?.id).length === 1);
+const restoredDrops = new Room('t-shulker-replay');
+restoredDrops.restore(JSON.parse(JSON.stringify(roomSnapshot(dropsRoom))));
+const restoredJoiner = fakePlayer(6, 'Restored', 'nether');
+restoredDrops.addPlayer(restoredJoiner);
+restoredJoiner.dim = 'nether';
+restoredDrops.joinRoom(restoredJoiner, {}, {});
+const restoredMsg = restoredJoiner.ws.sent.find((m) => m.t === 'drop_spawn' && m.id === live?.id);
+assert('快照恢复后的回放仍保留逐槽内容', contentEq(restoredMsg) && restoredMsg.d === 'nether');
+dropsRoom.onDropSpawn(owner, { x: 8, y: 70, z: 8, name: 'stone', count: 2 });
+const plain = visitor.ws.sent.filter((m) => m.t === 'drop_spawn' && m.name === 'stone').at(-1);
+assert('普通掉落不附加 data 与归属锁', plain && !('data' in plain) && !('owner' in plain));
 finish('room-persist-replay');
