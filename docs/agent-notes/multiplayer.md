@@ -42,7 +42,7 @@
 ### Idea-2B 关键实现备忘（防回退）—— 箭矢事件同步
 
 - **事件式而非状态同步**（与怪物同步同款妥协）：`arrow_shot {id,x,y,z,dx,dy,dz}` 只传初速，各端本地确定性积分（重力 -12/寿命 8s 一致即视觉对齐）；`Room.onArrowShot` = 纯转发 except 发起者 + **broadcastDim 同维度**（异维端不收到）；不进方块/掉落账本（钉墙/消失各端本地处理）。
-- **伤害射端权威**：`spawnRemoteArrow` 生成的箭带 `remote:true, dmg:0`，`_updateArrows` 命中怪分支 `if (!a.remote) attackMob(...)`——远端箭只 despawn 不结算；射端 `_releaseBow` 本地 spawn 后 `net.sendArrowShot(arrow.pos, arrow.vel)`（Vector3 引用即时序列化，无时序问题）。
+- **伤害射端权威**：`spawnRemoteArrow` 生成的箭带 `remote:true, dmg:0`，`_updateArrows` 命中怪分支 `if (!a.remote) attackMob(...)`——远端箭只 despawn 不结算；射端 `_releaseBow` 本地 spawn 后 `net.sendArrowShot(arrow.pos, arrow.vel)`（Vector3 引用即时序列化，无时序问题）。（B30 轮 8 步 3 起 `spawnRemoteArrow`/`_updateArrows`/`_releaseBow` 实现在 `src/player/Projectiles.js`，Game 侧同名门面。）
 - **服务器脏包校验必须先 typeof 再 isFinite**：`JSON.stringify(NaN)` 序列化成 **null**，`Number(null)=0` 会混过 `[...].map(Number).every(Number.isFinite)` 转换式校验（测试真踩：NaN 弹丸被静默放行为 x=0）；正确写法 `raw.every(v => typeof v === 'number' && Number.isFinite(v))`。
 - **远端箭命中本地模拟的怪会即时消失**（设计行为）——冒烟时"没收到箭"先排除弹道撞怪再怀疑链路（曾误判丢包，ws.send 探针 + 复测定位）。
 - **测试**：`server/test-idea2.mjs`（7/7，已入 run-all-tests.sh）：转发字段一致/携带射者 id/无回声/三类脏包（字符串、缺字段、NaN→null）全丢弃。
