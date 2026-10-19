@@ -240,7 +240,7 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 | 2 | Endgame（终局） | — | **已完成**：新建 `Endgame.js`(144)；Game.js 3643 → 3578（+12/−77）；8 方法全部门面化（含 `_breakCrystal`）；`game-behavior` 55 → 65 断言（J1–J10）；全量跑批 ALL PASS |
 | 3 | Projectiles（弹射物） | `leak-guards:160/161/163-164` 四条断言需同步 | **已完成**：新建 `Projectiles.js`(301)；Game.js 3578 → 3405（+18/−191）；16 方法门面化（箭 / 末影之眼 / 弓蓄力 / 凋灵之首 / 风弹）；5 个静态共享资源迁模块级；`game-behavior` 65 → 74 断言（K1–K9）；全量跑批 ALL PASS |
 | 4 | Beacon（信标） | `leak-guards:162`、`BeaconScreen:49/60` | **已完成**：新建 `Beacon.js`(127)；Game.js 3405 → 3314（+13/−104）；8 方法门面化（金字塔等级 / 效果 / 脉冲 / 光柱 / 破坏）；**域字段 `beacons`/`beams`/`pulseTimer` 随迁入控制器**；`game-behavior` 74 → 82 断言（L1–L8）；全量跑批 ALL PASS |
-| 5 | PortalsSystem | 先定「到达回调」接口（`_afterPortalArrival` 被双向调用） | 待做 |
+| 5 | PortalsSystem | 先定「到达回调」接口（`_afterPortalArrival` 被双向调用） | **已完成**：新建 `PortalSystem.js`(244，命名避开 `src/core/Portals.js` 纯函数库)；Game.js 3314 → 3144（+18/−187）；8 方法门面化（点火 / 嵌眼 / 站门计时 / 环境粒子 / 触发 / 折跃门 / 到达落点 / 立地面下探）；`game-behavior` 82 → 96 断言；全量跑批 ALL PASS |
 | 6 | 放置 / 容器 | `build27:195,198,199` + `build28:260-263,270,271` 同步 | 待做 |
 | 7 | AetherFinale | 锚定最密（`endgame-*` 24 处）+ 7 个外部调用点 | 待做 |
 | 8 | InteractionController | 最后；前置＝显式化点击消费协议 | 待做 |
@@ -256,6 +256,10 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 - 步 4 生命周期判定＝**构造器共享型（控制器自带域状态）**：`this.beacon = new Beacon(this)` + 域字段（激活表 `beacons` / 光柱表 `beams` / `pulseTimer`）随迁——全仓无 `game.beacons` 等外部读取方；光柱 mesh 挂在跨存档共享 scene 上 ⇒ `_disposeWorld` 里那唯一一次 `this._clearBeaconState();`（仍在切片内、leak-guards:162 口径不变）经门面走控制器摘除 + dispose。实测探针：激活后 `sceneBeams=1`，真实 `start()` 重开后三表归零、连续三次 start 无残留。
 - 步 4 反证：子代理 17 次改坏（迁移前 8 + 迁移后 8 + 删构造期实例化 1，后者直接 A1 FAIL + `start()` 崩——证收口链确经控制器）逐例 MD5 还原；**调度方独立一段**：`Beacon.pulseBeacon` 的 `10 * power` → `5 * power` → L6 FAIL（1/82），MD5 逐字节还原；调度方自跑全量跑批 `RESULT: ALL PASS`（EXIT=0 / 66 套件），除 `game-behavior` 73 → 81 与 `test-hardening-net` 50 → 51（外网探针可用，按 SKIP 口径非回归）外零差异。
 - **实施中发现（未修，待排期）**：`_placeDragonEgg` **非幂等**——注释称「幂等（已有方块跳过）」，实测第二次调用会在已有龙蛋**正上方再叠一枚**（下扫遇到的第一个非空气格正是上一枚蛋）。当前按现状钉住（J7 消息已写明）；多端各自触发 `_onDragonDefeated` 时会堆蛋，修幂等须同步更新 J7。
+
+- 步 5 生命周期判定＝**构造器共享型（域内仅存粒子节流计时器）**：`this.portalSystem = new PortalSystem(this)`（Game.js:126，紧随 beacon）；控制器只存 `this.game` 与域内 `partT`（原 `_portalPartT` 的懒建改为构造期 0，全仓 `_portalPartT` grep 归零），零 Three/DOM/监听器 ⇒ `_disposeWorld` 零改动。**穿越三件套 `_portalTimer`/`_portalArmed`/`_portalCooldown` 与 `portalOverlay` 刻意留在 Game**（`start()` 复位 / 新建，本轮禁改区），控制器一律 `this.game._portalX` 调用点现取——`updatePortals → _usePortal → switchDimension → start()` 可同帧换世界，控制器绝不留 `world`/`player` 快照。触发链刻意仍走门面（`this.game._usePortal` / `_useGatewayPortal`），与迁前调用面逐字一致，外部 stub/覆盖仍然生效。
+- 步 5 反证：子代理 16 次改坏 → 14 次 FAIL（删萤石→天域映射 1/96、非法框也填充 1/96、12 眼放宽 ≥11 1/96、下界门阈值 2.0→1.0 2/96、删 armed 闸门 4/96、删 cooldown 闸门 1/96、建门站位 +0.5 1/96、吸附半径 24→240 1/96、无坐标冷却 4→0 2/96、未知维度 −1→64 1/96、折跃门阈值 1.0→2.0 1/96、删构造期实例化 5 FAIL + 帧循环崩、装配接缝改常量 1/96、删「下格实心」1/96），逐例 MD5 逐字节还原；两例（删「上方空气」判定 / 列偏移 +1）**经采样实证为行为等价**（51200 列逐值等价、相邻列恰好同高），非钉子缺陷。**调度方独立一段**：`findPortalNear(..., 24)` → `12` → M4b FAIL（1/96），MD5 逐字节还原（`5e42586297eae0c4869a8dac90c57bc9`）；调度方自跑全量跑批 `RESULT: ALL PASS`（EXIT=0 / 66 套件），除 `game-behavior` 81 → 95 与 `test-hardening-net` 51 → 50（本轮调度方机器命中外网探针 SKIP，按 SKIP 口径非回归）外零差异；`start()`/`_disposeWorld()` 花括号切片与 HEAD 逐字节相同。
+- 步 5 覆盖缺口（不得据此宣称已全覆盖）：真实换维（`switchDimension` 重建世界 + 落点吸附/建门的真机表现）钉子用 stub 拦截；联机双端（`switch_dimension`/`dimension_world`、服务器清洗 pos）未跑；`PortalOverlay` 视觉无覆盖；`updatePortalParticles` 无行为钉子（假环境 chunk.portalCells 恒空，仅由每帧调用链兜 no-throw）。
 
 **不动**：L1 世界/网格、L3 物理、L17 维度切换、L2 装配中枢（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI` 等跨域基础设施）。
 
