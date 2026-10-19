@@ -7,7 +7,7 @@ export class Raycast {
   }
 
   // 从 origin 沿 direction 射出，最大距离 maxDist
-  // includeFluid: 命中流体（空桶舀水/岩浆用）——默认跳过（准星穿透水）
+  // includeFluid: 仅命中水/岩浆源方块（空桶用）；默认穿透全部流体
   // 返回 { block: {x,y,z}, normal: {x,y,z} } 或 null
   cast(origin, direction, maxDist = 5, includeFluid = false) {
     let x = Math.floor(origin.x);
@@ -33,9 +33,9 @@ export class Raycast {
       const id = this.world.getBlock(x, y, z);
       if (id !== 0) {
         const def = BlockRegistry.getById(id);
-        // 可选中：实心非流体 / cross 装饰（作物/草丛/火把/按钮/花——原版语义，
-        // 否则火把拆不掉、按钮点不着、作物无法右键）；流体仅 includeFluid（空桶）
-        if (def && !def.fluid && (def.solid || def.renderType === 'cross')) {
+        // 可选中：实心非流体 / cross 装饰；空桶可选中 includeFluid=true 时的水/岩浆源方块
+        if (def && ((def.fluid && includeFluid && def.name === def.fluidType) ||
+            (!def.fluid && (def.solid || def.renderType === 'cross')))) {
           return {
             block: { x, y, z },
             normal: lastFace,

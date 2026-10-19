@@ -28,7 +28,7 @@
 | 6 | 前端模式归一 | F5 F6 F7 F8 F9 F10 F11 F12 | 已完成（`d908532`，CI run 39120118156 绿） |
 | 7 | 工程与覆盖 | E4 E5 E6 E8 E9 E12 E13 | 已完成（`6f5f3ec`，CI run 39122476650 绿） |
 | 8 | F3 Game.js 拆分（门面委托形态；含步 0 回归网共 9 步） | F3 | 已完成（代码 `488de83`，CI run 39224682211 绿；Game.js 3769 → 2273 行，行为网 38 → 187 断言） |
-| 9 | 既有缺陷 H1：准星指向「放置邻格落在玩家自身 AABB 内」的方块时右键被吞（轮 6 发现，非回归） | H1 | 步 1 已完成（`8d9d566`，CI run 39227588945 绿；Q25 改写 + 3 条新钉子，`game-behavior` 187 → 190 断言）；步 2（H2 舀水，§十三）待批准 |
+| 9 | 既有缺陷 H1/H2：放置重叠右键被吞 / 空桶射线无法选中流体源 | H1 H2 | 步 1 已完成（`8d9d566`，CI run 39227588945 绿）；步 2 已完成（H2，`game-behavior` 190 → 196、68 个套件块全绿；签名提交 / CI 待调度者补录，Build 32 / Release 未执行） |
 | 不做 | E11 three 升级（阴影注入链路重写）、E14 i18n 组织（现状三重校验兜底） | E11 E14 | 已判定不做 |
 
 ## 三、轮 1：服务器安全加固（S1–S5）
@@ -101,6 +101,7 @@
 | 8 | 2026-10-19 | 2026-10-19 | `488de83`（文档另提交） | run 39224682211 绿 | 九步串行（步 0 回归网 + 步 1–8 每步一域一提交）：Game.js 3769 → 2273 行（−39.7%），9 个域模块 `src/player/`——Summoning 102 / GlideWind 132 / Endgame 144 / Projectiles 301 / Beacon 127 / PortalSystem 244 / Placement 244 / AetherFinale 371 / InteractionController 514；每步口径＝先钉行为（绿）→ 逐条反证（改坏必红 + md5 逐字节还原）→ 搬家 + 薄门面 → `node --check` → 全量跑批 + 逐套件 PASS 行对照 → 断言数只增不减；行为网 tests/game-behavior.mjs 38 → 187 断言；禁改区（`constructor` / `start` / `update` / `_disposeWorld` / `_frameRay` / `updateRaycast` / `_anyInputBlockingUI`）逐步花括号切片与 HEAD 逐字节核对；调度方每步独立复核（自写扫描器复算 md5 / 独立改坏点 / 自跑全量跑批 / 逐方法 token 级保真比对） |
 
 | 9（步 1） | 2026-10-19 | 2026-10-19 | `8d9d566`（文档另提交） | run 39227588945 绿 | H1 修复：段③放置重叠守卫整段移入 `if (blockDef)` 内（只对可放置方块生效），手持弓/末影之眼不再被静默吞掉右键；Q25 由「蓄力被吞」改写为「进入蓄力」，新增 Q25a 真方块正对照 / Q25b 末影之眼 / Q25c 手持杂物兜底消费；断言 187 → 190，逐套件 PASS 行仅 `game-behavior` 186 → 189（其余 65 套件零差异），66 套件全绿；调度方独立反证三组（删守卫 → Q25a 红；守卫放回 `if (blockDef)` 之前 → Q25/Q25b/Q25c 红；守卫出口改为置位消费 → Q25a 红）每组 md5 逐字节还原；`src/player/Game.js` 零改动 |
+| 9（步 2） | 2026-10-19 | 2026-10-19 | 待调度者签名提交 | 待推送后 CI | H2 源流体射线：Q20/Q20a/Q20b + 水下选择/挖掘、弓水面蓄力、末影之眼水面掷出；`game-behavior` 190 → 196；`npm test` 68 个套件块全绿且除该套件外 PASS/FAIL 行零差异；两种变异均被对应钉子捕获且 Raycast MD5 精确恢复；真实浏览器右键舀水通过。 |
 
 ## 八、轮 5 · 联机服务端打磨（S6–S13）
 
@@ -298,16 +299,20 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 
 **步骤拆解（轮 9 = 2 步）**：
 - 步 1（**已完成**，`8d9d566`，CI run 39227588945 绿）：H1 修复 —— 守卫整段（注释 + `px/py/pz` + 判据 + 出口）移入 `if (blockDef)` 内、置于 `g.hand.swing()` 之前（`placeX/Y/Z` 计算留原处），真方块行为逐字不变；Q25 由「蓄力被吞」改写为「进入蓄力」（未删除），新增 Q25a 真方块正对照 / Q25b 末影之眼 / Q25c 手持杂物兜底消费；`game-behavior` 断言 187 → 190、`src/player/Game.js` 零改动（md5 `07ea16d1…` 与 HEAD 一致）。反证：子代理三组（删守卫 → Q25a 红 5/190；守卫放回 → Q25/Q25b/Q25c 红 3/190；断开掷眼分支 → Q25b 红 3/190）＋调度方独立三组（删守卫 → Q25a 红并连带 Q27/Q28-Q30/Q31/Q33 共 5/190；守卫放回 → 同子代理 3/190；守卫出口改为置位消费 → Q25a 红 1/190），每次均备份逐字节还原并复核 md5。行为变更（必然推论，已钉死）：手持无专属分支的杂物在重叠格右键，旧「静默不消费」→ 新「末尾兜底置位消费」。
-- 步 2（待批准）：H2 —— `Raycast.cast` 的 `includeFluid` 形参消费 + 空桶舀水链路（见 §十三）。
+- 步 2（**已完成**，H2；提交 SHA / CI run ID 待调度者签名提交、推送后补录）：`Raycast.cast` 消费 `includeFluid`，只命中水/岩浆源方块；Q20 现钉真实舀水链，岩浆源/流动等级与四条水准星无回归路径均有行为证据（见 §十三）。未递增 Build 32、未创建 GitHub Release。
 
 **验收标准**：① 复现用例先红后绿——`game-behavior` 的 **Q25** 就是该缺陷的现状钉子（修复后必须同步改写成「进入蓄力」，不得直接删除）；② 放置路径零回归：贴身放方块仍被拒（重叠守卫对真正的方块放置仍然生效），Q18/Q24/Q26 全绿；③ 弓蓄力 / 末影之眼 / 食物 / 工作台 / 红石 / 容器交互全部分支逐一走查并给出对照；④ `npm test` 全绿。
 
-## 十三、轮 9 备选 · 既有缺陷 H2（`Raycast.cast` 的 `includeFluid` 形参从未被消费 → 空桶舀水分支经真实射线路不可达）
+## 十三、轮 9 步 2 · H2（已完成：`Raycast.cast` 消费 `includeFluid` → 空桶舀取源流体）
 
-来源：轮 8 步 8 实施中发现（子代理发现，调度方读码独立复核）。
+来源：轮 8 步 8 实施中发现（子代理发现，调度方读码独立复核）；本步按已批准任务完成。
 
-**事实**：`src/player/Raycast.js:12` 定义 `cast(origin, direction, maxDist = 5, includeFluid = false)`，调用点 `Game.js:1357` 确实按 `!!held && held.name === 'bucket'` 传入该实参，但函数体第 38 行的候选过滤是 `if (def && !def.fluid && (def.solid || def.renderType === 'cross'))`——**流体一律被排除，形参零消费**；而 `selectedBlock` 全仓唯一写入点是 `updateRaycast`，因此 `InteractionController` 里 `targetDef.fluid` **恒假**，空桶舀水分支经真实射线路不可达。
+**根因与修复**：`src/player/Raycast.js` 原签名 `cast(origin, direction, maxDist = 5, includeFluid = false)` 虽由 `Game.updateRaycast` 在手持空桶时传 true，但旧候选过滤排除全部流体。现只有 `includeFluid && def.fluid && def.name === def.fluidType` 才让流体成为命中候选（即 water/lava 源 ID）；`includeFluid=false` 仍穿透所有水/岩浆和流动等级。非流体的 solid/cross 选择规则不变。`Game.js` 与 `InteractionController.js` 未修改；满桶倒出 Q19 维持原状。
 
-**影响**：手持空桶对准水源 / 岩浆右键不会舀（准星穿透流体 → 顶层早退且不消费右键）；满桶倒出（Q19）不受影响。
+**行为钉子 / 红绿证据**：轮 9 步 1 的 `.run/round9-step1-dispatcher.log` 保留旧 Q20 现状 PASS（aim=null、water 留存、空桶未消费，190 assertions）；临时只修 Raycast 后、尚未改写 Q20 时，旧 Q20 明确 FAIL（aim 命中水、源格为空、手持 water_bucket、右键已消费），原始红测记录为 `.run/b30-r9-step2-h2-old-q20-red.log`。最终 `tests/game-behavior.mjs` 的 Q20 改钉真实右键舀水（bucket→water_bucket + 源格为空 + 消费右键），Q20a 钉岩浆源舀取，Q20b 钉 `water_flow_3` 不可选/不取走/不消费；Q20c/d 在玩家眼位真实浸水时由真实射线选中并挖除后方石块；Q20e/f 分别由水面真实准星与右键输入钉住弓蓄力、末影之眼掷出。无手动赋值 `selectedBlock` 或手动写最终交互结果。满桶倒水仍由 Q19 覆盖。
 
-**验收标准**：① 先钉现状再修——Q20 已是现状钉子，反证已做（在 `Raycast.js` 里实现 `includeFluid` 会让 Q20 变红）；② 修复后 Q20 改写为「空桶舀水 → 手持变水桶 + 源方块被取走」，并补「岩浆桶」「流动等级不可舀（仅源方块）」两条；③ 准星指向水的其它路径零回归（水下方块选择、水中挖掘、弓对水面蓄力、末影之眼对水面掷出）；④ `npm test` 全绿。
+**验证与回归**：`node --check src/player/Raycast.js`、`node --check tests/game-behavior.mjs`、`node tests/game-behavior.mjs` 均通过；`game-behavior` 为 196 assertions ALL PASS（相较轮 9 步 1 的 190 增加 6）。完整 `npm test`：68 个套件块、`RESULT: ALL PASS`、EXIT=0，日志 `.run/b30-r9-step2-h2-npm-test.log`；聚焦行为日志 `.run/b30-r9-step2-h2-game-behavior-final.log`。另以隔离 `agent-browser` 会话锁定 `canvas[data-engine]` 后真实 mouse down/up 右键舀水，观察到 sourceId 11→0、bucket→water_bucket、mouseRight=false；记录 `.run/b30-r9-step2-h2-browser-manual.log`。逐套件 PASS/FAIL 行对照 `.run/b30-r9-step2-h2-suite-compare.log`：对轮 9 步 1 仅 `game-behavior` 从 190→196，其他 67 个套件 PASS/FAIL 行零差异；对轮 8 步 8 基线为 187→196（历史累计 +9），其他套件零差异。
+
+**独立变异反证**：① 移除流体命中逻辑、恢复旧过滤 → Q20 和 Q20a 失败，日志 `.run/b30-r9-step2-h2-mutation-no-fluid.log`；② 去掉 `def.name === def.fluidType` 限制、使任意流动流体可选 → Q20b 失败（实际命中 `water_flow_3`），日志 `.run/b30-r9-step2-h2-mutation-flow-selectable.log`。两次变异前后 `src/player/Raycast.js` MD5 均为 `b22e9ae6c7387e3b4e0d630bc3f7578c`，已逐次校验精确还原；测试文件 MD5 `0f1984832635d65ae612dae89eca92f4`。
+
+`docs/agent-notes/survival-items.md` 已同步桶的源/流动等级规则，并去除过时的「无流动模拟」说法。签名提交 SHA / CI run ID：待调度者后续补录；本步未提交/推送，未递增 Build 32，也未创建 GitHub Release（仍需单独批准）。

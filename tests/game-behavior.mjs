@@ -2049,16 +2049,104 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
   qg.controls.mouseRight = false;
   qg.world.setBlock(P.x, P.y, P.z, 0);
 
-  // ── Q20 空桶对准水源：射线不选流体（Raycast 的 includeFluid 实参未被消费） → 顶层早退且不消费 ──
+  // ── Q20 空桶舀取：仅流体源可选，经过 updateRaycast 与右键交互链 ──
+  const q20Back = { x: qx, y: 201, z: qz - 3 };
+  qg.world.setBlock(q20Back.x, q20Back.y, q20Back.z, 0);
   setT('water');
   hold('bucket', 1);
   await stand();
   const q20Aim = qg.selectedBlock;
   await clickRight();
-  assert('Q20 空桶对准水源（现状钉子）：准星穿透流体 → 无目标 → 顶层早退且不消费（舀水分支经真实射线不可达）',
-    q20Aim === null && idAtT() === Reg.getId('water') && heldName() === 'bucket' && qg.controls.mouseRight === true,
+  assert('Q20 空桶舀水：真实准星命中 water 源 → 右键后源格为空、手持变 water_bucket、mouseRight 被消费',
+    !!q20Aim && q20Aim.block.x === T.x && q20Aim.block.y === T.y && q20Aim.block.z === T.z && q20Aim.id === Reg.getId('water') &&
+    idAtT() === 0 && heldName() === 'water_bucket' && qg.controls.mouseRight === false,
     'aim=' + JSON.stringify(q20Aim) + ' block=' + idAtT() + ' held=' + heldName() + ' mouseRight=' + qg.controls.mouseRight);
   qg.controls.mouseRight = false;
+
+  // ── Q20a 岩浆源同链路可舀 ──
+  qg.world.setBlock(q20Back.x, q20Back.y, q20Back.z, 0);
+  setT('lava');
+  hold('bucket', 1);
+  await stand();
+  const q20aAim = qg.selectedBlock;
+  await clickRight();
+  assert('Q20a 空桶舀岩浆：真实准星命中 lava 源 → 源格为空、手持变 lava_bucket、mouseRight 被消费',
+    !!q20aAim && q20aAim.block.x === T.x && q20aAim.block.y === T.y && q20aAim.block.z === T.z && q20aAim.id === Reg.getId('lava') &&
+    idAtT() === 0 && heldName() === 'lava_bucket' && qg.controls.mouseRight === false,
+    'aim=' + JSON.stringify(q20aAim) + ' block=' + idAtT() + ' held=' + heldName() + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q20b 流动等级不是源：不可被空桶选中或取走 ──
+  const q20FlowId = Reg.getId('water_flow_3');
+  qg.world.setBlock(q20Back.x, q20Back.y, q20Back.z, 0);
+  setT('water_flow_3');
+  hold('bucket', 1);
+  await stand();
+  const q20bAim = qg.selectedBlock;
+  await clickRight();
+  assert('Q20b 空桶对准流动水位：updateRaycast 不选流体、右键不消费，水位与空桶均不变',
+    q20bAim === null && idAtT() === q20FlowId && heldName() === 'bucket' && qg.controls.mouseRight === true,
+    'aim=' + JSON.stringify(q20bAim) + ' block=' + idAtT() + ' expected=' + q20FlowId + ' held=' + heldName() + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q20c 普通准星路径穿透水并选择水后方方块 ──
+  qg.world.setBlock(q20Back.x, q20Back.y, q20Back.z, Reg.getId('stone'));
+  qg.world.setBlock(qx, 200, qz, Reg.getId('water'));
+  qg.world.setBlock(qx, 201, qz, Reg.getId('water'));
+  setT('water');
+  hold('diamond_pickaxe', 1);
+  await stand();
+  const q20cAim = qg.selectedBlock;
+  assert('Q20c 水下方块选择：玩家眼位在水中，普通准星穿透两格水并命中后方 stone',
+    qg.player.inWater === true && !!q20cAim && q20cAim.block.x === q20Back.x && q20cAim.block.y === q20Back.y && q20cAim.block.z === q20Back.z &&
+    q20cAim.id === Reg.getId('stone') && idAtT() === Reg.getId('water'),
+    'inWater=' + qg.player.inWater + ' aim=' + JSON.stringify(q20cAim) + ' water=' + idAtT());
+
+  // ── Q20d 水中左键挖掘：持续驱动真实帧更新，不手工写 selectedBlock/破坏结果 ──
+  qg.breakingProgress = 0;
+  qg.controls.mouseLeft = true;
+  let q20dFrames = 0;
+  for (; q20dFrames < 200 && qg.world.getBlock(q20Back.x, q20Back.y, q20Back.z) !== 0; q20dFrames++) {
+    await step(qg, 1);
+    if (q20dFrames % 20 === 19) await new Promise((r) => setTimeout(r, 0));
+  }
+  assert('Q20d 水中挖掘：真实左键链挖掉水后 stone，保留水源且消费 mouseLeft',
+    qg.player.inWater === true && q20dFrames > 0 && qg.world.getBlock(q20Back.x, q20Back.y, q20Back.z) === 0 &&
+    idAtT() === Reg.getId('water') && qg.controls.mouseLeft === false,
+    'frames=' + q20dFrames + ' inWater=' + qg.player.inWater + ' back=' + qg.world.getBlock(q20Back.x, q20Back.y, q20Back.z) + ' water=' + idAtT() + ' mouseLeft=' + qg.controls.mouseLeft);
+  qg.controls.mouseLeft = false;
+  qg.world.setBlock(qx, 200, qz, 0);
+  qg.world.setBlock(qx, 201, qz, 0);
+  qg.world.setBlock(q20Back.x, q20Back.y, q20Back.z, 0);
+
+  // ── Q20e 水面不拦截弓蓄力：准星仍由 updateRaycast 更新，按住进入真实蓄力通道 ──
+  setT('water');
+  qg.world.setBlock(q20Back.x, q20Back.y, q20Back.z, 0);
+  hold('bow', 1);
+  giveArrows(8);
+  qg._cancelBowCharge();
+  await stand();
+  const q20eAim = qg.selectedBlock;
+  await clickRight(1);
+  await step(qg, 2);
+  assert('Q20e 弓对准水面蓄力：水仍不可选，真实右键输入启动蓄力并持续累加',
+    q20eAim === null && idAtT() === Reg.getId('water') && qg._bowCharging === true && qg._bowCharge > 0 && qg.controls.mouseRight === true,
+    'aim=' + JSON.stringify(q20eAim) + ' water=' + idAtT() + ' charging=' + qg._bowCharging + ' charge=' + qg._bowCharge + ' mouseRight=' + qg.controls.mouseRight);
+  qg._cancelBowCharge();
+  qg.controls.mouseRight = false;
+
+  // ── Q20f 水面上掷末影之眼：无方块目标时仍走真实掷出分支 ──
+  hold('ender_eye', 2);
+  qg.eyeFlight = null; qg.projectiles.eyeFlight = null;
+  await stand();
+  const q20fAim = qg.selectedBlock;
+  await clickRight();
+  const q20fFlight = !!qg.eyeFlight;
+  assert('Q20f 末影之眼对准水面掷出：真实射线穿透水无方块目标，右键仍生成飞行物并消耗 1 颗',
+    q20fAim === null && idAtT() === Reg.getId('water') && countOf('ender_eye') === 1 && q20fFlight && qg.controls.mouseRight === true,
+    'aim=' + JSON.stringify(q20fAim) + ' water=' + idAtT() + ' eye=' + countOf('ender_eye') + ' flight=' + q20fFlight + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+  qg.eyeFlight = null; qg.projectiles.eyeFlight = null;
 
   // ── Q21 右键·打火石对非门框目标：不点火、不写方块 → 末尾兜底消费 ──
   setT('stone');
