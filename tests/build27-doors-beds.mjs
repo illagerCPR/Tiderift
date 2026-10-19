@@ -192,13 +192,14 @@ function near(a, b, eps = 1e-4) { return Math.abs(a - b) < eps; }
 {
   const gm = srcOf('../src/player/Game.js');
   const pm = srcOf('../src/player/Placement.js'); // 轮 8 步 6：放置/容器域已迁出 Game（形制放置）
-  ok(gm.includes("this.world.dimension !== 'overworld'") && gm.includes("pendingExplosions.push"), '床：非主世界引爆（爆炸粒子出口）');
-  ok(gm.includes('this._hostileNearby(8)'), '床：8 格敌对怪拒绝入睡');
-  ok(gm.includes('this.sleepOverlay.show('), '床：黑屏过渡跳时间（废除瞬跳）');
+  const icm = srcOf('../src/player/InteractionController.js'); // 轮 8 步 8：鼠标交互域已迁出 Game（右键/放置/破坏分支）
+  ok(icm.includes("g.world.dimension !== 'overworld'") && icm.includes("pendingExplosions.push"), '床：非主世界引爆（爆炸粒子出口）');
+  ok(icm.includes('g._hostileNearby(8)'), '床：8 格敌对怪拒绝入睡');
+  ok(icm.includes('g.sleepOverlay.show('), '床：黑屏过渡跳时间（废除瞬跳）');
   ok(gm.includes("bedDef.part === 'bed_foot' || bedDef.part === 'bed_head'"), 'respawn：床失效校验');
-  ok(gm.includes('this._removeShapedPartner(def,'), '破坏：门/床任一半连动另一半');
-  ok(gm.includes('this._tryPlaceShaped(placeX, placeY, placeZ, blockDef)'), '放置：形制多格分支');
-  ok(gm.includes("furnaceDef.part === 'door_lower' || furnaceDef.part === 'door_upper' || furnaceDef.part === 'trapdoor'"), '右键：门/活板门开关分支');
+  ok(icm.includes('g._removeShapedPartner(def,'), '破坏：门/床任一半连动另一半');
+  ok(icm.includes('g._tryPlaceShaped(placeX, placeY, placeZ, blockDef)'), '放置：形制多格分支');
+  ok(icm.includes("furnaceDef.part === 'door_lower' || furnaceDef.part === 'door_upper' || furnaceDef.part === 'trapdoor'"), '右键：门/活板门开关分支');
   ok(pm.includes('doorId(blockDef.baseBlock'), '放置：门用状态 id 家族');
 
   const rsSrc = srcOf('../src/core/RedstoneSystem.js');

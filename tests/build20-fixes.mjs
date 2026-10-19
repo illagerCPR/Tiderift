@@ -159,7 +159,7 @@ ok(BlockRegistry.getNameById(99999) === null, 'getNameById 未注册 id 返回 n
   ok(mob.includes('player.dead || player.creative || player.spectator'), '潜影贝 AI 排除创造玩家');
   const mm = srcOf('../src/entity/MobManager.js');
   ok(mm.includes('opts.provoke !== false'), 'attackMob provoke 开关');
-  ok(srcOf('../src/player/Game.js').includes("{ provoke: !this.player.creative }"),
+  ok(srcOf('../src/player/InteractionController.js').includes("{ provoke: !g.player.creative }"),
     'Game 攻击调用按模式传 provoke');
 }
 // 行为级：provoke=false 不设置激怒，默认（生存）仍激怒

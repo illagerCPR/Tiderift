@@ -1762,6 +1762,506 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
     'show=' + JSON.stringify(csShown) + ' closed=' + JSON.stringify(csClosed) + ' 上报=' + sentBox.length);
 }
 
+// ── Q. 鼠标交互域行为：点击消费协议 / 左键链路 / 右键链路 / 弓蓄力通道 ──────────
+// 轮 8 步 8 的迁移面（InteractionController）。断言全部经真实入口驱动：真实 aim
+// （player 位姿 → update → updateRaycast 写 selectedBlock）→ 真实 controls 置位 → 真实帧；
+// 不手工写 selectedBlock、不直接 world.setBlock 造结果（形制/床仅用 _tryPlaceShaped 摆场）。
+// 同时钉住「点击已消费」协议：controls.mouseLeft/mouseRight 的置位时机与次数必须与迁移前逐字一致
+//（外部 Controls / update / NetworkManager 都读它）——「未消费」的出口不置位（协议里的 abort 态）。
+{
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const Crops = await import('../src/core/crops.js');
+
+  const qj = await boot({ mode: 'survival', seed: SEED });
+  track(qj.g);
+  const qg = qj.g;
+  const inv = qg.inventory;
+  const countOf = (name) => inv.slots.reduce((n, s) => (s && s.name === name ? n + s.count : n), 0);
+  const heldName = () => ((inv.slots[inv.hotbarSelected] || {}).name || null);
+  const hold = (name, count = 1) => { inv.setSelected(0); inv.slots[0] = name ? { name, count, data: null } : null; qg.hotbar.update(); };
+  const giveArrows = (n) => { inv.slots[8] = { name: 'arrow', count: n, data: null }; };
+
+  // 场地：9×9 石台（顶面 y=200，玩家站其上）；准星目标格 T=(qx,201,qz-2)（眼高 201.62 正对），
+  // 目标格的 +Z 邻格 P=(qx,201,qz-1) 是普通放置/倒水的落点。yaw=0 朝 -Z（Controls:122 约定）。
+  const qx = Math.floor(qg.player.position.x) + 12, qz = Math.floor(qg.player.position.z) + 12;
+  const STONE = Reg.getId('stone');
+  for (let dx = -6; dx <= 6; dx++) for (let dz = -6; dz <= 6; dz++) qg.world.setBlock(qx + dx, 199, qz + dz, STONE);
+  const T = { x: qx, y: 201, z: qz - 2 }, P = { x: qx, y: 201, z: qz - 1 };
+  const setT = (name) => { qg.world.setBlock(T.x, T.y, T.z, name ? Reg.getId(name) : 0); qg.world.setBlock(P.x, P.y, P.z, 0); };
+  const stand = async (pitch = 0) => { qg.player.position.set(qx + 0.5, 200, qz + 0.5); qg.player.velocity.set(0, 0, 0); qg.player.yaw = 0; qg.player.pitch = pitch; await step(qg, 1); };
+  const clickRight = async (frames = 1) => { qg.controls.mouseRight = true; const bad = await step(qg, frames); return bad; };
+  const idAtT = () => qg.world.getBlock(T.x, T.y, T.z);
+  const UP = Math.PI / 2 - 0.05, DOWN = -Math.PI / 2 + 0.05;
+  qg.controls.mouseLeft = false; qg.controls.mouseRight = false;
+
+  // ── Q1 顶层早退：无准星目标 ∧ 手持非弓类 → 整方法退出且不消费 ──
+  qg.player.setMode('survival');
+  hold('stone', 5);
+  setT(null);
+  await stand(UP);
+  const q1Aim = !!qg.selectedBlock;
+  qg._miningActive = true;
+  await clickRight();
+  assert('Q1 顶层早退（无目标 ∧ 非弓类手持）：整方法退出且**不消费**右键（mouseRight 保持 true）；_miningActive 在方法入口被复位',
+    !q1Aim && qg.controls.mouseRight === true && qg._miningActive === false,
+    'aim=' + q1Aim + ' mouseRight=' + qg.controls.mouseRight + ' miningActive=' + qg._miningActive);
+  qg.controls.mouseRight = false;
+
+  // ── Q2 左键·创造瞬破：消费 mouseLeft ──
+  qg.player.setMode('creative');
+  setT('stone');
+  await stand();
+  const q2Aim = qg.selectedBlock && qg.selectedBlock.block ? qg.selectedBlock.block.x === T.x && qg.selectedBlock.block.y === T.y && qg.selectedBlock.block.z === T.z : false;
+  qg._miningActive = true;
+  qg.controls.mouseLeft = true;
+  const q2Bad = await step(qg, 1);
+  assert('Q2 左键·创造瞬破：真实瞄准墙面 → 目标格变空气、mouseLeft 被消费（置 false）、_miningActive 复位',
+    q2Bad.length === 0 && q2Aim && idAtT() === 0 && qg.controls.mouseLeft === false && qg._miningActive === false,
+    'aim=' + q2Aim + ' block=' + idAtT() + ' mouseLeft=' + qg.controls.mouseLeft + ' miningActive=' + qg._miningActive);
+  qg.controls.mouseLeft = false;
+
+  // ── Q3 左键·生存挖掘推进：不消费（按住继续挖） ──
+  qg.player.setMode('survival');
+  hold('diamond_pickaxe', 1);
+  setT('stone');
+  await stand();
+  qg.breakingProgress = 0;
+  qg.controls.mouseLeft = true;
+  await step(qg, 1);
+  const q3 = { prog: qg.breakingProgress, mining: qg._miningActive, mesh: qg.breakMesh.visible, period: qg.hand.miningPeriod };
+  assert('Q3 左键·生存挖掘推进：单帧 → 进度累加、_miningActive 置起、破坏网格可见、挥动周期按硬度写入；mouseLeft **不被消费**（按住继续挖）',
+    q3.prog > 0 && q3.mining === true && q3.mesh === true && q3.period === 0.25 && qg.controls.mouseLeft === true,
+    'prog=' + q3.prog.toFixed(4) + ' mining=' + q3.mining + ' mesh=' + q3.mesh + ' period=' + q3.period + ' mouseLeft=' + qg.controls.mouseLeft);
+
+  // ── Q4 左键·生存挖穿：消费 + 掉落入背包 + 进度/网格收口 ──
+  const q4Before = countOf('stone');
+  let q4Frames = 0;
+  for (; q4Frames < 200; q4Frames++) {
+    qg.frame++;
+    qg.update(1 / 60);
+    if (idAtT() === 0) break;
+    if (q4Frames % 20 === 19) await new Promise((r) => setTimeout(r, 0));
+  }
+  const q4Got = countOf('stone') - q4Before;
+  assert('Q4 左键·生存挖穿：逐帧累积到挖穿 → 方块消失、掉落 stone×1 入背包、mouseLeft 被消费、进度归零、破坏网格隐藏',
+    q4Frames > 0 && idAtT() === 0 && q4Got === 1 && qg.controls.mouseLeft === false && qg.breakingProgress === 0 && qg.breakMesh.visible === false,
+    'frames=' + q4Frames + ' block=' + idAtT() + ' 得=' + q4Got + ' mouseLeft=' + qg.controls.mouseLeft + ' prog=' + qg.breakingProgress + ' mesh=' + qg.breakMesh.visible);
+
+  // ── Q5 左键未按下分支：松开 → 进度复位 + 网格隐藏 ──
+  setT('stone');
+  await stand();
+  qg.controls.mouseLeft = true;
+  await step(qg, 1);
+  const q5Mid = qg.breakingProgress > 0 && qg.breakMesh.visible === true;
+  qg.controls.mouseLeft = false;
+  await step(qg, 1);
+  assert('Q5 左键未按下分支（松开）：进度复位为 0 + 破坏网格隐藏；mouseLeft 保持 false（不被改写）',
+    q5Mid && qg.breakingProgress === 0 && qg.breakMesh.visible === false && qg.controls.mouseLeft === false,
+    'mid=' + q5Mid + ' prog=' + qg.breakingProgress + ' mesh=' + qg.breakMesh.visible);
+  qg.controls.mouseLeft = false;
+
+  // ── Q6 左键·不可挖（hardness<0）：消费且零进度 ──
+  setT('bedrock');
+  await stand();
+  qg.breakingProgress = 0;
+  qg.controls.mouseLeft = true;
+  await step(qg, 1);
+  assert('Q6 左键·不可挖（bedrock hardness<0）：mouseLeft 被消费、零进度、方块不变、破坏网格不显示',
+    qg.controls.mouseLeft === false && qg.breakingProgress === 0 && qg.breakMesh.visible === false && idAtT() === Reg.getId('bedrock'),
+    'mouseLeft=' + qg.controls.mouseLeft + ' prog=' + qg.breakingProgress + ' mesh=' + qg.breakMesh.visible + ' block=' + idAtT());
+  qg.controls.mouseLeft = false;
+
+  // ── Q7 左键·旁观者：消费且世界零变化 ──
+  qg.player.setMode('spectator');
+  setT('stone');
+  await stand();
+  qg.breakingProgress = 0;
+  qg.controls.mouseLeft = true;
+  await step(qg, 1);
+  assert('Q7 左键·旁观者：mouseLeft 被消费、方块不变、零进度',
+    qg.controls.mouseLeft === false && idAtT() === STONE && qg.breakingProgress === 0,
+    'mouseLeft=' + qg.controls.mouseLeft + ' block=' + idAtT() + ' prog=' + qg.breakingProgress);
+  qg.controls.mouseLeft = false;
+  qg.player.setMode('survival');
+
+  // ── Q8 左键·攻击怪物：真实怪物 + 真实射线 → 攻击结算 + 消费 ──
+  hold('diamond_sword', 1);
+  setT(null);
+  await stand();
+  qg.mobManager._spawnAt('zombie', qx + 0.5, 200, qz - 2.5);
+  const q8Mob = qg.mobManager.mobs[qg.mobManager.mobs.length - 1];
+  const q8Hp0 = q8Mob ? q8Mob.health : -1;
+  qg.controls.mouseLeft = true;
+  await step(qg, 1);
+  const q8Hp1 = q8Mob ? q8Mob.health : -1;
+  assert('Q8 左键·攻击怪物：真实射线命中真实僵尸 → attackMob 结算扣血、mouseLeft 被消费',
+    !!q8Mob && q8Mob.typeName === 'zombie' && q8Hp0 === 20 && q8Hp1 < q8Hp0 && qg.controls.mouseLeft === false,
+    'hp=' + q8Hp0 + '->' + q8Hp1 + ' mouseLeft=' + qg.controls.mouseLeft);
+  qg.controls.mouseLeft = false;
+  if (q8Mob) q8Mob.dead = true;
+
+  // ── Q9 左键·联机互殴（远端玩家）：真实 aim 帧后直调真实入口（不跑 update 的联机链路） ──
+  const q9Sent = [];
+  const q9Rp = { id: 'q-remote', dead: false, group: { position: { x: qx + 0.5, y: 201.2, z: qz - 2.5 } }, update() {}, dispose() {} };
+  const q9Net = qg.net, q9Mode = qg.networkMode;
+  qg.remotePlayers.set('q-remote', q9Rp);
+  qg.networkMode = true;
+  qg.net = { roomSettings: { pvp: true }, sendAttackPlayer: (id, dmg) => q9Sent.push([id, dmg]) };
+  const q9Damage = qg.getAttackDamage();
+  qg.controls.mouseLeft = true;
+  qg.handleMouseInput(1 / 60);
+  qg.controls.mouseLeft = false;
+  qg.net = q9Net; qg.networkMode = q9Mode;
+  qg.remotePlayers.delete('q-remote');
+  assert('Q9 左键·联机互殴：联机 ∧ PvP 开启 → 远端玩家优先级最高，sendAttackPlayer(远端 id, 本地攻击力) + mouseLeft 被消费',
+    q9Sent.length === 1 && q9Sent[0][0] === 'q-remote' && q9Sent[0][1] === q9Damage,
+    'sent=' + JSON.stringify(q9Sent) + ' dmg=' + q9Damage);
+
+  // ── Q10 顶层门控 _anyInputBlockingUI：整方法早退且不消费 ──
+  hold('stone', 5);
+  setT('crafting_table');
+  qg.chestScreen.show(qx, 201, qz + 3);        // 容器界面（show 内部会清鼠标键，故置位在其后）
+  await stand();
+  const q10Visible = qg.chestScreen.visible;
+  await clickRight();
+  assert('Q10 顶层门控 _anyInputBlockingUI：容器界面开着 → 整方法早退且**不消费**右键（mouseRight 保持 true、合成台界面不开）',
+    q10Visible && qg.controls.mouseRight === true && qg.inventoryScreen.visible === false,
+    'ui=' + q10Visible + ' mouseRight=' + qg.controls.mouseRight + ' inv=' + qg.inventoryScreen.visible);
+  qg.chestScreen.hide();
+  qg.controls.mouseRight = false;
+
+  // ── Q11 右键·食物食用（瞄准物时优先于放置） ──
+  setT('stone');
+  await stand();
+  hold('bread', 3);
+  qg.player.food = 10;
+  const q11Bread0 = countOf('bread');
+  await clickRight();
+  assert('Q11 右键·食物食用：生存手持面包 → Player.eat 生效（food 10→15）、物品 -1、mouseRight 被消费',
+    qg.player.food === 15 && countOf('bread') === q11Bread0 - 1 && qg.controls.mouseRight === false,
+    'food=' + qg.player.food + ' bread=' + q11Bread0 + '->' + countOf('bread') + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q12 右键·饱腹跳过食用：落到末尾兜底消费 ──
+  hold('bread', 2);
+  qg.player.food = qg.player.maxFood;
+  const q12Bread0 = countOf('bread');
+  await clickRight();
+  assert('Q12 右键·饱腹跳过食用：food = maxFood → 不吃不扣物品，继续走完链路并由末尾兜底消费 mouseRight（原版语义）',
+    qg.player.food === qg.player.maxFood && countOf('bread') === q12Bread0 && qg.controls.mouseRight === false,
+    'food=' + qg.player.food + ' bread=' + q12Bread0 + '->' + countOf('bread') + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q13 右键·工作台 → 合成界面 ──
+  hold('stone', 3);
+  setT('crafting_table');
+  await stand();
+  await clickRight();
+  assert('Q13 右键·工作台：crafting_table → inventoryScreen 打开（3×3）+ mouseRight 被消费（方块不被放置路径覆盖）',
+    qg.inventoryScreen.visible === true && idAtT() === Reg.getId('crafting_table') && qg.controls.mouseRight === false,
+    'inv=' + qg.inventoryScreen.visible + ' block=' + idAtT() + ' mouseRight=' + qg.controls.mouseRight);
+  qg.inventoryScreen.hide();
+  qg.controls.mouseRight = false;
+
+  // ── Q14 右键·容器类（箱子 + 潜影盒）→ chestScreen 打开 ──
+  setT('chest');
+  await stand();
+  await clickRight();
+  const q14a = { visible: qg.chestScreen.visible, pos: qg.chestScreen.pos && (qg.chestScreen.pos.x === T.x && qg.chestScreen.pos.y === T.y && qg.chestScreen.pos.z === T.z), mr: qg.controls.mouseRight };
+  qg.chestScreen.hide();
+  qg.controls.mouseRight = false;
+  setT('shulker_box');
+  await stand();
+  await clickRight();
+  const q14b = { visible: qg.chestScreen.visible, pos: qg.chestScreen.pos && (qg.chestScreen.pos.x === T.x && qg.chestScreen.pos.y === T.y && qg.chestScreen.pos.z === T.z), mr: qg.controls.mouseRight };
+  qg.chestScreen.hide();
+  qg.controls.mouseRight = false;
+  assert('Q14 右键·容器类：箱子 / 潜影盒 → chestScreen 打开并落在被点方块坐标 + mouseRight 被消费',
+    q14a.visible && q14a.pos && q14a.mr === false && q14b.visible && q14b.pos && q14b.mr === false,
+    'chest=' + JSON.stringify(q14a) + ' shulker=' + JSON.stringify(q14b));
+
+  // ── Q15 右键·红石拉杆（消费；拉杆方块 id 不变，供电状态在 redstone 账本） ──
+  setT('lever');
+  await stand();
+  const q15Key = qg.redstone.key(T.x, T.y, T.z);
+  const q15Before = !!qg.redstone.poweredBlocks.get(q15Key);
+  await clickRight();
+  const q15After = !!qg.redstone.poweredBlocks.get(q15Key);
+  assert('Q15 右键·红石交互（拉杆）：onBlockInteract 返回 true → 供电状态翻转 + mouseRight 被消费',
+    q15After === !q15Before && qg.controls.mouseRight === false,
+    'powered=' + q15Before + '->' + q15After + ' mouseRight=' + qg.controls.mouseRight);
+  qg.redstone.poweredBlocks.delete(q15Key);
+  qg.controls.mouseRight = false;
+
+  // ── Q16 右键·活板门开关（整扇切换 + 消费） ──
+  setT('oak_trapdoor');
+  await stand();
+  const q16Id0 = idAtT();
+  await clickRight();
+  const q16Id1 = idAtT();
+  assert('Q16 右键·活板门开关：木活板门 → 切换为 open 变体 + mouseRight 被消费',
+    !!Reg.getById(q16Id0) && Reg.getById(q16Id0).part === 'trapdoor' && !!Reg.getById(q16Id1) &&
+    Reg.getById(q16Id1).part === 'trapdoor' && Reg.getById(q16Id1).open === true && q16Id1 !== q16Id0 && qg.controls.mouseRight === false,
+    'id=' + q16Id0 + '->' + q16Id1 + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q17 右键·床：设置重生点 + 消费 ──
+  qg.world.setBlock(T.x, T.y, T.z, 0);
+  const q17Bed = Reg.getByName('white_bed');
+  const q17Placed = qg._tryPlaceShaped(T.x, T.y, T.z, q17Bed);
+  await stand();
+  const q17Aim = qg.selectedBlock ? Reg.getById(qg.selectedBlock.id) : null;
+  qg.bedSpawn = null;
+  await clickRight();
+  const q17Spawn = qg.bedSpawn;
+  assert('Q17 右键·床：真实瞄准床家族方块 → bedSpawn 写入被点坐标与维度 + mouseRight 被消费',
+    q17Placed === true && !!q17Aim && (q17Aim.part === 'bed_foot' || q17Aim.part === 'bed_head') &&
+    !!q17Spawn && q17Spawn.x === T.x && q17Spawn.y === T.y && q17Spawn.z === T.z && q17Spawn.dimension === 'overworld' &&
+    qg.controls.mouseRight === false,
+    'placed=' + q17Placed + ' part=' + (q17Aim && q17Aim.part) + ' spawn=' + JSON.stringify(q17Spawn) + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+  for (let dz = -4; dz <= 0; dz++) for (let dx = -2; dx <= 1; dx++) {
+    const bd = Reg.getById(qg.world.getBlock(qx + dx, 201, qz + dz));
+    if (bd && bd.baseBlock === 'white_bed') qg.world.setBlock(qx + dx, 201, qz + dz, 0);
+  }
+
+  // ── Q18 右键·形制放置（活板门）：走 _tryPlaceShaped 分支 + 生存消耗 ──
+  setT('stone');
+  hold('oak_trapdoor', 1);
+  await stand();
+  await clickRight();
+  const q18Id = qg.world.getBlock(P.x, P.y, P.z);
+  const q18Def = Reg.getById(q18Id);
+  assert('Q18 右键·形制放置（活板门）：目标邻格生成活板门（part=trapdoor、baseBlock=oak_trapdoor）、生存消耗 1 个、mouseRight 被消费',
+    !!q18Def && q18Def.part === 'trapdoor' && q18Def.baseBlock === 'oak_trapdoor' && countOf('oak_trapdoor') === 0 && qg.controls.mouseRight === false,
+    'cell=' + q18Id + '/' + (q18Def && q18Def.name) + ' 剩=' + countOf('oak_trapdoor') + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q19 右键·满桶倒出（空桶舀水分支见 Q20：射线穿透流体，现不可达） ──
+  setT('stone');
+  hold('water_bucket', 1);
+  await stand();
+  await clickRight();
+  assert('Q19 右键·满桶倒出：water_bucket 对目标面 → 邻格变 water、手持变空桶、mouseRight 被消费',
+    !!Reg.getById(qg.world.getBlock(P.x, P.y, P.z)) && Reg.getById(qg.world.getBlock(P.x, P.y, P.z)).name === 'water' &&
+    heldName() === 'bucket' && qg.controls.mouseRight === false,
+    'cell=' + (Reg.getById(qg.world.getBlock(P.x, P.y, P.z)) || {}).name + ' held=' + heldName() + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+  qg.world.setBlock(P.x, P.y, P.z, 0);
+
+  // ── Q20 空桶对准水源：射线不选流体（Raycast 的 includeFluid 实参未被消费） → 顶层早退且不消费 ──
+  setT('water');
+  hold('bucket', 1);
+  await stand();
+  const q20Aim = qg.selectedBlock;
+  await clickRight();
+  assert('Q20 空桶对准水源（现状钉子）：准星穿透流体 → 无目标 → 顶层早退且不消费（舀水分支经真实射线不可达）',
+    q20Aim === null && idAtT() === Reg.getId('water') && heldName() === 'bucket' && qg.controls.mouseRight === true,
+    'aim=' + JSON.stringify(q20Aim) + ' block=' + idAtT() + ' held=' + heldName() + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q21 右键·打火石对非门框目标：不点火、不写方块 → 末尾兜底消费 ──
+  setT('stone');
+  hold('flint_and_steel', 1);
+  await stand();
+  await clickRight();
+  assert('Q21 右键·打火石（非门框目标）：_tryLightPortal 返回 false → 不点火、邻格零写入、末尾兜底消费 mouseRight',
+    idAtT() === STONE && qg.world.getBlock(P.x, P.y, P.z) === 0 && heldName() === 'flint_and_steel' && qg.controls.mouseRight === false,
+    'T=' + idAtT() + ' P=' + qg.world.getBlock(P.x, P.y, P.z) + ' held=' + heldName() + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q22 右键·末影之眼嵌入失败后掷出（瞄准普通方块） ──
+  setT('stone');
+  hold('ender_eye', 3);
+  await stand();
+  qg.eyeFlight = null; qg.projectiles.eyeFlight = null;
+  await clickRight();
+  const q22Flight = !!qg.eyeFlight;
+  assert('Q22 右键·末影之眼（瞄准普通方块）：嵌框分支失败不拦截 → 仍走掷出分支（消耗 1 颗 + 生成飞行物）；mouseRight **不被消费**（掷出分支自身不置位）',
+    countOf('ender_eye') === 2 && q22Flight && qg.controls.mouseRight === true,
+    'eye=' + countOf('ender_eye') + ' flight=' + q22Flight + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+  qg.projectiles.eyeFlight = null; qg.eyeFlight = null;
+
+  // ── Q23 右键·耕种播种：耕地 + 种子 → 上方生成 0 阶段作物 ──
+  setT('farmland');
+  hold('wheat_seeds', 2);
+  await stand();
+  await clickRight();
+  assert('Q23 右键·耕种播种：小麦种子对耕地 → 上方生成 0 阶段作物、消耗 1 粒、mouseRight 被消费',
+    qg.world.getBlock(T.x, T.y + 1, T.z) === Crops.cropIdAtStage(0) && countOf('wheat_seeds') === 1 && qg.controls.mouseRight === false,
+    'above=' + qg.world.getBlock(T.x, T.y + 1, T.z) + ' 期望=' + Crops.cropIdAtStage(0) + ' seeds=' + countOf('wheat_seeds') + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q24 右键·普通放置：邻格 + 生存消耗 ──
+  setT('stone');
+  hold('cobblestone', 4);
+  await stand();
+  await clickRight();
+  assert('Q24 右键·普通放置：邻格放置 cobblestone（走 facingId/放置链）、生存消耗 1 个、mouseRight 被消费',
+    qg.world.getBlock(P.x, P.y, P.z) === Reg.getId('cobblestone') && countOf('cobblestone') === 3 && qg.controls.mouseRight === false,
+    'cell=' + qg.world.getBlock(P.x, P.y, P.z) + ' 剩=' + countOf('cobblestone') + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q25 放置重叠守卫（既存缺陷 H1，轮 9 修）：不消费 ──
+  qg.world.setBlock(P.x, P.y, P.z, 0);
+  setT('stone');
+  hold('bow', 1);
+  giveArrows(8);
+  await stand(DOWN);
+  const q25Aim = qg.selectedBlock && qg.selectedBlock.block ? qg.selectedBlock.block.y === 199 : false;
+  await clickRight();
+  assert('Q25 放置重叠守卫（既存缺陷 H1，轮 9 修）：手持弓竖直瞄准脚下方块 → 放置邻格落在玩家 AABB → 整方法退出且**不消费**（蓄力被吞）',
+    q25Aim && qg._bowCharging === false && qg.controls.mouseRight === true,
+    'aimUnder=' + q25Aim + ' charging=' + qg._bowCharging + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q26 右键·末尾兜底消费：手持非方块（stick） ──
+  setT('stone');
+  hold('stick', 1);
+  await stand();
+  await clickRight();
+  assert('Q26 右键·末尾兜底消费：手持非方块（stick）走完整个右键链路 → 邻格零写入、mouseRight 被消费',
+    qg.world.getBlock(P.x, P.y, P.z) === 0 && idAtT() === STONE && qg.controls.mouseRight === false,
+    'P=' + qg.world.getBlock(P.x, P.y, P.z) + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+
+  // ── Q27 右键·信标界面 ──
+  setT('beacon');
+  hold('stone', 1);
+  await stand();
+  await clickRight();
+  assert('Q27 右键·信标：beacon 方块 → beaconScreen 打开（坐标一致）+ mouseRight 被消费',
+    qg.beaconScreen.visible === true && !!qg.beaconScreen.pos && qg.beaconScreen.pos.x === T.x && qg.beaconScreen.pos.y === T.y && qg.beaconScreen.pos.z === T.z &&
+    qg.controls.mouseRight === false,
+    'visible=' + qg.beaconScreen.visible + ' pos=' + JSON.stringify(qg.beaconScreen.pos) + ' mouseRight=' + qg.controls.mouseRight);
+  qg.beaconScreen.hide();
+  qg.controls.mouseRight = false;
+
+  // ── Q28/Q29/Q30 右键·石碑 / 原初祭坛 / 潮心祭坛 → 碑文屏 ──
+  setT('wind_stele');
+  await stand();
+  await clickRight();
+  const q28 = { visible: qg.steleScreen.visible, mr: qg.controls.mouseRight };
+  qg.steleScreen.hide();
+  qg.controls.mouseRight = false;
+  setT('primordial_altar');
+  await stand();
+  await clickRight();
+  const q29 = { visible: qg.steleScreen.visible, mr: qg.controls.mouseRight };
+  qg.steleScreen.hide();
+  qg.controls.mouseRight = false;
+  setT('tide_altar');
+  await stand();
+  await clickRight();
+  const q30 = { visible: qg.steleScreen.visible, mr: qg.controls.mouseRight };
+  qg.steleScreen.hide();
+  qg.controls.mouseRight = false;
+  assert('Q28-Q30 右键·石碑家族：wind_stele / primordial_altar / tide_altar → 碑文屏打开 + mouseRight 被消费（三支各自独立）',
+    q28.visible && q28.mr === false && q29.visible && q29.mr === false && q30.visible && q30.mr === false,
+    JSON.stringify({ stele: q28, primordial: q29, tide: q30 }));
+
+  // ── Q31 右键·恒昼祭坛（无图腾）：转交复潮仪式 + 消费（用记录器观察「确经该分支调用」） ──
+  const q31Calls = [];
+  const q31Saved = qg._tryTideRitual;
+  qg._tryTideRitual = (b) => { q31Calls.push(b); return false; };
+  setT('aether_altar');
+  hold('stick', 1);
+  await stand();
+  await clickRight();
+  const q31Mr = qg.controls.mouseRight;
+  qg._tryTideRitual = q31Saved;
+  qg.controls.mouseRight = false;
+  assert('Q31 右键·恒昼祭坛（无图腾）：转交复潮仪式（被调 1 次、坐标为被点方块）+ mouseRight 被消费',
+    q31Calls.length === 1 && !!q31Calls[0] && q31Calls[0].x === T.x && q31Calls[0].y === T.y && q31Calls[0].z === T.z && q31Mr === false,
+    'calls=' + JSON.stringify(q31Calls) + ' mouseRight=' + q31Mr);
+
+  // ── Q32 弓蓄力通道：不消费右键（按住继续蓄力） ──
+  setT(null);
+  hold('bow', 1);
+  giveArrows(8);
+  await stand(UP);
+  await clickRight(1);
+  const q32a = { charging: qg._bowCharging, mr: qg.controls.mouseRight };
+  await step(qg, 2);
+  const q32 = { charging: qg._bowCharging, charge: qg._bowCharge, draw: qg.hand.bowDraw, mr: qg.controls.mouseRight };
+  assert('Q32 弓蓄力通道：按住首帧起蓄（_bowCharging 置起、mouseRight **不被消费**）、逐帧累加 charge、拉弓姿态跟随',
+    q32a.charging === true && q32a.mr === true && q32.charging === true && q32.charge > 0 && q32.draw === q32.charge && q32.mr === true,
+    JSON.stringify({ a: q32a, b: q32 }));
+
+  // ── Q33 蓄力中吞掉全部右键语义：瞄准工作台也不开界面 ──
+  setT('crafting_table');
+  qg.player.pitch = 0;
+  await step(qg, 1);
+  const q33Aim = qg.selectedBlock ? Reg.getNameById(qg.selectedBlock.id) : null;
+  const q33Charge = qg._bowCharge;
+  await step(qg, 1);
+  assert('Q33 蓄力中吞掉全部右键语义：准星已落在 crafting_table 上仍不开合成界面、charge 继续累加、mouseRight 保持 true',
+    q33Aim === 'crafting_table' && qg.inventoryScreen.visible === false && qg._bowCharge > q33Charge && qg.controls.mouseRight === true,
+    'aim=' + q33Aim + ' inv=' + qg.inventoryScreen.visible + ' charge=' + q33Charge.toFixed(3) + '->' + qg._bowCharge.toFixed(3) + ' mr=' + qg.controls.mouseRight);
+  setT(null);
+
+  // ── Q34 松手发射：charge 归零 + 建箭 + 扣箭 ──
+  const q34Arrows0 = countOf('arrow');
+  qg.controls.mouseRight = false;
+  await step(qg, 1);
+  assert('Q34 弓松手发射：mouseRight=false → 释放蓄力（_bowCharging 归 false）、建 1 支箭、库存箭 -1',
+    qg._bowCharging === false && qg._bowCharge === 0 && qg.arrows.length === 1 && countOf('arrow') === q34Arrows0 - 1,
+    'charging=' + qg._bowCharging + ' arrows=' + qg.arrows.length + ' 箭=' + q34Arrows0 + '->' + countOf('arrow'));
+
+  // ── Q35 蓄力中换手持物：取消蓄力 + 置位消费 mouseRight ──
+  await stand(UP);
+  await clickRight(2);
+  const q35Charging = qg._bowCharging;
+  hold('cobblestone', 2);
+  qg.world.setBlock(P.x, P.y, P.z, 0);
+  await step(qg, 1);
+  assert('Q35 蓄力中换手持物：取消蓄力 + **置位消费** mouseRight（本次按住作废，且不触发放置等其它分支）',
+    q35Charging === true && qg._bowCharging === false && qg.controls.mouseRight === false && qg.world.getBlock(P.x, P.y, P.z) === 0,
+    'charging=' + q35Charging + '->' + qg._bowCharging + ' mouseRight=' + qg.controls.mouseRight + ' P=' + qg.world.getBlock(P.x, P.y, P.z));
+  qg.controls.mouseRight = false;
+
+  // ── Q36 蓄力中开阻断 UI：取消蓄力（拉弓姿态归 null） ──
+  hold('bow', 1);
+  setT(null);
+  await stand(UP);
+  await clickRight(2);
+  const q36Charging = qg._bowCharging;
+  qg.chestScreen.show(qx, 201, qz + 3);
+  await step(qg, 1);
+  assert('Q36 蓄力中开阻断 UI：_anyInputBlockingUI → _cancelBowCharge（_bowCharging 归 false、拉弓姿态归 null）',
+    q36Charging === true && qg._bowCharging === false && qg._bowCharge === 0 && qg.hand.bowDraw === null,
+    'charging=' + q36Charging + '->' + qg._bowCharging + ' charge=' + qg._bowCharge + ' draw=' + qg.hand.bowDraw);
+  qg.chestScreen.hide();
+  qg.controls.mouseRight = false;
+
+  // ── Q37 无箭：置位消费 + 不进蓄力 ──
+  setT(null);
+  hold('bow', 1);
+  for (let i = 0; i < inv.slots.length; i++) if (inv.slots[i] && inv.slots[i].name === 'arrow') inv.slots[i] = null;
+  await stand(UP);
+  await clickRight();
+  assert('Q37 无箭：弓分支不置蓄力、直接**置位消费** mouseRight（不射）',
+    qg._bowCharging === false && qg.controls.mouseRight === false && countOf('arrow') === 0,
+    'charging=' + qg._bowCharging + ' mouseRight=' + qg.controls.mouseRight + ' 箭=' + countOf('arrow'));
+  qg.controls.mouseRight = false;
+
+  // ── Q38 袖末影之眼（对空）：不消费（掷出分支自身不置位） ──
+  setT(null);
+  hold('ender_eye', 2);
+  await stand(UP);
+  qg.projectiles.eyeFlight = null; qg.eyeFlight = null;
+  await clickRight();
+  const q38Flight = !!qg.eyeFlight;
+  assert('Q38 右键·掷末影之眼（对空）：无准星目标仍可掷（早退守卫对手持末影之眼放宽）→ 消耗 1 颗 + 生成飞行物；mouseRight **不被消费**',
+    countOf('ender_eye') === 1 && q38Flight && qg.controls.mouseRight === true,
+    'eye=' + countOf('ender_eye') + ' flight=' + q38Flight + ' mouseRight=' + qg.controls.mouseRight);
+  qg.controls.mouseRight = false;
+  qg.projectiles.eyeFlight = null; qg.eyeFlight = null;
+  qg.world.setBlock(P.x, P.y, P.z, 0);
+  setT(null);
+}
+
 for (const x of games) shutdown(x);
 
 // ── P. 天域终局 / 复潮域行为：复潮档案 / 巨像震地与裂心拽引 / 复潮仪式 / 候潮献证 /

@@ -78,9 +78,10 @@ for (const pack of PACKS) {
 
 // ── ⑥ 接线绊线 ──
 const gameSrc = readFileSync('./src/player/Game.js', 'utf8');
+const icSrc = readFileSync('./src/player/InteractionController.js', 'utf8'); // 轮 8 步 8：鼠标交互域已迁出 Game
 const afSrc = readFileSync('./src/player/AetherFinale.js', 'utf8'); // 轮 8 步 7：终局域逻辑迁出 Game
 ok(gameSrc.includes('_tryPrimordialOffering(block) {'), '献证方法定义在场（_tryPrimordialOffering）');
-ok(gameSrc.includes("this._tryPrimordialOffering(hit.block)"), '潮心祭坛右键走献证分支');
+ok(icSrc.includes("g._tryPrimordialOffering(hit.block)"), '潮心祭坛右键走献证分支');
 ok(afSrc.includes("BlockRegistry.getId('primordial_altar')"), '献证置换原初祭坛（setBlock 进账本）');
 ok(afSrc.includes('g.world.finalePrimordial = { x: block.x, y: block.y, z: block.z }'), '候潮状态位记祭坛坐标');
 ok(gameSrc.includes("(loadData && loadData.finalePrimordial) || null"), '存档恢复 finalePrimordial');
@@ -89,8 +90,8 @@ ok(afSrc.includes("g.steleScreen.open(block.x, block.y, block.z, 'renewal')"), '
 const saveSrc = readFileSync('./src/core/SaveSystem.js', 'utf8');
 ok(saveSrc.includes('finalePrimordial: game.world.finalePrimordial || null'), 'SaveSystem 序列化 finalePrimordial');
 ok(afSrc.includes("g.steleScreen.open(block.x, block.y, block.z, 'tide_waiting')"), '献证成功浮现候潮章（复潮碑文浮现同款交互）');
-ok(gameSrc.includes("targetDef.name === 'primordial_altar'"), 'K2：原初祭坛右键分支在场');
-ok(gameSrc.includes("this.steleScreen.open(hit.block.x, hit.block.y, hit.block.z, 'tide_waiting');"), 'K2：右键原初祭坛复读候潮章');
+ok(icSrc.includes("targetDef.name === 'primordial_altar'"), 'K2：原初祭坛右键分支在场');
+ok(icSrc.includes("g.steleScreen.open(hit.block.x, hit.block.y, hit.block.z, 'tide_waiting');"), 'K2：右键原初祭坛复读候潮章');
 ok(afSrc.includes("g.steleScreen.open(block.x, block.y, block.z, 'renewal')"), '未集齐/已候潮回落复潮章（不变量 6：复潮行为不回退）');
 const waiting = STELE_CHAPTERS.tide_waiting;
 ok(!!waiting && waiting.dim === 'aether' && waiting.title === '候潮', '候潮章注册（aether/候潮）');

@@ -36,9 +36,10 @@ const ID = {
   ok(wd.includes('fluidInfo(id);\n            if (fi && fi.level > 0) this.fluidSim.scheduleAt'), '区块重载扫描：流动等级方块再入队');
 
   const gm = srcOf('../src/player/Game.js');
+  const icm = srcOf('../src/player/InteractionController.js'); // 轮 8 步 8：鼠标交互域已迁出 Game（桶的分支）
   ok(gm.includes('this.world.fluidSim.muted = isClient'), 'Game.update 动态维护 muted 门控');
   ok(gm.includes('!isClient) this.world.fluidSim.update(dt)'), '流体步进仅 host/单机执行');
-  ok(gm.includes("targetDef.name === 'water' || targetDef.name === 'lava'"), '桶：仅源方块可舀（流动等级不可舀）');
+  ok(icm.includes("targetDef.name === 'water' || targetDef.name === 'lava'"), '桶：仅源方块可舀（流动等级不可舀）');
   ok(gm.includes("def.fluid && def.fluidType === 'water'"), '游泳判定按 fluidType（流动等级同型）');
 
   const ep = srcOf('../src/entity/EntityPhysics.js');

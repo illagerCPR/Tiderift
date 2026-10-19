@@ -159,9 +159,10 @@ function srcOf(path) { return readFileSync(new URL(path, import.meta.url), 'utf-
   ok(fake._frameRay() === b && near(b.origin.x, 99, 0), '新帧内再次调用仍复用（不重复构建）');
 
   const gameSrc = srcOf('../src/player/Game.js');
-  ok((gameSrc.match(/this\._frameRay\(\)/g) || []).length >= 4, '帧射线被 updateRaycast / 远端玩家 / 怪物攻击 / 村民交互四处消费');
+  const icSrc = srcOf('../src/player/InteractionController.js'); // 轮 8 步 8：鼠标交互域已迁出 Game
+  ok((gameSrc.match(/this\._frameRay\(\)/g) || []).length + (icSrc.match(/g\._frameRay\(\)/g) || []).length >= 4, '帧射线被 updateRaycast / 远端玩家 / 怪物攻击 / 村民交互四处消费');
   ok(gameSrc.includes('cache.origin.y += PLAYER_EYE_HEIGHT;'), '帧射线起点与眼高常量同源');
   ok(gameSrc.split('_anyInputBlockingUI() {').length === 2, 'F11 阻断 UI 清单只有一处定义');
-  ok((gameSrc.match(/this\._anyInputBlockingUI\(\)/g) || []).length >= 4, 'F11 清单被四处调用点消费');
+  ok((gameSrc.match(/this\._anyInputBlockingUI\(\)/g) || []).length + (icSrc.match(/g\._anyInputBlockingUI\(\)/g) || []).length >= 4, 'F11 清单被四处调用点消费');
 }
 finish('ray-sphere');

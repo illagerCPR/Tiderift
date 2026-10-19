@@ -257,13 +257,14 @@ const def = (n) => BlockRegistry.getById(id(n));
 {
   const gm = srcOf('../src/player/Game.js');
   const pm = srcOf('../src/player/Placement.js'); // 轮 8 步 6：放置/容器域已迁出 Game（熔炉点燃态同步）
-  ok(gm.includes('blockDef.facingBase'), '放置：定向面方块按玩家方位换态');
-  ok(gm.includes('this._facingTowardPlayer(placeX, placeZ)'), '放置：正面朝玩家');
-  ok(gm.includes("if (def.baseBlock === 'chest') this._breakChest"), '破坏：箱子家族判定（四朝向）');
-  ok(gm.includes("if (def.baseBlock === 'furnace') this._breakFurnace"), '破坏：熔炉家族判定');
+  const icm = srcOf('../src/player/InteractionController.js'); // 轮 8 步 8：鼠标交互域已迁出 Game（右键/放置/破坏分支）
+  ok(icm.includes('blockDef.facingBase'), '放置：定向面方块按玩家方位换态');
+  ok(icm.includes('g._facingTowardPlayer(placeX, placeZ)'), '放置：正面朝玩家');
+  ok(icm.includes("if (def.baseBlock === 'chest') g._breakChest"), '破坏：箱子家族判定（四朝向）');
+  ok(icm.includes("if (def.baseBlock === 'furnace') g._breakFurnace"), '破坏：熔炉家族判定');
   ok(!gm.includes("if (def.name === 'chest') this._breakChest"), '破坏：旧 name === chest 判定已废除');
-  ok(gm.includes("furnaceDef.baseBlock === 'furnace'"), '右键：熔炉家族判定');
-  ok(gm.includes("targetDef.baseBlock === 'chest'"), '右键：箱子家族判定');
+  ok(icm.includes("furnaceDef.baseBlock === 'furnace'"), '右键：熔炉家族判定');
+  ok(icm.includes("targetDef.baseBlock === 'chest'"), '右键：箱子家族判定');
   ok(gm.includes('const isSkull = (id) =>'), '凋灵召唤：头颅家族判定（四朝向可召唤）');
   ok(gm.includes('const hit = isSkull(placed)'), '凋灵召唤：判层也走家族判定（非基名 === SKULL）');
   ok(!gm.includes('const hit = placed === SKULL'), '凋灵召唤：旧 placed === SKULL 判层已废除');

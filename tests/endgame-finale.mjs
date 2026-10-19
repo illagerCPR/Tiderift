@@ -24,6 +24,7 @@ ok(finaleListenGate(null) === 'read', '空状态 → read（防御）');
 
 // ── ② finaleDone 状态序列化三处 ──
 const gameSrc = readFileSync('./src/player/Game.js', 'utf8');
+const icSrc = readFileSync('./src/player/InteractionController.js', 'utf8'); // 轮 8 步 8：鼠标交互域已迁出 Game
 const afSrc = readFileSync('./src/player/AetherFinale.js', 'utf8'); // 轮 8 步 7：终局域逻辑迁出 Game
 ok(gameSrc.includes('this.world.finaleDone = !!(loadData && loadData.finaleDone);'), 'start 恢复 finaleDone');
 ok(gameSrc.includes('finaleDone: !!this.world.finaleDone, // 听潮完成跨维透传'), '换维透传 finaleDone');
@@ -50,7 +51,7 @@ ok(gameSrc.includes('if (this.finaleInfo) {'), 'start 落地 finaleInfo（aether
 
 // ── ④ 仪式演出绊线 ──
 ok(gameSrc.includes('_tryListenTide(block) {'), '听潮门控方法在场');
-ok(gameSrc.includes("if (!this._tryListenTide(hit.block)) {"), '守望碑右键走门控（返回 false 才读碑文）');
+ok(icSrc.includes("if (!g._tryListenTide(hit.block)) {"), '守望碑右键走门控（返回 false 才读碑文）');
 ok(afSrc.includes("finaleListenGate({"), '门控走纯函数（真值表 node 可测）');
 ok(afSrc.includes('g.net.sendFinaleState({ done: true })'), 'LAN 听潮上服务器（含发起者统一由广播驱动）');
 ok(afSrc.includes('g.world.finaleDone = true; // 单机：本地置位'), '单机听潮本地置位（SaveSystem 持久化）');
