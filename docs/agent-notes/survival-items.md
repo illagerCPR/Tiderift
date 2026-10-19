@@ -35,7 +35,7 @@
 
 - **经验来源与口径**：击杀（MobTypes 新增 `xp` 字段：普通怪 5 / 烈焰人 10 / 龙 500；村民无）+ 挖矿（`ORE_XP` 表：煤1/红石2/青金3/钻7/绿宝7，铁金不给——原版口径）+ 经验瓶右键饮用 +3~11。**击杀经验 = 掉落同口径**：只奖励击杀端（`!mob.remoteDeath`）且 `mob.playerHitAt`（attackMob 内打点）5 秒内——仇恨杀村民等不给；创造模式不加（`onMobXpAward` 回调里 survival 门控）。掉落被 minTier 门控拒绝时挖矿经验也不给（与原版一致）。
 - **进位公式**：`Player.addXp` 每级需 `level*10+10`（与 Hud 进度条 `need` 同式，改一处必改两处）。
-- **龙蛋**：`_placeDragonEgg` 挂 `_activateEndRewards`（与返程门/折跃门同链）——主岛中心 (0,0) 从 y=80 下扫首个实心格顶面放置，幂等；真实方块进账本可挖走。dragonDefeated 标记保证单次。
+- **龙蛋**：`_placeDragonEgg` 挂 `_activateEndRewards`（与返程门/折跃门同链）——主岛中心 (0,0) 从 y=80 下扫首个实心格顶面放置；真实方块进账本可挖走。dragonDefeated 标记保证单次。**注意（B30 轮 8 步 2 实测）**：它**并非幂等**——第二次调用会在已有龙蛋正上方再叠一枚（下扫遇到的第一个非空气格正是上一枚蛋），源码注释「幂等」与实测不符；现状由 `tests/game-behavior.mjs` 的 J7 按现状钉住，修幂等须同步改 J7。实现位于 `src/player/Endgame.js`。
 
 ### P2 批次备忘（防回退）—— 床（睡眠/重生点）/ 掷眼寻要塞
 

@@ -237,7 +237,7 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 | 步 | 域 | 风险锚点 | 状态 |
 |---|---|---|---|
 | 1 | 召唤（L12）+ 滑翔/气流（L9） | 零锚定小域，首刀 | **已完成**：新建 `Summoning.js`(102) / `GlideWind.js`(132)；Game.js 3769 → 3643（+20/−146）；`game-behavior` 38 → 55 断言；全量跑批 ALL PASS，逐套件 `: OK` 行与基线完全一致 |
-| 2 | EndgameSystem | — | 待做 |
+| 2 | Endgame（终局） | — | **已完成**：新建 `Endgame.js`(144)；Game.js 3643 → 3578（+12/−77）；8 方法全部门面化（含 `_breakCrystal`）；`game-behavior` 55 → 65 断言（J1–J10）；全量跑批 ALL PASS |
 | 3 | ProjectileSystem | `leak-guards:160/161/163-164` 四条断言需同步 | 待做 |
 | 4 | BeaconSystem | `leak-guards:162`、`BeaconScreen:49/60` | 待做 |
 | 5 | PortalsSystem | 先定「到达回调」接口（`_afterPortalArrival` 被双向调用） | 待做 |
@@ -247,6 +247,10 @@ export function finish(label = '')               // 打印摘要（<label>: <n> 
 
 - 步 1 生命周期判定＝**构造器共享型**（控制器零状态、无资源可收口；`world`/`mobManager`/`inventory`/`hud` 一律在调用点经 `this.game` 现取，不留构造期快照）；内部调用点**一律走门面**（调用面零 diff）；`_trySummonWither` 的「头层判定 + 形状派发」约 14 行**刻意留在门面**（`build28-block-textures.mjs:266-269` 字面钉在 Game.js 文本上）。
 - 反证已做：子代理侧四段（`GLIDE_LIFT` / `GLIDE_DEPLOY_VY` / 凋灵早退 / `GLIDE_DRAG`）＋调度方独立两段（`Summoning.commitWitherSummon` 早退 → I4/I5/I6 FAIL；`_disposeWorld` 的 `arrows` 清理被删 → 4/38 FAIL），还原后 MD5 逐字节一致、`git status src/` 空。子代理自查中还抓到并修掉一条**假钉子**（恒真式在 `GLIDE_LIFT` 6→7 时不报错）。
+
+- 步 2 生命周期判定＝**构造器共享型**（`this.endgame = new Endgame(this)` 紧随 `glideWind`；控制器零状态、无 Three/DOM/监听器，`_disposeWorld` 零改动）；`world`/`mobManager`/`net`/`chatBox`/`networkMode` 全在调用点经 `this.game` 现取。终局域抵达末地维的钉子走**真实启动路径**（`loadData.dimension='end'` → 真实生成器 + 真实 mobManager + 真实账本）。
+- 步 2 反证：子代理 10 例（J1–J10 每条至少在一例中变红，逐例 MD5 还原）；**调度方独立一段**：删 `Endgame.ensureEndReturnPad` 的 `endPadExists()` 守卫 → J5 FAIL（1/65），MD5 逐字节还原；调度方自跑全量跑批 `RESULT: ALL PASS`（EXIT=0 / 66 套件），逐套件 PASS 行对照仅 `game-behavior` 37 → 64，`build29-rename-icons` 409 → 412（该套件按 `src/**/*.js` 逐文件断言，+3 = 轮 8 新增三个模块文件，非回归）。
+- **实施中发现（未修，待排期）**：`_placeDragonEgg` **非幂等**——注释称「幂等（已有方块跳过）」，实测第二次调用会在已有龙蛋**正上方再叠一枚**（下扫遇到的第一个非空气格正是上一枚蛋）。当前按现状钉住（J7 消息已写明）；多端各自触发 `_onDragonDefeated` 时会堆蛋，修幂等须同步更新 J7。
 
 **不动**：L1 世界/网格、L3 物理、L17 维度切换、L2 装配中枢（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI` 等跨域基础设施）。
 

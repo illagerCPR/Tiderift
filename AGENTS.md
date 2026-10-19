@@ -67,7 +67,7 @@ agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 
 - `src/main.js` -> 创建 `Game` 实例和 `MenuScreen`，`window.game`、`window.BlockRegistry`、`window.ItemRegistry`、`window.SaveSystem` 暴露用于调试。
 - `src/player/Game.js` 是中央枢纽：持有所有子系统（World、Renderer、Physics、Controls、Inventory、MobManager、RedstoneSystem、Hotbar、InventoryScreen、Hud、InfoBar、PauseMenu、DeathScreen），`update(dt)` 每帧驱动所有子系统。
-- **F3 上帝类拆分进行中（B30 轮 8 起）**：形态＝**门面委托**——逻辑迁到 `src/player/*` 新模块，Game 保留同名薄门面（签名不变），外部依赖面（NetworkManager / CommandPanel / BeaconScreen / `window.game` / tests 源码绊线）保持不变。已迁出：召唤（`Summoning.js`）、滑翔与气流（`GlideWind.js`）；跨域基础设施（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI`）不动。迁移顺序、不变量与每步验收骨架见 `docs/improvement-plan-b30.md` §十一。
+- **F3 上帝类拆分进行中（B30 轮 8 起）**：形态＝**门面委托**——逻辑迁到 `src/player/*` 新模块，Game 保留同名薄门面（签名不变），外部依赖面（NetworkManager / CommandPanel / BeaconScreen / `window.game` / tests 源码绊线）保持不变。已迁出：召唤（`Summoning.js`）、滑翔与气流（`GlideWind.js`）、终局（`Endgame.js`：末影龙生成守卫 / 龙败奖励链 / 回程垫 / 折跃门阵列 / 龙蛋 / 末影水晶击碎）；跨域基础设施（`constructor`/`start`/`update`/`_disposeWorld`/`_frameRay`/`updateRaycast`/`_anyInputBlockingUI`）不动。迁移顺序、不变量与每步验收骨架见 `docs/improvement-plan-b30.md` §十一。
 - 主循环受 `this.paused` 门控：暂停 / 死亡 / 物品栏打开时 `loop()` 仍渲染但跳过 `update()`。
 - `game.onExit = () => menu.show()` 由 `main.js` 注册；`game.start(mode, seed, loadData, slot)` 启动，`game.returnToMenu(save=true)` 关闭所有 UI 并触发 `onExit`。`controls.enabled` 是 UI 进入/退出的统一开关，新加 UI 必须在 show/hide 中维护它。
 
