@@ -659,5 +659,290 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
   shutdown(eg);
 }
 
+// ── K. 弹射物域行为：末影之眼 / 箭矢 / 凋灵之首与风弹 ──────────────────────
+// 轮 8 步 3 的迁移面（Projectiles）。迁移前先把现状行为逐值钉住：断言全部经 Game 上的同名
+// 真实入口驱动（_throwEnderEye / _updateEyeFlight / _shootArrow / spawnRemoteArrow /
+// _cancelBowCharge / _releaseBow / _updateArrows / _ensureWitherSkullAssets 经弹射路径 /
+// _spawnWitherSkullVolley / _spawnGaleVolley / _spawnWitherSkull / spawnRemoteWitherSkull /
+// _updateWitherSkulls / _despawnArrow），迁到控制器后这些门面必须原样可用、语义逐值不变。
+//
+// 两处刻意的设计：
+//   1) 用独立 boot（creative 一只 + survival 一只）：建箭/建弹会往 scene 挂 mesh、往
+//      arrows/witherSkulls 里加条目，借 A-H 段的共享 g 会污染其 children/区块数 比值。
+//   2) 箭命中怪的那一帧用**直接调域入口** _updateArrows(DT)（真实怪 + 真实 findMobByRay +
+//      真实 attackMob），避免 mobManager.update 的 AI 位移引入不确定性；
+//      「帧循环是否真的消费 arrows/witherSkulls/eyeFlight」由 K1/K7 的整帧驱动守着。
+{
+  const THREE = await import('three');
+  const Reg = (await import('../src/core/BlockRegistry.js')).BlockRegistry;
+  const { Mob } = await import('../src/entity/Mob.js');
+  const DT = 1 / 60;
+
+  const pj = await boot({ mode: 'creative', seed: SEED });
+  track(pj.g);
+  const pg = pj.g;
+  const pScene = pg.renderer.scene;
+  const pW = pg.world;
+  pg.mobManager.mobs = [];                      // 箭矢飞行段不得被野怪截胡（K3 单独放一只）
+
+  // ── K1 射箭生命周期：_shootArrow 建 mesh 入 scene + push 进 this.arrows；life 耗尽自动 despawn ──
+  const a1 = pg._shootArrow(1, 6);
+  const shot = { n: pg.arrows.length, inScene: pScene.children.includes(a1.mesh), dmg: a1.dmg, life: a1.life, stuck: a1.stuck };
+  a1.life = 0.005;                              // < dt：紧接着的那一帧必然到期
+  await step(pg, 1);
+  const gone = { n: pg.arrows.length, inScene: pScene.children.includes(a1.mesh) };
+  assert('K1 箭矢生命周期：_shootArrow 建 mesh 入 scene 并 push 进 arrows（dmg 随参数、life=8）；life 耗尽后该帧自动 despawn（mesh 移出 scene）',
+    shot.n === 1 && shot.inScene === true && shot.dmg === 6 && shot.life === 8 && shot.stuck === false &&
+    gone.n === 0 && gone.inScene === false,
+    'shot=' + JSON.stringify(shot) + ' gone=' + JSON.stringify(gone));
+
+  // ── K2 钉墙回退：位移落入实心格 → 位置回退到旧点、速度清零、stuck=true ──
+  {
+    const solid = (id) => { const d = Reg.getById(id); return !!d && !!d.solid && !d.fluid; };
+    const px = Math.floor(pg.player.position.x), pz = Math.floor(pg.player.position.z), py = Math.floor(pg.player.position.y);
+    let bx = -1, bz = -1, topY = -1;
+    for (let r = 0; r < 8 && topY < 0; r++) {
+      for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r], [r, -r], [-r, r]]) {
+        for (let y = py + 8; y > py - 12; y--) {
+          if (solid(pW.getBlock(px + dx, y, pz + dz))) { bx = px + dx; bz = pz + dz; topY = y; break; }
+        }
+        if (topY >= 0) break;
+      }
+    }
+    pg.arrows.length = 0;
+    const startY = topY + 1.5;                  // 实心顶面上方：单帧下落 1.0 → 落脚格 = 实心格 topY
+    const pos = new THREE.Vector3(bx + 0.5, startY, bz + 0.5);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({}));
+    mesh.position.copy(pos);
+    pScene.add(mesh);
+    pg.arrows.push({ mesh, pos: pos.clone(), vel: new THREE.Vector3(0, -60, 0), life: 9, stuck: false, dmg: 6 });
+    await step(pg, 1);
+    const sa = pg.arrows[0];
+    const st = sa ? { stuck: sa.stuck, vx: sa.vel.x, vy: sa.vel.y, vz: sa.vel.z, y: sa.pos.y, meshY: sa.mesh.position.y } : null;
+    assert('K2 钉墙回退：位移落入实心格的箭被判钉住——位置回退到旧点、速度清零、stuck=true（mesh 位置同步回退点）',
+      !!st && st.stuck === true && st.vx === 0 && st.vy === 0 && st.vz === 0 &&
+      Math.abs(st.y - startY) < 1e-9 && Math.abs(st.meshY - startY) < 1e-9 && topY >= 0 && !!st,
+      'grid=' + bx + ',' + topY + ',' + bz + ' startY=' + startY + ' stuck=' + JSON.stringify(st));
+    pg.arrows.length = 0;
+    pScene.remove(mesh);
+  }
+
+  // ── K3 remote 不结算：本地箭命中怪走 attackMob；远端视觉箭命中同一只怪只消失不结算 ──
+  {
+    const mm = pg.mobManager;
+    const calls = [];
+    const origAttack = mm.attackMob.bind(mm);
+    mm.attackMob = (...args) => { calls.push(args); return origAttack(...args); };
+    const mob = new Mob('zombie', pW);          // 真实 Mob 对象 → 真实 findMobByRay / 真实 attackMob
+    const R = Math.max(mob.width, mob.height) * 0.5;
+    const probe = pg._shootArrow(1, 6);         // 借真实建箭拿到 起点 + 方向口径，随即清空
+    const start = probe.pos.clone();
+    const dirN = probe.vel.clone().normalize();
+    pg.arrows.length = 0;
+    mm.mobs = [mob];
+    const place = () => {
+      const center = start.clone().addScaledVector(dirN, R + 0.3);   // 球心 = position.y + height/2
+      mob.position.set(center.x, center.y - mob.height * 0.5, center.z);
+    };
+    const hp0 = mob.health;
+    place();
+    pg._shootArrow(1, 6);
+    pg._updateArrows(DT);
+    const local = { calls: calls.length, arrows: pg.arrows.length, hp: mob.health };
+    place();
+    pg.spawnRemoteArrow(start.x, start.y, start.z, dirN.x * 60, dirN.y * 60, dirN.z * 60);
+    pg._updateArrows(DT);
+    const remote = { calls: calls.length, arrows: pg.arrows.length, hp: mob.health };
+    mm.attackMob = origAttack;
+    mm.mobs = [];
+    pg.arrows.length = 0;
+    assert('K3 remote 不结算：本地箭命中怪调 attackMob 恰 1 次（伤害随 a.dmg）并自毁；spawnRemoteArrow 的远端箭命中同一只怪只自毁——attackMob 仍 1 次、怪血不变',
+      local.calls === 1 && local.arrows === 0 && local.hp === hp0 - 6 &&
+      remote.calls === 1 && remote.arrows === 0 && remote.hp === local.hp,
+      '本地=' + JSON.stringify(local) + ' 远端=' + JSON.stringify(remote) + ' hp0=' + hp0);
+  }
+
+  // ── K4/K5 凋灵之首 / 风弹命中本地玩家：结算分流（须 survival——创造/旁观被 hurt 早退）──
+  {
+    const sv = await boot({ mode: 'creative', seed: SEED });
+    track(sv.g);
+    const s2 = sv.g;
+    s2.mobManager.mobs = [];
+    const vp = s2.player;
+    vp.setMode('survival');
+    const hurts = [];
+    const origHurt = vp.hurt.bind(vp);
+    vp.hurt = (amount, source, vignette) => { hurts.push([amount, source, vignette]); return origHurt(amount, source, vignette); };
+    const reset = () => { hurts.length = 0; vp.health = 20; vp.invulnerable = 0; vp.velocity.set(0, 0, 0); vp.clearEffects(); };
+    const zero = () => new THREE.Vector3(0, 0, 0);
+
+    // ① 凋灵之首：命中 → 8 伤 + 凋零 II（10s）
+    reset();
+    s2.witherSkulls.length = 0;
+    const q0 = vp.position.clone();
+    s2._spawnWitherSkull(new THREE.Vector3(q0.x, q0.y + 0.9, q0.z), zero(), 'wither');
+    await step(s2, 1);
+    const witherHit = {
+      amounts: hurts.map((h) => h[0]), mobHits: hurts.filter((h) => h[1] === 'mob').length,
+      level: vp.getEffectLevel('wither'), skulls: s2.witherSkulls.length,
+    };
+
+    // ② 风弹（gale）：命中 → 6 伤 + 击退（+x 7 / 上抛 3.5）且**不加凋零**
+    reset();
+    s2.witherSkulls.length = 0;
+    const q1 = vp.position.clone();
+    s2._spawnWitherSkull(new THREE.Vector3(q1.x - 0.3, q1.y + 0.9, q1.z), zero(), 'gale');
+    await step(s2, 1);
+    const galeHit = {
+      amounts: hurts.map((h) => h[0]), mobHits: hurts.filter((h) => h[1] === 'mob').length,
+      level: vp.getEffectLevel('wither'), vx: vp.velocity.x, vy: vp.velocity.y, skulls: s2.witherSkulls.length,
+    };
+    assert('K4 凋灵之首结算：命中本地玩家恰 1 次 hurt(8, mob)，并附加凋零 II（getEffectLevel=2）；命中后弹自毁',
+      witherHit.mobHits === 1 && witherHit.amounts.indexOf(8) >= 0 && witherHit.level === 2 && witherHit.skulls === 0,
+      JSON.stringify(witherHit));
+    assert('K5 风弹结算：命中本地玩家恰 1 次 hurt(6, mob) + 击退（vx≈+7、vy>2）且**不加凋零**；命中后弹自毁',
+      galeHit.mobHits === 1 && galeHit.amounts.indexOf(6) >= 0 && galeHit.level === 0 &&
+      Math.abs(galeHit.vx - 7) < 0.5 && galeHit.vy > 2 && galeHit.skulls === 0,
+      JSON.stringify(galeHit));
+  }
+
+  // ── K6 广播点唯一：_spawnWitherSkull 是发射端唯一广播点（每发恰 1 次）；远端回执不广播 ──
+  {
+    const net = [];
+    pg.arrows.length = 0;
+    pg.witherSkulls.length = 0;
+    pg.networkMode = true;
+    pg.net = { sendWitherSkull: (...a) => net.push(a), sendArrowShot: () => net.push(['arrow']) };
+    const origin = pg.player.position.clone().add(new THREE.Vector3(0, 2, 0));
+    const dir = new THREE.Vector3(0, 0, 1);
+    const shooter = (dy) => ({ position: new THREE.Vector3(origin.x, origin.y + dy, origin.z), height: 3 });
+    const target = { position: pg.player.position.clone() };
+    pg._spawnWitherSkull(origin.clone(), dir.clone(), 'wither');
+    const one = net.length;                                         // 恰 1（发射端唯一广播点）
+    pg.spawnRemoteWitherSkull(origin.x + 2, origin.y, origin.z, 0, 0, 1, 'wither');
+    const afterRemote = net.length;                                 // 仍 1（远端回执防回声环）
+    pg._spawnWitherSkullVolley(shooter(1), target);
+    const afterVolley = net.length;                                 // 1 + 3（三发扇，每发 1 次）
+    pg._spawnGaleVolley(shooter(1), target, true);
+    const afterGale = net.length;                                   // 1 + 3 + 5（裂心五发宽扇）
+    pg.networkMode = false;
+    pg._spawnWitherSkull(origin.clone(), dir.clone(), 'wither');
+    const offline = net.length;                                     // 单机不广播
+    pg.net = null;
+    assert('K6 广播点唯一：_spawnWitherSkull 单发恰广播 1 次；spawnRemoteWitherSkull 回执不广播（防回声）；凋灵三发扇 = +3、裂心五发宽扇 = +5（每发恰 1 次，无重复广播）；单机不广播',
+      one === 1 && afterRemote === 1 && afterVolley === 4 && afterGale === 9 && offline === 9,
+      '网络调用序列 1/远端/' + afterRemote + '/扇射' + afterVolley + '/宽扇' + afterGale + '/单机' + offline);
+    pg.witherSkulls.length = 0;
+  }
+
+  // ── K7 末影之眼：掷出消耗 1 颗并建 eyeFlight；到期 scene.remove + dispose geo/mat；80% 落回背包 ──
+  {
+    const inv = pg.inventory;
+    inv.slots.fill(null);
+    inv.hotbarSelected = 0;
+    inv.slots[0] = { name: 'ender_eye', count: 2 };
+    pg.eyeFlight = null;
+    pg._throwEnderEye();
+    const f1 = pg.eyeFlight;
+    const thrown = { eyes: inv.slots[0] && inv.slots[0].count, inScene: !!f1 && pScene.children.includes(f1.mesh), total: f1 && f1.total };
+    let geoDisposed = 0, matDisposed = 0;
+    const og = f1.mesh.geometry.dispose.bind(f1.mesh.geometry);
+    f1.mesh.geometry.dispose = () => { geoDisposed++; og(); };
+    const om = f1.mesh.material.dispose.bind(f1.mesh.material);
+    f1.mesh.material.dispose = () => { matDisposed++; om(); };
+    f1.t = f1.total - 0.001;                    // 下一帧必然到点
+    const rand = Math.random;
+    Math.random = () => 0.5;                    // < 0.8 → 落回背包
+    await step(pg, 1);
+    Math.random = rand;
+    const landed = { flight: pg.eyeFlight, inScene: pScene.children.includes(f1.mesh), geoDisposed, matDisposed, eyes: inv.slots[0] ? inv.slots[0].count : 0 };
+    inv.slots.fill(null);
+    inv.slots[0] = { name: 'ender_eye', count: 1 };
+    pg._throwEnderEye();
+    const f2 = pg.eyeFlight;
+    f2.t = f2.total - 0.001;
+    const rand2 = Math.random;
+    Math.random = () => 0.9;                    // ≥ 0.8 → 碎裂（不回背包）
+    await step(pg, 1);
+    Math.random = rand2;
+    const broken = { flight: pg.eyeFlight, eyes: inv.slots[0] ? inv.slots[0].count : 0 };
+    assert('K7 末影之眼：掷出消耗 1 颗并建 eyeFlight（total=2.5，mesh 入 scene）；到期从 scene 移除并 dispose geo/mat 各 1 次；rand<0.8 落回背包（1→2）、rand≥0.8 碎裂（1→0）',
+      thrown.eyes === 1 && thrown.inScene === true && thrown.total === 2.5 &&
+      landed.flight === null && landed.inScene === false && landed.geoDisposed === 1 && landed.matDisposed === 1 && landed.eyes === 2 &&
+      broken.flight === null && broken.eyes === 0,
+      '掷出=' + JSON.stringify(thrown) + ' 落地=' + JSON.stringify(landed) + ' 碎裂=' + JSON.stringify(broken));
+  }
+
+  // ── K8 弓：松手按 charge 插值初速/伤害、消耗 1 箭、广播初速；取消路径清标志并复位拉弓姿态 ──
+  {
+    pg.player.setMode('survival');              // 消耗箭只在非创造分支（创造不扣箭）
+    const inv = pg.inventory;
+    inv.slots.fill(null);
+    inv.hotbarSelected = 0;
+    inv.slots[0] = { name: 'bow', count: 1 };
+    inv.add('arrow', 3);
+    const countArrows = () => inv.slots.filter((x) => x && x.name === 'arrow').reduce((n, x) => n + x.count, 0);
+    const arrowsBefore = countArrows();
+    const draws = [];
+    const origDraw = pg.hand.setBowDraw.bind(pg.hand);
+    pg.hand.setBowDraw = (v) => { draws.push(v); return origDraw(v); };
+    const sent = [];
+    pg.networkMode = true;
+    pg.net = { sendArrowShot: (...a) => sent.push(a), sendWitherSkull: () => {} };
+    pg.arrows.length = 0;
+    pg._bowCharging = true;
+    pg._bowCharge = 0.5;
+    pg._releaseBow();
+    const arrow = pg.arrows[0];
+    const released = {
+      charging: pg._bowCharging, charge: pg._bowCharge, n: pg.arrows.length,
+      dmg: arrow && arrow.dmg, speed: arrow ? Math.hypot(arrow.vel.x, arrow.vel.y, arrow.vel.z) : -1,
+      arrows: countArrows(), sent: sent.length, draws: draws.slice(),
+    };
+    pg._bowCharging = true;
+    pg._bowCharge = 1;
+    draws.length = 0;
+    pg._cancelBowCharge();
+    const cancelled = { charging: pg._bowCharging, charge: pg._bowCharge, draws: draws.slice() };
+    pg.networkMode = false;
+    pg.net = null;
+    pg.arrows.length = 0;
+    assert('K8 弓：松手按 charge=0.5 插值（初速 28×(0.3+0.7c)=18.2、伤害 2+round(6c)=5）、消耗 1 箭并广播 sendArrowShot 1 次；_cancelBowCharge 清零 _bowCharging/_bowCharge 并 setBowDraw(null)',
+      released.n === 1 && released.dmg === 5 && Math.abs(released.speed - 18.2) < 1e-6 &&
+      released.arrows === arrowsBefore - 1 && released.charging === false && released.charge === 0 &&
+      released.sent === 1 && released.draws.length === 1 && released.draws[0] === null &&
+      cancelled.charging === false && cancelled.charge === 0 && cancelled.draws.length === 1 && cancelled.draws[0] === null,
+      '释放=' + JSON.stringify(released) + ' 取消=' + JSON.stringify(cancelled));
+  }
+
+  // ── K9 静态共享资源：箭/弹几何与材质跨弹共享（懒建一次）、gale 独立材质、despawn 不 dispose ──
+  {
+    pg.arrows.length = 0;
+    const b1 = pg._shootArrow(1, 6);
+    const b2 = pg._shootArrow(1, 6);
+    const shotShared = b1.mesh.geometry === b2.mesh.geometry && b1.mesh.material === b2.mesh.material;
+    let geoDisposed = 0;
+    const og = b1.mesh.geometry.dispose.bind(b1.mesh.geometry);
+    b1.mesh.geometry.dispose = () => { geoDisposed++; og(); };
+    const nBefore = pg.arrows.length;
+    pg._despawnArrow(0);
+    const despawn = { n: pg.arrows.length, inScene: pScene.children.includes(b1.mesh), geoDisposed };
+    pg.witherSkulls.length = 0;
+    pg._spawnWitherSkull(new THREE.Vector3(0, 100, 0), new THREE.Vector3(0, 0, 1), 'wither');
+    pg.spawnRemoteWitherSkull(0, 100, 0, 0, 0, 1, 'wither');
+    pg._spawnWitherSkull(new THREE.Vector3(0, 100, 0), new THREE.Vector3(0, 0, 1), 'gale');
+    const [s1, s2, s3] = pg.witherSkulls;
+    const skullShared = s1.mesh.geometry === s2.mesh.geometry && s2.mesh.geometry === s3.mesh.geometry &&
+      s1.mesh.material === s2.mesh.material && s3.mesh.material !== s1.mesh.material;
+    assert('K9 静态共享资源：箭几何/材质跨弹共享（懒建一次）；凋灵之首与远端弹共享几何+材质、gale 复用几何但用独立材质；_despawnArrow 只摘 scene 不 dispose 共享资源',
+      shotShared === true && despawn.n === nBefore - 1 && despawn.inScene === false && despawn.geoDisposed === 0 &&
+      skullShared === true,
+      '箭共享=' + shotShared + ' despawn=' + JSON.stringify(despawn) + ' 弹共享=' + skullShared);
+    pg.arrows.length = 0;
+    pg.witherSkulls.length = 0;
+  }
+}
+
+for (const x of games) shutdown(x);
 for (const x of games) shutdown(x);
 finish('game-behavior');

@@ -13,6 +13,7 @@ import { Physics } from './Physics.js';
 import { Summoning } from './Summoning.js';
 import { GlideWind } from './GlideWind.js';
 import { Endgame } from './Endgame.js';
+import { Projectiles } from './Projectiles.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
@@ -129,6 +130,7 @@ export class Game {
     this.summoning = new Summoning(this);
     this.glideWind = new GlideWind(this);
     this.endgame = new Endgame(this);
+    this.projectiles = new Projectiles(this);
     this.currentSlot = 1;
     this.onExit = null;
     this.mobManager = null;
@@ -1937,143 +1939,45 @@ export class Game {
 
   // 掷末影之眼：消耗 1 颗，发光小球朝最近环带锚点飞 2.5s 后落回（20% 碎裂，原版）
   _throwEnderEye() {
-    if (this.eyeFlight) return; // 飞行中不叠加
-    this.inventory.removeSelected(1);
-    this.hotbar.update();
-    const p = this.player.position;
-    let best = null, bestD = Infinity;
-    for (const pt of ringPoints(this.world.seed)) {
-      const d = (pt.x - p.x) ** 2 + (pt.z - p.z) ** 2;
-      if (d < bestD) { bestD = d; best = pt; }
-    }
-    if (best) {
-      const dx = best.x - p.x, dz = best.z - p.z;
-      // 八方位提示（北 = -Z，顺时针）
-      const dirs = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
-      const ang = Math.atan2(dx, -dz);
-      const dirName = dirs[((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8];
-      if (this.chatBox) this.chatBox.add(t('末影之眼飞向{d}方（约 {n} 格）', { d: t(dirName), n: Math.round(Math.sqrt(bestD)) }), '#c8f');
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0x66ffcc })
-      );
-      mesh.position.set(p.x, p.y + PLAYER_EYE_HEIGHT, p.z);
-      this.renderer.scene.add(mesh);
-      this.eyeFlight = { mesh, dir: new THREE.Vector3(dx, 6, dz).normalize(), t: 0, total: 2.5 };
-    }
+    this.projectiles.throwEnderEye();
   }
 
   // 末影之眼飞行步进：到时落地——80% 落回背包，20% 碎裂（原版概率）
   _updateEyeFlight(dt) {
-    const e = this.eyeFlight;
-    e.t += dt;
-    e.mesh.position.addScaledVector(e.dir, dt * 6);
-    if (e.t >= e.total) {
-      this.renderer.scene.remove(e.mesh);
-      e.mesh.geometry.dispose();
-      e.mesh.material.dispose();
-      this.eyeFlight = null;
-      if (Math.random() < 0.8) {
-        this.inventory.add('ender_eye', 1);
-        this.hotbar.update();
-      }
-    }
+    this.projectiles.updateEyeFlight(dt);
   }
 
   // 射箭：箭矢为本地投射物（几何/材质模块级共享），重力下坠、命中怪复用 attackMob 链
   // power = 初速系数（0.3~1 蓄力插值），dmg = 命中伤害（2~8 蓄力插值）；返回箭对象供联机上报
   _shootArrow(power = 1, dmg = 6) {
-    const dir = new THREE.Vector3();
-    this.renderer.camera.getWorldDirection(dir);
-    const start = this.player.position.clone();
-    start.y += PLAYER_EYE_HEIGHT;
-    start.addScaledVector(dir, 0.6);
-    this._ensureArrowAssets();
-    const mesh = new THREE.Mesh(Game._arrowGeo, Game._arrowMat);
-    mesh.position.copy(start);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
-    this.renderer.scene.add(mesh);
-    const arrow = { mesh, pos: start, vel: dir.multiplyScalar(28 * power), life: 8, stuck: false, dmg };
-    this.arrows.push(arrow);
-    return arrow;
+    return this.projectiles.shootArrow(power, dmg);
   }
 
   _ensureArrowAssets() {
-    if (!Game._arrowGeo) Game._arrowGeo = new THREE.BoxGeometry(0.06, 0.06, 0.5);
-    if (!Game._arrowMat) Game._arrowMat = new THREE.MeshBasicMaterial({ color: 0x9a7442 });
+    this.projectiles.ensureArrowAssets();
   }
 
   // Idea-2B：远端玩家射箭——本地生成纯视觉箭（dmg=0/remote=true：命中怪只消失不结算，
   // 伤害由射端经 mob_attack 权威上报；钉墙/寿命消失各端本地处理）
   spawnRemoteArrow(x, y, z, dx, dy, dz) {
-    this._ensureArrowAssets();
-    const pos = new THREE.Vector3(x, y, z);
-    const vel = new THREE.Vector3(dx, dy, dz);
-    const mesh = new THREE.Mesh(Game._arrowGeo, Game._arrowMat);
-    mesh.position.copy(pos);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), vel.clone().normalize());
-    this.renderer.scene.add(mesh);
-    this.arrows.push({ mesh, pos, vel, life: 8, stuck: false, dmg: 0, remote: true });
+    this.projectiles.spawnRemoteArrow(x, y, z, dx, dy, dz);
   }
 
   _cancelBowCharge() {
-    this._bowCharging = false;
-    this._bowCharge = 0;
-    this.hand.setBowDraw(null);
+    this.projectiles.cancelBowCharge();
   }
 
   // 松手发射：charge→初速/伤害插值（vel=28×(0.3+0.7c)、dmg=2+round(6c)，即 8.4~28 m/s、2~8）
   _releaseBow() {
-    const charge = this._bowCharge;
-    this._cancelBowCharge();
-    const sel = this.inventory.getSelected();
-    if (!sel || sel.name !== 'bow') return; // 蓄力中途换了物品：只取消不射
-    const hasArrow = this.player.creative || this.inventory.slots.some(s => s && s.name === 'arrow');
-    if (!hasArrow) return;
-    if (!this.player.creative) this.inventory.removeItems('arrow', 1);
-    const arrow = this._shootArrow(0.3 + 0.7 * charge, 2 + Math.round(charge * 6));
-    audio.bowShoot(charge);
-    this.hand.swing();
-    if (this.networkMode && this.net) this.net.sendArrowShot(arrow.pos, arrow.vel); // Idea-2B：初速广播
+    this.projectiles.releaseBow();
   }
 
   _updateArrows(dt) {
-    for (let i = this.arrows.length - 1; i >= 0; i--) {
-      const a = this.arrows[i];
-      a.life -= dt;
-      if (a.life <= 0) { this._despawnArrow(i); continue; }
-      if (a.stuck) continue; // 钉在方块上直到寿命尽
-      a.vel.y -= 12 * dt;
-      const old = a.pos.clone();
-      a.pos.addScaledVector(a.vel, dt);
-      // 命中怪：整段位移作射线（球体口径同近战）
-      const seg = new THREE.Vector3().subVectors(a.pos, old);
-      const segLen = seg.length();
-      if (segLen > 0 && this.mobManager) {
-        const dirN = seg.clone().normalize();
-        const mh = this.mobManager.findMobByRay(old, dirN, segLen + 0.2);
-        if (mh && !mh.mob.dead) {
-          if (!a.remote) this.mobManager.attackMob(old, dirN, segLen + 0.2, a.dmg || 6); // 伤害随蓄力；远端视觉箭不结算（射端权威）
-          audio.arrowHit(); // 命中音（远端视觉箭也响，纯客户端效果）
-          this._despawnArrow(i);
-          continue;
-        }
-      }
-      // 命中方块：钉住
-      const bdef = BlockRegistry.getById(this.world.getBlock(Math.floor(a.pos.x), Math.floor(a.pos.y), Math.floor(a.pos.z)));
-      if (bdef && bdef.solid && !bdef.fluid) {
-        a.pos.copy(old);
-        a.vel.set(0, 0, 0);
-        a.stuck = true;
-      }
-      a.mesh.position.copy(a.pos);
-    }
+    this.projectiles.updateArrows(dt);
   }
 
   _despawnArrow(i) {
-    const a = this.arrows[i];
-    this.renderer.scene.remove(a.mesh); // 几何/材质为模块级共享，不 dispose
-    this.arrows.splice(i, 1);
+    this.projectiles.despawnArrow(i);
   }
 
   // ── 凋灵之首弹射物（Idea-2D-②）────────────────────────────────
@@ -2081,111 +1985,34 @@ export class Game {
   // 广播仅视觉同步（服务器 except 发起者转发）。直线微坠弹，命中附加凋零 II。
 
   _ensureWitherSkullAssets() {
-    if (!Game._skullGeo) Game._skullGeo = new THREE.BoxGeometry(0.35, 0.35, 0.35);
-    if (!Game._skullMat) Game._skullMat = new THREE.MeshBasicMaterial({ color: 0x33333c });
-    if (!Game._galeMat) Game._galeMat = new THREE.MeshBasicMaterial({ color: 0x5ee8d2 }); // 天域风弹（批次 C）
+    this.projectiles.ensureWitherSkullAssets();
   }
 
   // WitherAI 齐射回调：三发扇形（中央直射 + 左右 ±偏航），从胸前高度射出
   _spawnWitherSkullVolley(mob, player) {
-    const start = mob.position.clone();
-    start.y += mob.height * 0.75;
-    const base = player.position.clone().add(new THREE.Vector3(0, 1, 0)).sub(start).normalize();
-    for (let i = -1; i <= 1; i++) {
-      const yaw = i * 0.14;
-      const dir = new THREE.Vector3(
-        base.x * Math.cos(yaw) - base.z * Math.sin(yaw),
-        Math.max(-0.25, base.y + i * 0.05),
-        base.x * Math.sin(yaw) + base.z * Math.cos(yaw)
-      ).normalize();
-      this._spawnWitherSkull(start.clone().addScaledVector(dir, 0.9), dir);
-    }
+    this.projectiles.spawnWitherSkullVolley(mob, player);
   }
 
   // 守誓巨像风弹齐射（批次 C）：三发扇形；裂心(wide)=五发宽扇（经 k:'gale' 复用 skull 通道）
   _spawnGaleVolley(mob, player, wide) {
-    const start = mob.position.clone();
-    start.y += mob.height * 0.7;
-    const base = player.position.clone().add(new THREE.Vector3(0, 1, 0)).sub(start).normalize();
-    const spread = wide ? 0.22 : 0.15;
-    const n = wide ? 2 : 1;
-    for (let i = -n; i <= n; i++) {
-      const yaw = i * spread;
-      const dir = new THREE.Vector3(
-        base.x * Math.cos(yaw) - base.z * Math.sin(yaw),
-        Math.max(-0.2, base.y + Math.abs(i) * 0.03),
-        base.x * Math.sin(yaw) + base.z * Math.cos(yaw)
-      ).normalize();
-      this._spawnWitherSkull(start.clone().addScaledVector(dir, 1.2), dir, 'gale');
-    }
+    this.projectiles.spawnGaleVolley(mob, player, wide);
   }
 
   _spawnWitherSkull(pos, dir, kind = 'wither') {
-    this._ensureWitherSkullAssets();
-    const mesh = new THREE.Mesh(Game._skullGeo, kind === 'gale' ? Game._galeMat : Game._skullMat);
-    mesh.position.copy(pos);
-    this.renderer.scene.add(mesh);
-    this.witherSkulls.push({ mesh, pos: pos.clone(), vel: dir.clone().multiplyScalar(kind === 'gale' ? 18 : 16), life: 6, kind });
-    if (this.networkMode && this.net) this.net.sendWitherSkull(pos, dir, kind); // 初速广播（纯视觉）
+    this.projectiles.spawnWitherSkull(pos, dir, kind);
   }
 
   // 联机：远端凋灵弹/风弹初速回执——本地生成弹射物（不再广播，防回声环）
   spawnRemoteWitherSkull(x, y, z, dx, dy, dz, kind) {
-    this._ensureWitherSkullAssets();
-    const pos = new THREE.Vector3(x, y, z);
-    const dir = new THREE.Vector3(dx, dy, dz);
-    const mesh = new THREE.Mesh(Game._skullGeo, kind === 'gale' ? Game._galeMat : Game._skullMat);
-    mesh.position.copy(pos);
-    this.renderer.scene.add(mesh);
-    this.witherSkulls.push({ mesh, pos, vel: dir.multiplyScalar(kind === 'gale' ? 18 : 16), life: 6, kind });
+    this.projectiles.spawnRemoteWitherSkull(x, y, z, dx, dy, dz, kind);
   }
 
   _updateWitherSkulls(dt) {
-    for (let i = this.witherSkulls.length - 1; i >= 0; i--) {
-      const s = this.witherSkulls[i];
-      s.life -= dt;
-      if (s.life <= 0) { this._despawnWitherSkull(i); continue; }
-      s.vel.y -= 2.5 * dt; // 微坠（原版黑色头颅直线弹的轻度重力近似）
-      s.pos.addScaledVector(s.vel, dt);
-      // 命中本地玩家：水平 0.6 格半径 + 身高 1.8 线段距离（AABB 近似）
-      const p = this.player;
-      if (p && !p.dead && !p.spectator && !p.creative) {
-        const clampedY = Math.max(0, Math.min(1.8, s.pos.y - p.position.y));
-        const dx = s.pos.x - p.position.x, dz = s.pos.z - p.position.z;
-        const dy = s.pos.y - (p.position.y + clampedY);
-        if (dx * dx + dz * dz < 0.36 && dy * dy < 0.09) {
-          if (s.kind === 'gale') {
-            // 天域风弹（批次 C）：6 伤 + 击退（无凋零）
-            if (p.hurt(6, 'mob', true)) {
-              const dir = p.position.clone().sub(s.pos).setY(0);
-              if (dir.lengthSq() > 0.0001) dir.normalize(); else dir.set(0, 0, 1);
-              p.velocity.x += dir.x * 7;
-              p.velocity.z += dir.z * 7;
-              p.velocity.y += 3.5;
-            }
-          } else if (p.hurt(8, 'mob', true) && p.applyWither) {
-            p.applyWither(10); // 8 伤 + 凋零 II 10s
-          }
-          audio.arrowHit();
-          this._despawnWitherSkull(i);
-          continue;
-        }
-      }
-      // 命中方块：湮灭（钉墙语义不适用弹射物——原版凋灵之首触爆）
-      const bdef = BlockRegistry.getById(this.world.getBlock(Math.floor(s.pos.x), Math.floor(s.pos.y), Math.floor(s.pos.z)));
-      if (bdef && bdef.solid && !bdef.fluid) {
-        audio.arrowHit();
-        this._despawnWitherSkull(i);
-        continue;
-      }
-      s.mesh.position.copy(s.pos);
-    }
+    this.projectiles.updateWitherSkulls(dt);
   }
 
   _despawnWitherSkull(i) {
-    const s = this.witherSkulls[i];
-    this.renderer.scene.remove(s.mesh);
-    this.witherSkulls.splice(i, 1);
+    this.projectiles.despawnWitherSkull(i);
   }
 
   // ── 守誓巨像震地（批次 C）────────────────────────────────────
