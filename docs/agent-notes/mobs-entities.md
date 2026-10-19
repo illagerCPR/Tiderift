@@ -93,9 +93,9 @@
 - **`Player.effects` Map**（`name -> {level, time}`）：`applyEffect` 同名取 max(level,time) 刷新；`getEffectLevel` 过期返 0；`tickEffects(dt)` Game.update 每帧走。**凋零已迁入**（`applyWither` = applyEffect('wither',2,s)，扣血节拍仍在 Game.updateSurvival 读 `getEffectLevel('wither')`）。Player 是共享型子系统：`Game.start` 用 `clearEffects()` 重置（勿再找 `player.withered` 字段——已删）。
 - **五个挂钩点**（改手感勿绕开）：移速 = Game 742 `speed` 式（+20%/级）；跳跃 = physics.jump 后乘（+25%/级，仅 velocity.y>0 时）；急迫 = 挖掘 `speedMul` 式（+30%/级，叠加在工具倍率上）；力量 = `getAttackDamage()` 尾部（+2/级，空手/剑/斧全分支）；抗性 = `Player.hurt` 盔甲减伤之后（-20%/级）。
 - **信标方块**：BlockDefs **末尾**追加（light:15 进 light mesh 夜亮）；合成 = Crafting.js `['glass'×3, 'obsidian','nether_star','obsidian', 'obsidian'×3]`（原版式，node 侧 matchRecipe 断言过）。
-- **金字塔检测 `_getBeaconPower`**：信标正下逐层 3×3/5×5/7×7/9×9（层 l @ y-l，half=l；**Build 5 修复**：原 half=l+1 从 5×5 起与原版不符，整塔多耗 40 块——勿改回），**连续**层全为铁/金/钻石/绿宝石块才计数，断层即停。拆 1 层 = 降级（power 变小仍激活，效果等级 min(2,power) 实时调整）；全拆 = 失效（beacons.delete + 光柱移除 + 已上身 buff 自然衰减）。
-- **脉冲**：`_updateBeaconPulse` 每 4s 遍历 beacons Map，范围 10×power，效果时长 12s > 周期 4s = **无缝续期**。效果选择是**内存级**（Game.beacons Map，换世界/重启丢失，方块本身走账本可重建激活）——勿当 bug。
-- **光柱**：`_beaconBeams` Map<key, Mesh>（BoxGeometry 半透明白，y 到 250），`_ensureBeaconBeam` 先 remove 再建；`_breakBeacon`/失效/`_clearBeaconState`（Game.start 换世界）三处都清 + dispose。
+- **金字塔检测 `_getBeaconPower`**：信标正下逐层 3×3/5×5/7×7/9×9（层 l @ y-l，half=l；**Build 5 修复**：原 half=l+1 从 5×5 起与原版不符，整塔多耗 40 块——勿改回），**连续**层全为铁/金/钻石/绿宝石块才计数，断层即停。拆 1 层 = 降级（power 变小仍激活，效果等级 min(2,power) 实时调整）；全拆 = 失效（beacons.delete + 光柱移除 + 已上身 buff 自然衰减）。（B30 轮 8 步 4 起本域实现在 `src/player/Beacon.js`，Game 侧仅同名门面；激活表/光柱表/脉冲计时随迁入控制器，`Game._clearBeaconState()` 仍是唯一收口点。）
+- **脉冲**：`_updateBeaconPulse` 每 4s 遍历 beacons Map，范围 10×power，效果时长 12s > 周期 4s = **无缝续期**。效果选择是**内存级**（控制器 `Beacon.beacons` Map——B30 轮 8 步 4 前是 `Game.beacons`，换世界/重启丢失，方块本身走账本可重建激活）——勿当 bug。
+- **光柱**：控制器 `Beacon.beams` Map<key, Mesh>（B30 轮 8 步 4 前是 `Game._beaconBeams`；BoxGeometry 半透明白，y 到 250），`_ensureBeaconBeam` 先 remove 再建；`_breakBeacon`/失效/`_clearBeaconState`（Game.start 换世界）三处都清 + dispose。
 - **BeaconScreen**：ChestScreen 同款生命周期（show 设 controls.enabled=false + 退指针锁 / hide 恢复 / E 键关闭 / paused 判定 / `_disposeWorld` dispose）。事件委托挂 **panel** 构造期（render 重建 innerHTML 无需重绑）。无基座只显示提示不出效果按钮。
 - **实测锚点**：power:4 / 脉冲 lv2 无缝续期（time 9.8@5s 步进）/ 抗性 hurt(5)→3.0 / 力量 1→5 / 拆层降级 & 全拆 beacons:0 beams:0 / UI"金字塔 3 级"实时 / beacon 方块 ID 129 / 配方 matchRecipe→beacon x1。
 
