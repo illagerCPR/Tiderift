@@ -138,7 +138,7 @@
 
 - **F5 视角循环 + F6 保存（⑤）**：`Player.viewMode`（0=第一人称 1=第三人称背后 2=第三人称正面，F5 循环；观战模式 F5 仍为切目标，死亡观战键位不变）。`updateCamera(world)` 重写：第三人称从眼点沿视线 ±4 格退距 + **遮挡裁剪**（`Raycast.cast` 新增返回命中距离 `t`——既有消费方不受影响；命中格前 0.25 拉近防穿墙；存档切换时 `_camRay.world` 必须跟随更新）；正面视角相机 `rotation.y=yaw+PI / x=-pitch` 回望。**准星射线仍从眼睛发射**（原版语义，第三人称射击/挖掘判定不变）。本地玩家模型 `src/entity/LocalPlayerModel.js`（与 RemotePlayer **共用导出的 PARTS 布局常量**，零插值直驱：行走摆臂/挖掘挥臂/头俯仰/右臂挂手持物 buildHeldItemTemplate；颜色=联机 selfId 派生色与远端看到的一致，单机 id=1）；Game.update 中 `thirdPerson` 时隐藏 FirstPersonHand（`viewMode===0` 才显示）并驱动模型；**Player/hand/playerModel 均跨存档共享**——start 复位 viewMode=0 + 隐藏模型，returnToMenu 同步隐藏（防主菜单全景残影）。F6=原 F5 手动保存（editable 输入放行同步改 F6）；F5 分支在 `!running` 时早退**不 preventDefault**——启动失败页保留浏览器刷新语义（原提示"按 F5 刷新"不矛盾化）。MenuScreen 键位提示整句换键（10 语言包同步）。
 - **创造中键取物（③）**：Controls.onMouseDown `button===1` → preventDefault（防浏览器自动滚动）→ `onPickBlock` 回调（Game 构造注入）；`Game._pickBlock()`：仅创造响应（生存/旁观早退）、准星 `selectedBlock.id` 经 `BlockRegistry.getNameById`（BlockRegistry 新增 id→name Map 反查导出）取方块名；热栏 0..8 已有该物品（无 data）→ setSelected 选中那格；否则以 1 个替换当前选中格。原版创造 pick-block 同语义。
-- **命令面板终局演出全维度（⑥）**：finaleBtn/finaleLabel 从 duskWrap 拆出独立 `finaleWrap`（aetherCard 直属），duskWrap 仍仅天域（复潮控件），`_refreshDimTools` 末尾 `aetherCard.style.display='flex'` 恒显——终局演出（60s 四界分段）本就全维度并行，任意维度可调试预览。`_startFinaleTide` 本身无维度门，纯 UI 解锁。
+- **命令面板终局演出全维度（⑥）**：finaleBtn/finaleLabel 从 duskWrap 拆出独立 `finaleWrap`（aetherCard 直属），duskWrap 仍仅天域（复潮控件），`_refreshDimTools` 末尾 `aetherCard.style.display='flex'` 恒显——终局演出（60s 四界分段）本就全维度并行，任意维度可调试预览。`_startFinaleTide` 本身无维度门，纯 UI 解锁。（B30 轮 8 步 7 起终局域方法实现在 `src/player/AetherFinale.js`，Game 侧同名门面；`game._finaleTide` 只读探针经访问器转发控制器 `tide`，本面板「窗口进行中」判据与调试口逐字不变。）
 
 ## Build 23 批次（2026-09-16 交付）—— 皮肤面板输入框加宽 / 鉴权账号收尾 / 主界面 LAN 状态组件
 
