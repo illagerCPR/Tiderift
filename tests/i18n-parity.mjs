@@ -27,6 +27,7 @@ import { BlockRegistry } from '../src/core/BlockRegistry.js';
 import { STELE_CHAPTERS, STELE_BLANK } from '../src/world/steles.js';
 import { BEACON_EFFECTS } from '../src/ui/BeaconScreen.js';
 import { CATEGORY_LABEL_KEYS } from '../src/core/ItemCategories.js';
+import { WAYMARK_STAGES } from '../src/core/Waymarks.js';
 import { BiomeNames } from '../src/world/biomes.js';
 import { TerrainGenerator } from '../src/world/terrain.js';
 import { AetherGenerator } from '../src/world/dimensions/aether.js';
@@ -72,6 +73,8 @@ for (const item of ItemRegistry.all()) if (item.lore) addAll(item.lore);
 for (const b of BlockRegistry.all()) if (b.lore) addAll(b.lore); // 世界观批次 N1：方块 lore
 for (const [, label, desc] of BEACON_EFFECTS) { dynamicKeys.add(label); dynamicKeys.add(desc); }
 addAll(Object.values(CATEGORY_LABEL_KEYS));
+// B34-B：航标三阶段的标题与说明走 t(def.title)/t(def.hint) 动态路径
+for (const def of WAYMARK_STAGES) { dynamicKeys.add(def.title); dynamicKeys.add(def.hint); }
 
 const master = new Set([...staticKeys, ...dynamicKeys]);
 ok(master.size > 100, 'master key count sane (got ' + master.size + ')');

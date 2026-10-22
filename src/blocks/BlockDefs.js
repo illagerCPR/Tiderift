@@ -2276,6 +2276,35 @@ reg('redstone_lamp_lit', {
   displayName: '红石灯', hardness: 0.3, light: 15, lit: true, baseBlock: 'redstone_lamp',
 }, { redstone_lamp_lit: redstoneLampTex(132, true) });
 
+// ── 天域旧航路航标芯（Build 34 B，**文件末尾追加**防方块 ID 错位）─────────────
+// 只由航标修复流程经 World.setBlock 放置，无配方、不自然生成；light 15 让它成为塔顶的第二层光，
+// 与原有四角荧石（普通照明）区分——修复不是"重新点亮旧荧石"，而是点亮新的航标芯。
+function aetherWaymarkTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const d = Math.abs(x - 7.5) + Math.abs(y - 7.5); // 菱形潮核
+      let c;
+      if (d < 3.2) c = [176, 246, 236];
+      else if (d < 4.6) c = [98, 202, 198];
+      else if (d < 6.4) c = [44, 116, 122];
+      else c = [38, 52, 58];
+      px[y * 16 + x] = rgb(c, 0.92 + hash2(x, y, seed) * 0.16);
+    }
+  }
+  for (const [x, y] of [[2, 2], [13, 2], [2, 13], [13, 13]]) {
+    setPx(px, x, y, rgb([216, 240, 236]));
+    setPx(px, x + 1, y, rgb([120, 156, 156]));
+    setPx(px, x, y + 1, rgb([120, 156, 156]));
+  }
+  return pixelSvg(px);
+}
+
+reg('aether_waymark', {
+  displayName: '天域航标', light: 15, hardness: 3, tool: 'pickaxe',
+  lore: ['旧航路的最后一枚眼睛。', '潮力重燃时，它会替云民指出下一座岛。'],
+}, { aether_waymark: aetherWaymarkTex(151) });
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

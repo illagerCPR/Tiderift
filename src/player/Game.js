@@ -32,6 +32,7 @@ import { ChestScreen } from '../ui/ChestScreen.js';
 import { BeaconScreen } from '../ui/BeaconScreen.js';
 import { SteleScreen } from '../ui/SteleScreen.js';
 import { JournalScreen } from '../ui/JournalScreen.js';
+import { WaymarkScreen } from '../ui/WaymarkScreen.js';
 import { t } from '../i18n/index.js';
 import { tName } from '../i18n/name.js';
 import { getDisplayName } from '../ui/itemName.js';
@@ -55,6 +56,7 @@ import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLig
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
 import { SaveSystem } from '../core/SaveSystem.js';
 import { Journal } from '../core/Journal.js';
+import { Waymarks, waymarkKey, waymarkStageDef } from '../core/Waymarks.js';
 import { getDimension, setAetherDuskProfile } from '../core/dimensions.js';
 import { DEFAULT_BIOME_SCALE, safeBiomeScale } from '../world/biomes.js';
 import { FirstPersonHand } from '../render/FirstPersonHand.js';
@@ -104,6 +106,9 @@ export class Game {
     this.journalScreen = null;  // 四界游记界面（新建型：_disposeWorld 摘 DOM 与监听器）
     this._journalObserveAt = 0;   // 揭图节流时间戳（performance.now）
     this._journalDiscoveryAt = 0; // 结构发现节流时间戳
+    this.waymarks = null;         // 天域旧航路航标进度（新建型：start 创建 / _disposeWorld 释放）
+    this.waymarkScreen = null;    // 旧航标界面（新建型：_disposeWorld 摘 DOM 与监听器）
+    this._waymarkNavCache = null; // 下一座航路查询缓存（随世界重建清空）
     this.tradeScreen = null;
     this.pauseMenu = null;
     this.deathScreen = null;
@@ -201,7 +206,8 @@ export class Game {
       (this.tradeScreen && this.tradeScreen.visible) ||
       (this.beaconScreen && this.beaconScreen.visible) ||
       (this.steleScreen && this.steleScreen.visible) ||
-      (this.journalScreen && this.journalScreen.visible));
+      (this.journalScreen && this.journalScreen.visible) ||
+      (this.waymarkScreen && this.waymarkScreen.visible));
   }
 
   // 清理旧世界所有 Three.js 资源和 UI DOM，防止切换存档时残留"幽灵方块"等
@@ -271,6 +277,10 @@ export class Game {
     this.journal = null;
     this._journalObserveAt = 0;
     this._journalDiscoveryAt = 0;
+    // 天域旧航路航标（新建型：界面摘 DOM，进度随世界清空——换维由 _composeSwitchLoadData 透传）
+    if (this.waymarkScreen) { this.waymarkScreen.dispose(); this.waymarkScreen = null; }
+    this.waymarks = null;
+    this._waymarkNavCache = null;
     if (this.furnaceScreen) { this.furnaceScreen.dispose(); this.furnaceScreen = null; }
     if (this.recipeViewer) { this.recipeViewer.dispose(); this.recipeViewer = null; }
     if (this.tradeScreen) { this.tradeScreen.dispose(); this.tradeScreen = null; }
@@ -553,6 +563,11 @@ export class Game {
     this._journalObserveAt = 0;
     this._journalDiscoveryAt = 0;
     this.journalScreen = new JournalScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
+    // 天域旧航路航标（Build 34 B）：进度是存档/房间共享状态，界面直接读 this.waymarks，故先建数据再建界面。
+    this.waymarks = new Waymarks(this);
+    this.waymarks.reset(loadData ? loadData.waymarks : null);
+    this._waymarkNavCache = new Map();
+    this.waymarkScreen = new WaymarkScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
     this.inventoryScreen = new InventoryScreen(this.inventory, this.player, this);
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
@@ -878,6 +893,75 @@ export class Game {
         journal.recordDiscovery(world.dimension, hit.name, hit.record.ax, hit.record.az, hit.label);
       }
     }
+  }
+
+// ── 天域旧航路航标（Build 34 B）─────────────────────────────────────────
+  // 下一座航路：只依赖种子与锚点（StructureManager.nextTowerFrom），按锚点缓存一次求解结果。
+  // 找不到时返回 null，界面给明确提示而不伪造目标。
+  _waymarkNextTower(ax, az) {
+    const sm = this.world && this.world.generator && this.world.generator.structureManager;
+    if (!sm || typeof sm.nextTowerFrom !== 'function') return null;
+    if (!this._waymarkNavCache) this._waymarkNavCache = new Map();
+    const key = waymarkKey(ax, az);
+    if (this._waymarkNavCache.has(key)) return this._waymarkNavCache.get(key);
+    const rec = sm.nextTowerFrom(ax, az);
+    const out = rec ? { ax: rec.ax, az: rec.az } : null;
+    this._waymarkNavCache.set(key, out);
+    return out;
+  }
+
+  // 阶段材料扣除（联机在服务器回执后扣，单机提交即扣——两边都走这里）
+  _consumeWaymarkMaterials(stage) {
+    const def = waymarkStageDef(stage);
+    if (!def || !this.inventory) return;
+    for (const need of def.needs) this.inventory.removeItems(need.name, need.count);
+    if (this.hotbar) this.hotbar.update();
+  }
+
+  // 进度落地（单机与联机回执共用）。place=true 时才放置航标芯：联机只由提交方放置，
+  // 其余客户端经 World 方块账本同步收到，避免各端重复 setBlock 造成广播放大。
+  _applyWaymarkProgress(ax, az, stage, byName, place) {
+    if (!this.waymarks) return false;
+    const changed = this.waymarks.setStage(ax, az, stage, byName);
+    if (!changed) return false;
+    if (stage >= 3) {
+      if (place) {
+        const sm = this.world && this.world.generator && this.world.generator.structureManager;
+        const rec = sm && sm.towerRecordAt ? sm.towerRecordAt(ax, az) : null;
+        if (rec) this._placeWaymarkBlock(rec);
+      }
+      if (this._waymarkNavCache) this._waymarkNavCache.delete(waymarkKey(ax, az));
+      if (this.chatBox) this.chatBox.add(t('旧航标重新亮起，下一座航路已记入游记。'), '#8fd0c4');
+    } else if (this.chatBox) {
+      const who = byName ? t('{name} ', { name: byName }) : '';
+      this.chatBox.add(t('{who}修复航标 {n}/3。', { who, n: stage }), '#8fd0c4');
+    }
+    return true;
+  }
+
+  // 单机提交：校验阶段与材料 → 扣料 → 落地进度（含放置航标芯）
+  _completeWaymarkStage(tower, stage, byName) {
+    if (!tower || !this.waymarks) return false;
+    if (this.waymarks.stageAt(tower.ax, tower.az) !== stage - 1) return false;
+    if (this.waymarks.missingFor(stage, this.inventory).length) return false;
+    this._consumeWaymarkMaterials(stage);
+    return this._applyWaymarkProgress(tower.ax, tower.az, stage, byName, true);
+  }
+
+  // 航标芯放置：塔顶平台仍存在才落地（拆改塔顶后不留幽灵航标）。
+  // 走 World.setBlock——联机时由 NetworkManager 的 onLocalBlockChange 钩子自动上报。
+  _placeWaymarkBlock(tower) {
+    const world = this.world;
+    if (!world || !tower) return false;
+    const id = BlockRegistry.getId('aether_waymark');
+    if (id === undefined || id === null) return false;
+    const x = tower.ax;
+    const y = tower.groundY + 10;
+    const z = tower.az;
+    if (world.getBlock(x, y - 1, z) === 0) return false; // 脚下平台已毁 → 不重建
+    if (world.getBlock(x, y, z) === id) return false;    // 幂等
+    world.setBlock(x, y, z, id);
+    return true;
   }
 
   // 御风斗篷穿戴检测（批次 C）：胸甲槽 = armor[1]
@@ -2227,6 +2311,7 @@ export class Game {
       dimensionFurnaces: furnBuckets,
       redstone: this.redstone ? this.redstone.serialize() : null,
       journal: this.journal ? this.journal.serialize() : null, // 游记跨维透传（换维重建不丢探索记录）
+      waymarks: this.waymarks ? this.waymarks.serialize() : null, // 航标进度跨维透传（换维重建不丢）
       sky: { time: this.sky ? this.sky.time : 0.35 }
     };
   }

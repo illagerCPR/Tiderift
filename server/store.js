@@ -53,6 +53,9 @@ export function roomSnapshot(room) {
     // 对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集
     journalMarkers: room.journalMarkers ? [...room.journalMarkers.values()] : [],
     nextJournalMarkerId: room.nextJournalMarkerId || 1,
+    // B34-B：天域旧航路航标进度（[ ["ax,az", {stage, byName}], ... ]）
+    // 同样对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集
+    waymarks: room.waymarks ? [...room.waymarks.entries()] : [],
     savedAt: Date.now(),
   };
 }
@@ -86,7 +89,7 @@ function isRoomSnapshot(data) {
     if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) return false;
     for (const entries of Object.values(bucket)) if (!Array.isArray(entries)) return false;
   }
-  for (const key of ['blocks', 'containers', 'drops', 'journalMarkers']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
+  for (const key of ['blocks', 'containers', 'drops', 'journalMarkers', 'waymarks']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
     if (data[key] !== undefined && !Array.isArray(data[key])) return false;
   }
   return true;

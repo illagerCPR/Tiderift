@@ -62,6 +62,7 @@ PURE_NODE_SUITES=(
     cw1-mesh-stability         # CW-1 区块边界稳定态收敛（纯 node：缺邻居构建 → 反向标脏 → 重建与参照构建逐顶点一致）
     ui-audio-smoke             # src/ui + src/audio import 冒烟（纯 node：最小 DOM 壳下全量 import + 跨模块具名导出核对）
     journal-unit               # B34 A 四界游记：Journal 数据模型（纯 node：清洗/幂等/上限/序列化往返/揭图/标记）
+    waymarks-unit              # B34 B 旧航路修复：航标进度与塔身份（纯 node：阶段/清洗/递增一次性/材料缺口/同种子双端一致）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -102,7 +103,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

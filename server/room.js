@@ -173,6 +173,57 @@ function allowJournalWrite(player, now = Date.now()) {
   return true;
 }
 
+// ---- B34-B：天域旧航路航标进度（房间权威账本）----
+// 上限与客户端 src/core/Waymarks.js 对齐：96 座塔、阶段 1..3、归属名 24 字符。
+// 键 = "锚点x,锚点z"：维度固定天域、结构类型固定 aether_tower，由客户端结构记录保证。
+const WAYMARK_LIMIT = 96;
+const WAYMARK_STAGE_LIMIT = 3;
+const WAYMARK_OWNER_MAX = 24;
+const WAYMARK_COORD_MAX = 30000000;
+const WAYMARK_KEY_RE = /^-?\d{1,9},-?\d{1,9}$/;
+// 提交节流：令牌桶突发 30 次 + 每分钟补 15 次（三阶段提交是低频操作，超限静默丢弃）
+const WAYMARK_BUCKET_CAP = 30;
+const WAYMARK_BUCKET_PER_MIN = 15;
+
+// 锚点键：严格 "整数,整数" 字符串，不接受浮点/科学计数法/其它形态
+export function sanitizeWaymarkKey(key) {
+  if (typeof key !== 'string' || !WAYMARK_KEY_RE.test(key)) return null;
+  const [rawX, rawZ] = key.split(',');
+  const ax = Number(rawX), az = Number(rawZ);
+  if (!Number.isInteger(ax) || !Number.isInteger(az)) return null;
+  if (Math.abs(ax) > WAYMARK_COORD_MAX || Math.abs(az) > WAYMARK_COORD_MAX) return null;
+  return `${ax},${az}`;
+}
+
+// 阶段：只认 1..3 的整数（0/越界/字符串强转一律非法）
+export function cleanWaymarkStage(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= WAYMARK_STAGE_LIMIT ? n : 0;
+}
+
+// 快照恢复：[key, {stage, byName}] —— 键与阶段都合法才收，坏项跳过不崩服
+function sanitizeStoredWaymark(entry) {
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  const key = sanitizeWaymarkKey(entry[0]);
+  const value = entry[1] && typeof entry[1] === 'object' ? entry[1] : {};
+  const stage = cleanWaymarkStage(value.stage);
+  if (!key || !stage) return null;
+  return [key, { stage, byName: cleanJournalText(value.byName, WAYMARK_OWNER_MAX) }];
+}
+
+function allowWaymarkWrite(player, now = Date.now()) {
+  let b = player._waymarkBucket;
+  if (!b) b = player._waymarkBucket = { tokens: WAYMARK_BUCKET_CAP, last: now };
+  const elapsed = Math.max(0, now - b.last);
+  if (elapsed > 0) {
+    b.tokens = Math.min(WAYMARK_BUCKET_CAP, b.tokens + (elapsed / 60000) * WAYMARK_BUCKET_PER_MIN);
+    b.last = now;
+  }
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
 export class Room {
   // name: 房间名（同名房间共享同一世界）；onSave: (room) => void 世界变更落盘回调（index.mjs 注入）
   // config: 服务器配置引用（读取 dropTtlMs 等），管理面板可实时改
@@ -205,6 +256,8 @@ export class Room {
     // B34-A：四界游记共享标记账本（id → marker，服务端权威；落盘随房间快照）
     this.journalMarkers = new Map();
     this.nextJournalMarkerId = 1;
+    // B34-B：天域旧航路航标进度（"ax,az" → {stage, byName}；服务器权威，落盘随房间快照）
+    this.waymarks = new Map();
   }
 
   // 取（或建）指定维度的账本桶
@@ -306,6 +359,16 @@ export class Room {
       if (marker) this.journalMarkers.set(marker.id, marker);
     }
     while (this.journalMarkers.size > JOURNAL_MARKER_LIMIT) this.journalMarkers.delete(this.journalMarkers.keys().next().value);
+    // B34-B：航标进度恢复（旧快照无该字段 → 空表，不崩服；坏项跳过）
+    this.waymarks = new Map();
+    if (snap.waymarks !== undefined && !Array.isArray(snap.waymarks)) {
+      warnBadSnapshot(this.name, '航标进度表非数组');
+    }
+    for (const entry of (Array.isArray(snap.waymarks) ? snap.waymarks : [])) {
+      const rec = sanitizeStoredWaymark(entry);
+      if (rec) this.waymarks.set(rec[0], rec[1]);
+    }
+    while (this.waymarks.size > WAYMARK_LIMIT) this.waymarks.delete(this.waymarks.keys().next().value);
     this.hostId = null;
   }
 
@@ -533,6 +596,8 @@ export class Room {
     this.sendTo(player, MSG.WORLD_INFO, info);
     // B34-A：进房/重连下发房间共享标记全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
     this.sendTo(player, MSG.JOURNAL_MARKERS, this.journalMarkersPayload());
+    // B34-B：进房/重连下发航标进度全量（客户端在世界就绪前缓存，onWorldStarted 统一应用）
+    this.sendTo(player, MSG.WAYMARKS, this.waymarksPayload());
     if (recovery) {
       this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
     } else {
@@ -752,6 +817,7 @@ export class Room {
       case MSG.CHAT: this.onChat(player, msg); break;
       case MSG.JOURNAL_MARKER: this.onJournalMarker(player, msg); break;
       case MSG.JOURNAL_MARKER_DELETE: this.onJournalMarkerDelete(player, msg); break;
+      case MSG.WAYMARK_SUBMIT: this.onWaymarkSubmit(player, msg); break;
       case MSG.PING:
         // 阶段10：回显 seq + 客户端时间戳 ts，供客户端直测网络 RTT
         this.sendTo(player, MSG.PONG, { seq: safeInt(msg.seq), ts: safeNum(msg.ts, 0) });
@@ -836,6 +902,32 @@ export class Room {
     if (marker.ownerId !== player.id && !this.isOperator(player)) return;
     this.journalMarkers.delete(id);
     this.broadcast(MSG.JOURNAL_MARKER_REMOVED, { id, by: player.id });
+    this.saveSoon();
+  }
+
+  // B34-B：航标进度全量（进房/重连下发）
+  waymarksPayload() {
+    return { list: [...this.waymarks.entries()].map(([key, value]) => [key, value.stage, value.byName]) };
+  }
+
+  // B34-B：三阶段修复提交。服务器只负责「严格顺序 + 一次性」：
+  // 阶段必须恰好等于当前阶段 +1，重复 / 越级 / 两人并发提交一律拒绝，并把权威当前值回给提交者
+  // （客户端只在收到自己触发的更新回执后才扣材料，因此不会双重扣料）。
+  // 边界：材料由客户端本地扣除——服务器不持有背包，无法校验实物；协议文档注明该限制。
+  onWaymarkSubmit(player, msg) {
+    const key = sanitizeWaymarkKey(msg && msg.key);
+    const stage = cleanWaymarkStage(msg && msg.stage);
+    const current = (key && this.waymarks.get(key) ? this.waymarks.get(key).stage : 0);
+    const deny = (reason) => this.sendTo(player, MSG.WAYMARK_DENY, { key: key || '', stage, current, reason });
+    if (!key) return deny('key');
+    if (!stage) return deny('stage');
+    if (player.dim !== 'aether') return deny('dim'); // 只能在天域塔顶提交
+    if (!allowWaymarkWrite(player)) return deny('rate');
+    if (stage !== current + 1) return deny('order');
+    if (!this.waymarks.has(key) && this.waymarks.size >= WAYMARK_LIMIT) return deny('limit');
+    const byName = cleanJournalText(player.name, WAYMARK_OWNER_MAX);
+    this.waymarks.set(key, { stage, byName });
+    this.broadcast(MSG.WAYMARK_UPDATE, { key, stage, byId: player.id, byName }); // 含提交者本人：各端顺序一致
     this.saveSoon();
   }
 

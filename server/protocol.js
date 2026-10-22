@@ -88,6 +88,12 @@ export const MSG = {
   JOURNAL_MARKER_REMOVED: 'journal_marker_removed', // S2C {id, by}：删除广播
   JOURNAL_MARKERS: 'journal_markers',             // S2C {markers}：进房/重连全量下发房间共享标记
 
+  // 天域旧航路航标进度（B34-B：房间权威账本，三阶段严格顺序 + 一次性语义）
+  WAYMARK_SUBMIT: 'waymark_submit', // C2S {key:'ax,az', stage:1..3}：提交一个阶段
+  WAYMARK_UPDATE: 'waymark_update', // S2C {key, stage, byId, byName}：入账后广播（含提交者本人）
+  WAYMARK_DENY: 'waymark_deny',     // S2C {key, stage, current, reason}：拒绝并回权威当前阶段（客户端据此不扣材料）
+  WAYMARKS: 'waymarks',             // S2C {list:[[key, stage, byName], ...]}：进房/重连全量下发
+
   // 世界
   SET_TIME: 'set_time',
   TIME: 'time',

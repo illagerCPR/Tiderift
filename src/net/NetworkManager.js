@@ -1,5 +1,6 @@
 // NetworkManager.js -- 局域网联机网络层：连接/重连、消息路由、方块/玩家/掉落物/聊天同步
 import { MSG, PROTOCOL_VERSION } from '../../server/protocol.js';
+import { t } from '../i18n/index.js';
 import { RemotePlayer } from '../entity/RemotePlayer.js';
 import { loadActiveSkin } from '../entity/PlayerSkin.js';
 import { playerColorCss } from './playerColor.js';
@@ -163,6 +164,7 @@ export class NetworkManager {
     this._pendingJournalAdds = [];
     this._pendingJournalRemoves = [];
     this._clearJournalMarkers(); // B34-A：重连/恢复时旧房间共享标记随缓存一并清空
+    this._clearWaymarks(); // B34-B：航标进度缓存同样随连接重置
   }
 
   // B34-A：共享标记三态落到本地游记——世界未就绪时缓存，onWorldStarted 统一冲掉
@@ -184,6 +186,55 @@ export class NetworkManager {
   _clearJournalMarkers() {
     const journal = this.game && this.game.journal;
     if (journal && typeof journal.setSharedMarkers === 'function') journal.setSharedMarkers([]);
+  }
+
+  // B34-B：航标进度两态落到本地账本——世界未就绪时缓存，onWorldStarted 统一冲掉
+  // （服务端在 WORLD_INFO 之后才下发，此时 Game.start 可能还在重建本地世界）
+  _applyWaymarks(list) {
+    const towers = {};
+    for (const entry of Array.isArray(list) ? list : []) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      towers[String(entry[0])] = { stage: entry[1], byName: entry[2] };
+    }
+    if (this._ready && this.game && this.game.waymarks) this.game.waymarks.reset({ towers });
+    else this._pendingWaymarks = towers;
+  }
+
+  // 阶段入账回执：本人触发的更新才扣材料（服务器可能拒绝后被别人提交，重复扣料是硬伤）
+  _applyWaymarkUpdate(msg) {
+    const key = typeof msg.key === 'string' ? msg.key : '';
+    const parts = key.split(',');
+    const ax = Number(parts[0]);
+    const az = Number(parts[1]);
+    const stage = Number(msg.stage);
+    if (!Number.isInteger(ax) || !Number.isInteger(az)) return;
+    if (!Number.isInteger(stage) || stage < 1) return;
+    const mine = msg.byId === this.selfId;
+    if (this._ready && this.game && this.game.waymarks) {
+      if (mine) this.game._consumeWaymarkMaterials(stage);
+      this.game._applyWaymarkProgress(ax, az, stage, msg.byName || '', mine);
+    } else {
+      this._pendingWaymarkUpdates.push({ ax, az, stage, byName: msg.byName || '', mine });
+    }
+  }
+
+  _applyWaymarkDeny(msg) {
+    const game = this.game;
+    if (!game) return;
+    if (game.waymarkScreen) {
+      game.waymarkScreen._pending = false;
+      if (game.waymarkScreen.visible) game.waymarkScreen.render();
+    }
+    if (game.chatBox) {
+      const current = msg && Number(msg.current) > 0 ? t('{n}/3 阶段', { n: Number(msg.current) }) : t('未开始');
+      game.chatBox.add(t('航标提交未通过：当前进度 {s}。', { s: current }), '#fbb');
+    }
+  }
+
+  // 航标缓存跟随房间生命周期——换房/断线/重连一律清空
+  _clearWaymarks() {
+    this._pendingWaymarks = null;
+    this._pendingWaymarkUpdates = [];
   }
 
   _beginRecovery() {
@@ -250,6 +301,17 @@ export class NetworkManager {
       this._pendingJournalAdds = [];
       for (const id of this._pendingJournalRemoves) this.game.journal.removeSharedMarker(id);
       this._pendingJournalRemoves = [];
+    }
+    // B34-B：世界就绪后应用房间航标进度（先全量覆盖，再按到达顺序冲掉增量）
+    if (this._pendingWaymarks && this.game.waymarks) {
+      const towers = this._pendingWaymarks;
+      this._pendingWaymarks = null;
+      this.game.waymarks.reset({ towers });
+      for (const u of this._pendingWaymarkUpdates) {
+        if (u.mine) this.game._consumeWaymarkMaterials(u.stage);
+        this.game._applyWaymarkProgress(u.ax, u.az, u.stage, u.byName, u.mine);
+      }
+      this._pendingWaymarkUpdates = [];
     }
     // Idea-3C：世界就绪后应用进房下发的档案（换机/重连恢复）
     if (this._pendingProfile) {
@@ -467,6 +529,17 @@ export class NetworkManager {
         break;
       case MSG.JOURNAL_MARKER_REMOVED:
         this._applyJournalRemove(msg.id);
+        break;
+      case MSG.WAYMARKS:
+        // B34-B：进房/重连全量下发航标进度（覆盖本地旧账本，避免多端不一致）
+        this._applyWaymarks(msg.list);
+        break;
+      case MSG.WAYMARK_UPDATE:
+        // B34-B：阶段入账广播（含提交者本人，保证各端顺序一致）
+        this._applyWaymarkUpdate(msg);
+        break;
+      case MSG.WAYMARK_DENY:
+        this._applyWaymarkDeny(msg);
         break;
       case MSG.PLAYER_LEAVE:
         this._remoteDims.delete(msg.id);
@@ -882,12 +955,22 @@ export class NetworkManager {
     if (!this.connected || typeof id !== 'string' || !id) return;
     this._send(MSG.JOURNAL_MARKER_DELETE, { id });
   }
+  // B34-B：航标阶段提交。未连接/未就绪/参数非法一律返回 false，调用方据此不进入待回执态。
+  // 材料不在这里扣——等服务器 WAYMARK_UPDATE 回执且 byId 是自己时才扣，避免被拒后白扣。
+  sendWaymarkSubmit(ax, az, stage) {
+    if (!this.connected || !this._ready) return false;
+    if (!Number.isInteger(ax) || !Number.isInteger(az)) return false;
+    if (!Number.isInteger(stage) || stage < 1) return false;
+    this._send(MSG.WAYMARK_SUBMIT, { key: `${ax},${az}`, stage });
+    return true;
+  }
   createRoom(seed, mode, room, biomeScale) { this._sendQueued(MSG.CREATE_ROOM, { seed, mode, room, biomeScale }); }
   joinRoom(room) { this._sendQueued(MSG.JOIN_ROOM, { room }); }
 
   // 阶段5：世界内换房 / 重建世界（保持连接，服务器回 WORLD_INFO(restart) 后重启本地世界）
   sendSwitchRoom(room) {
     this._clearJournalMarkers(); // B34-A：换房后旧房间的共享标记不再展示
+    this._clearWaymarks(); // B34-B：换房后旧房间的航标进度不再展示
     this._send(MSG.SWITCH_ROOM, { room });
   }
   sendWorldReset() { this._send(MSG.WORLD_RESET, {}); }
@@ -899,6 +982,7 @@ export class NetworkManager {
   close() {
     if (this.game) this.game.finaleInfo = null;
     this._clearJournalMarkers(); // B34-A：断开后不保留任何房间标记
+    this._clearWaymarks(); // B34-B：断开后不保留航标进度缓存
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）

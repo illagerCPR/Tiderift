@@ -385,6 +385,19 @@ export class InteractionController {
           g.controls.mouseRight = false;
           return CLICK_CONSUMED;
         }
+        // Build 34 B：塔顶旧航标——右键瞭望台四角荧石或已点亮的航标芯打开修复界面。
+        // 命中坐标全部由结构记录校验（waymarkTowerAt），玩家自建的荧石塔不会命中。
+        if (targetDef && g.waymarkScreen && !g.player.spectator
+            && (targetDef.name === 'glowstone' || targetDef.name === 'aether_waymark')) {
+          const generator = g.world && g.world.generator;
+          const sm = generator && generator.structureManager;
+          const tower = sm && sm.waymarkTowerAt ? sm.waymarkTowerAt(hit.block.x, hit.block.y, hit.block.z) : null;
+          if (tower) {
+            g.waymarkScreen.show(tower);
+            g.controls.mouseRight = false;
+            return CLICK_CONSUMED;
+          }
+        }
         // 红石交互：拉杆/按钮
         if (targetDef && g.redstone) {
           const interacted = g.redstone.onBlockInteract(hit.block.x, hit.block.y, hit.block.z, hit.id);

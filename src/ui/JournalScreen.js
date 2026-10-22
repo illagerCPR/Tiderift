@@ -76,7 +76,7 @@ export class JournalScreen {
     header.appendChild(select);
     header.appendChild(this._button('−', () => { this.zoom = Math.max(5, this.zoom - 2); this.drawMap(); }));
     header.appendChild(this._button('+', () => { this.zoom = Math.min(28, this.zoom + 2); this.drawMap(); }));
-    header.appendChild(this._button('关闭', () => this.hide()));
+    header.appendChild(this._button('关闭 (ESC)', () => this.hide()));
     this.panel.appendChild(header);
 
     const body = document.createElement('div');
@@ -120,7 +120,12 @@ export class JournalScreen {
     stats.textContent = t('已揭开 {n} 格 · 发现 {d} 处', { n: count, d: journal.discoveries.filter((d) => d.dim === this.dim).length });
     stats.style.cssText = 'font-size:13px;color:#c4d2c8;border-bottom:1px solid #3d4742;padding-bottom:8px;';
     this.sidebar.appendChild(stats);
-    this.sidebar.appendChild(this._section('已发现遗迹', journal.discoveries.filter((d) => d.dim === this.dim).map((d) => ({ label: t(d.label), x: d.x, z: d.z }))));
+    // Build 34 B：已修复的塔在游记里带「已修复」标记（航标进度是存档/房间共享状态，不在游记内）
+    const discoveries = journal.discoveries.filter((d) => d.dim === this.dim).map((d) => {
+      const repaired = d.type === 'aether_tower' && this.game.waymarks && this.game.waymarks.isRepaired(d.x, d.z);
+      return { label: repaired ? t('{name} · 已修复', { name: t(d.label) }) : t(d.label), x: d.x, z: d.z };
+    });
+    this.sidebar.appendChild(this._section('已发现遗迹', discoveries));
     this.sidebar.appendChild(this._section('已读碑文', [...journal.readSteles].map((id) => ({ label: t(STELE_CHAPTERS[id]?.title || id) }))));
 
     const personal = document.createElement('section');

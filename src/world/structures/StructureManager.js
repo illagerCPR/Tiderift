@@ -337,6 +337,47 @@ export class StructureManager {
     }
     return null;
   }
+
+  // B 旧航路：坐标命中"瞭望塔顶航标位"时返回该塔记录；坐标全部由记录校验，
+  // 玩家自建的普通塔/荧石照射不命中。命中点＝瞭望台四角荧石（groundY+11）与航标芯位（groundY+10 塔心）。
+  waymarkTowerAt(x, y, z) {
+    for (const rec of this.recordsAround('aether_tower', x, z)) {
+      const gy = rec.groundY;
+      if (y === gy + 10 && x === rec.ax && z === rec.az) return rec;
+      if (y !== gy + 11) continue;
+      for (const [px, pz] of [[rec.ax - 3, rec.az - 3], [rec.ax + 3, rec.az - 3], [rec.ax - 3, rec.az + 3], [rec.ax + 3, rec.az + 3]]) {
+        if (px === x && pz === z) return rec;
+      }
+    }
+    return null;
+  }
+
+  // B 旧航路：按锚点取回瞭望塔记录（联机回执只带坐标，需要 groundY 才能落地航标芯）
+  towerRecordAt(ax, az) {
+    for (const rec of this.recordsAround('aether_tower', ax, az, 1)) {
+      if (rec.ax === ax && rec.az === az) return rec;
+    }
+    return null;
+  }
+
+  // B 旧航路：从当前塔锚点向外按 cell 环半径递增，取最近的一座别的瞭望塔。
+  // 只依赖种子与锚点（recordsAround → _cellRecord 全确定性），预算上限 maxRadius 环；找不到返回 null。
+  nextTowerFrom(ax, az, maxRadius = 6) {
+    for (let r = 1; r <= maxRadius; r++) {
+      const found = [];
+      for (const rec of this.recordsAround('aether_tower', ax, az, r)) {
+        if (rec.ax === ax && rec.az === az) continue;
+        const dx = rec.ax - ax;
+        const dz = rec.az - az;
+        found.push({ rec, d2: dx * dx + dz * dz });
+      }
+      if (!found.length) continue;
+      // 距离并列时按锚点坐标定序，保证两端选出同一目标
+      found.sort((a, b) => a.d2 - b.d2 || a.rec.ax - b.rec.ax || a.rec.az - b.rec.az);
+      return found[0].rec;
+    }
+    return null;
+  }
 }
 
 // 便捷导出：布局求解里常用的方块 id 解析（懒取，避免模块加载顺序问题）
