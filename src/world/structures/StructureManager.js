@@ -311,6 +311,32 @@ export class StructureManager {
     }
     return null;
   }
+
+  // 游记探索：当前位置命中的结构实例（只返回已靠近并落入包围盒的结构）。
+  structureRecordAt(x, z) {
+    for (const [name, def] of structureTypes) {
+      if (!dimMatches(def, this.generator)) continue;
+      for (const rec of this.recordsAround(name, x, z)) {
+        if (x < rec.minX || x > rec.maxX || z < rec.minZ || z > rec.maxZ) continue;
+        let label = name;
+        if (name === 'village') label = rec.meta && rec.meta.variant === 'desert' ? '沙漠村庄' : '村庄';
+        else if (name === 'stronghold') label = '要塞';
+        else if (name === 'fortress') label = '下界要塞';
+        else if (name === 'end_city') label = '末地城';
+        else if (name === 'aether_temple') label = '天空神殿';
+        else if (name === 'aether_tower') label = '浮空瞭望塔';
+        else if (name === 'aether_ship') label = '天域沉船';
+        else if (name === 'aether_well') label = '漩风井';
+        else if (name === 'aether_gate') label = '天海之门遗迹';
+        else if (name === 'tidefire_hearth') label = '潮火之炉';
+        else if (name === 'tide_barrow') label = '潮冢';
+        else if (name === 'gleaner_ring') label = '拾遗者石环';
+        else if (name === 'whale_barrow') label = '鲸骨冢';
+        return { name, label, record: rec };
+      }
+    }
+    return null;
+  }
 }
 
 // 便捷导出：布局求解里常用的方块 id 解析（懒取，避免模块加载顺序问题）

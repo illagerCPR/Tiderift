@@ -52,6 +52,7 @@ export class SaveSystem {
         emblemWorn: !!game.player.emblemWorn, // 纹章佩戴（Build 19 K3：无敌/飞行/基岩心）
         bedSpawn: game.bedSpawn || null, // 床重生点（单机；含维度校验字段）
         redstone: game.redstone ? game.redstone.serialize() : null,
+        journal: game.journal ? game.journal.serialize() : null,
         sky: { time: game.sky.time || 0 }
       };
       localStorage.setItem(SAVE_PREFIX + slot, JSON.stringify(data));

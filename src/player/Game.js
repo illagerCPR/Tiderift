@@ -31,6 +31,7 @@ import { InventoryScreen } from '../ui/InventoryScreen.js';
 import { ChestScreen } from '../ui/ChestScreen.js';
 import { BeaconScreen } from '../ui/BeaconScreen.js';
 import { SteleScreen } from '../ui/SteleScreen.js';
+import { JournalScreen } from '../ui/JournalScreen.js';
 import { t } from '../i18n/index.js';
 import { tName } from '../i18n/name.js';
 import { getDisplayName } from '../ui/itemName.js';
@@ -53,6 +54,7 @@ import { LocalPlayerModel } from '../entity/LocalPlayerModel.js';
 import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLight.js';
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
 import { SaveSystem } from '../core/SaveSystem.js';
+import { Journal } from '../core/Journal.js';
 import { getDimension, setAetherDuskProfile } from '../core/dimensions.js';
 import { DEFAULT_BIOME_SCALE, safeBiomeScale } from '../world/biomes.js';
 import { FirstPersonHand } from '../render/FirstPersonHand.js';
@@ -98,6 +100,10 @@ export class Game {
     this.chestScreen = null;
     this.beaconScreen = null;
     this.steleScreen = null;
+    this.journal = null;        // 四界游记数据（新建型：start 创建 / _disposeWorld 释放）
+    this.journalScreen = null;  // 四界游记界面（新建型：_disposeWorld 摘 DOM 与监听器）
+    this._journalObserveAt = 0;   // 揭图节流时间戳（performance.now）
+    this._journalDiscoveryAt = 0; // 结构发现节流时间戳
     this.tradeScreen = null;
     this.pauseMenu = null;
     this.deathScreen = null;
@@ -185,7 +191,7 @@ export class Game {
     });
   }
 
-  // F11：唯一「阻断世界输入的 UI」清单（背包/箱子/熔炉/交易/信标/石碑）。
+  // F11：唯一「阻断世界输入的 UI」清单（背包/箱子/熔炉/交易/信标/石碑/游记）。
   // 这些界面 show() 时置 controls.enabled=false 并退指针锁，但鼠标按键状态可能残留，
   // 故挖掘/攻击/弓蓄力与指针锁自动暂停都必须先问这里——新增此类界面只改这一处。
   _anyInputBlockingUI() {
@@ -194,7 +200,8 @@ export class Game {
       (this.furnaceScreen && this.furnaceScreen.visible) ||
       (this.tradeScreen && this.tradeScreen.visible) ||
       (this.beaconScreen && this.beaconScreen.visible) ||
-      (this.steleScreen && this.steleScreen.visible));
+      (this.steleScreen && this.steleScreen.visible) ||
+      (this.journalScreen && this.journalScreen.visible));
   }
 
   // 清理旧世界所有 Three.js 资源和 UI DOM，防止切换存档时残留"幽灵方块"等
@@ -259,6 +266,11 @@ export class Game {
     if (this.chestScreen) { this.chestScreen.dispose(); this.chestScreen = null; }
     if (this.beaconScreen) { this.beaconScreen.dispose(); this.beaconScreen = null; }
     if (this.steleScreen) { this.steleScreen.dispose(); this.steleScreen = null; }
+    // 四界游记（新建型：DOM/监听器随界面回收，数据随世界清空——换维由 _composeSwitchLoadData 透传）
+    if (this.journalScreen) { this.journalScreen.dispose(); this.journalScreen = null; }
+    this.journal = null;
+    this._journalObserveAt = 0;
+    this._journalDiscoveryAt = 0;
     if (this.furnaceScreen) { this.furnaceScreen.dispose(); this.furnaceScreen = null; }
     if (this.recipeViewer) { this.recipeViewer.dispose(); this.recipeViewer = null; }
     if (this.tradeScreen) { this.tradeScreen.dispose(); this.tradeScreen = null; }
@@ -534,6 +546,13 @@ export class Game {
     this.hotbar = new Hotbar(this.inventory);
     await this.hotbar.update();
     if (!isCurrentStart()) return;
+    // 四界游记（Build 34 A）：数据必须先于界面创建——JournalScreen.render 直接读 this.journal。
+    // 旧档/旧联机档案缺 journal 字段时 reset(null) 回落为空游记（reset 内部即全量重建）。
+    this.journal = new Journal(this); // 新建型：_disposeWorld 释放
+    this.journal.reset(loadData ? loadData.journal : null);
+    this._journalObserveAt = 0;
+    this._journalDiscoveryAt = 0;
+    this.journalScreen = new JournalScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
     this.inventoryScreen = new InventoryScreen(this.inventory, this.player, this);
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
@@ -624,6 +643,7 @@ export class Game {
         if (this.chestScreen && this.chestScreen.visible) { this.chestScreen.hide(); return; }
         if (this.beaconScreen && this.beaconScreen.visible) { this.beaconScreen.hide(); return; }
         if (this.steleScreen && this.steleScreen.visible) { this.steleScreen.hide(); return; }
+        if (this.journalScreen && this.journalScreen.visible) { this.journalScreen.hide(); return; }
         if (this.furnaceScreen && this.furnaceScreen.visible) { this.furnaceScreen.hide(); return; }
         if (this.tradeScreen && this.tradeScreen.visible) { this.tradeScreen.hide(); return; }
         if (this.inventoryScreen) {
@@ -635,6 +655,7 @@ export class Game {
         if (!this.running || this.spectating || !this.cheatsEnabled) return;
         if (this.deathScreen && this.deathScreen.visible) return;
         if (this.pauseMenu && this.pauseMenu.visible) return;
+        if (this.journalScreen && this.journalScreen.visible) return; // 游记开着不叠加命令面板
         if (this.commandPanel) this.commandPanel.toggle();
       }
       // Q 键丢弃（Build 10 原版化）：Q 丢 1 个 / Ctrl+Q 丢整组，沿视线初速抛出，2 秒后才可拾取
@@ -670,6 +691,7 @@ export class Game {
         if (!this.running || (this.deathScreen && this.deathScreen.visible)) return;
         if (this.pauseMenu && this.pauseMenu.visible) return;
         if (this.chatBox && this.chatBox.input) return;
+        if (this.journalScreen && this.journalScreen.visible) return; // 游记开着不叠加背包
         if (!this.recipeViewer) return;
         const containerOpen = (this.inventoryScreen && this.inventoryScreen.visible) ||
           (this.chestScreen && this.chestScreen.visible) ||
@@ -682,6 +704,18 @@ export class Game {
         }
         this.recipeViewer.setUserEnabled(true);
         if (this.inventoryScreen) this.inventoryScreen.show(2); // Build 11：JEI 独立伴随面板（内嵌已回退）
+      }
+      // N 键：四界游记（探索地图 / 已发现遗迹 / 已读碑文 / 个人标记）。
+      // 与 E/C/J/Q 同款互斥：暂停、观战、死亡、聊天输入、命令面板、容器界面一律不开；
+      // 已开着时再按 N 合上（hide 恢复 controls.enabled，招牌惯例见 BeaconScreen）。
+      if (e.code === 'KeyN') {
+        if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
+        if (this.pauseMenu && this.pauseMenu.visible) return;
+        if (this.chatBox && this.chatBox.input) return;
+        if (this.commandPanel && this.commandPanel.visible) return;
+        if (this.journalScreen && this.journalScreen.visible) { this.journalScreen.hide(); return; }
+        if (this._anyInputBlockingUI()) return; // 容器/石碑以外的界面开着时不叠加
+        if (this.journalScreen) this.journalScreen.show();
       }
       // R/U/A：配方查询键。浮层内作用于悬浮/当前物品；
       // 背包/箱子/熔炉界面内悬浮物品按 R 查配方、按 U 查用途
@@ -762,6 +796,11 @@ export class Game {
           this.steleScreen.hide();
           return;
         }
+        // 四界游记：ESC 合上（pointer lock 未激活时也不依赖界面内监听器）
+        if (this.journalScreen && this.journalScreen.visible) {
+          this.journalScreen.hide();
+          return;
+        }
         if (this.pauseMenu && this.pauseMenu.visible) {
           this.pauseMenu.hide();
         } else if (!this.controls.locked) {
@@ -813,6 +852,32 @@ export class Game {
   // 只作用于玩家（怪物运动不接气流，避免 AI 被抬飞出控）；联机纯本地物理零协议。
   _updateUpdraftState() {
     this._inUpdraft = this.glideWind.computeUpdraftState(); // 判定实现在 GlideWind，字段仍归 Game
+  }
+
+  // 四界游记（Build 34 A）：揭图与结构发现。两者都按时间节流——observe 只在跨区块格时求解
+  // 3×3 群系（Journal 内部去重），structureRecordAt 只在玩家真实落入结构包围盒时命中；
+  // 重复进入由 Journal.recordDiscovery 的「维度+类型+锚点」键幂等去重。
+  // 观战/旁观/死亡不推进个人探索（位置来自他人或被冻结的死亡实体）。
+  _updateJournal() {
+    const journal = this.journal;
+    const world = this.world;
+    if (!journal || !world || !world.generator) return;
+    if (this.spectating || this.player.spectator || this.player.dead) return;
+    const now = performance.now();
+    const pos = this.player.position;
+    if (now - this._journalObserveAt >= 250) { // ≥0.25s：不每帧重算群系
+      this._journalObserveAt = now;
+      journal.observe(world.dimension, pos.x, pos.z);
+    }
+    if (now - this._journalDiscoveryAt >= 500) { // ≥0.5s：与 InfoBar 建筑行同节奏
+      this._journalDiscoveryAt = now;
+      const sm = world.generator.structureManager;
+      const hit = (sm && sm.structureRecordAt) ? sm.structureRecordAt(pos.x, pos.z) : null;
+      if (hit && hit.record) {
+        // 幂等键取结构锚点而非玩家坐标：从包围盒任意位置进入只记唯一一条
+        journal.recordDiscovery(world.dimension, hit.name, hit.record.ax, hit.record.az, hit.label);
+      }
+    }
   }
 
   // 御风斗篷穿戴检测（批次 C）：胸甲槽 = armor[1]
@@ -1090,6 +1155,9 @@ export class Game {
       this.handleMouseInput(dt);
     }
     
+    // 四界游记：按节流推进揭图与结构发现（位置取本帧物理结算后的最终坐标）
+    this._updateJournal();
+
     // HUD
     this.hud.update(this.player);
     if (this.infoBar && this.world && this.world.generator) {
@@ -2158,6 +2226,7 @@ export class Game {
       dimensionContainers: contBuckets,
       dimensionFurnaces: furnBuckets,
       redstone: this.redstone ? this.redstone.serialize() : null,
+      journal: this.journal ? this.journal.serialize() : null, // 游记跨维透传（换维重建不丢探索记录）
       sky: { time: this.sky ? this.sky.time : 0.35 }
     };
   }

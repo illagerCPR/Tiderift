@@ -217,6 +217,8 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 
 后续候选（见 `docs/lan-multiplayer-design.md` §11 阶段 12）：Tab 玩家列表面板、远端盔甲外观同步、服务器性能面板（消息速率图表）、房间私聊/队伍分组。
 
+**Build 34 · New Horizon Part.1（进行中）**：计划见 `docs/new-horizon-plan-b34.md`，三个里程碑共用一个 Build/Release。**A 四界游记与手绘地图已交付**（`src/core/Journal.js` + `src/ui/JournalScreen.js` + N 键 + 房间共享标记协议，保持 Build 33 不升版本）；B 旧航路修复、C 御风竞速未开始。防回退见 `docs/agent-notes/journal.md`。
+
 ## 批次备忘索引（按需必读，防回退）
 
 本文件只保留每轮会话必需内容；各批次踩坑备忘已按主题搬到 `docs/agent-notes/`（原文搬移未改写）。**改动对应子系统前必须先读对应文件**；新批次备忘写入对应主题文件并同步更新下表，禁止直接追加到本文件（全局级陷阱除外）。
@@ -232,5 +234,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、UI 图标链 |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关、B30 轮 5 服务端打磨（落盘节流/回放打包/协议版本/限速扩档/皮肤代理加固/心跳活读/入口防御） | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关、落盘与回放、握手版本 |
 | `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控、B30 轮 8 步 8 鼠标交互域迁出（InteractionController + 点击消费协议） | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏、鼠标交互域（点击消费协议） |
+| `docs/agent-notes/journal.md` | B34 A 四界游记（探索揭图/遗迹发现/碑文回看/个人与房间共享标记） | 改动 Journal/JournalScreen/N 键、共享标记协议、房间账本或 `roomSnapshot` 时 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

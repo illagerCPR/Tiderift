@@ -41,6 +41,7 @@ export class SteleScreen {
       const sm = this.game.world.generator && this.game.world.generator.structureManager;
       id = sm && sm.steleChapterAt ? sm.steleChapterAt(x, y, z) : null;
     }
+    if (!chapterIdOverride && id && this.game.journal) this.game.journal.recordStele(id);
     this.chapter = (id && STELE_CHAPTERS[id]) || STELE_BLANK;
     this.visible = true;
     this.el.style.display = 'flex';

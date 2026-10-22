@@ -33,6 +33,10 @@ export class NetworkManager {
     this._pendingContainers = []; // 世界快照应用期间的容器变更
     this._pendingDrops = [];      // 世界就绪前的 drop_* 缓存
     this._pendingMobs = [];       // 世界就绪前的 mob_spawn 缓存
+    // B34-A：世界就绪前的房间共享标记缓存（WORLD_INFO 之后才下发，此时本地世界可能正在重建）
+    this._pendingJournalMarkers = null; // 全量（null = 未收到）
+    this._pendingJournalAdds = [];      // 增量分享
+    this._pendingJournalRemoves = [];   // 增量删除
     this._pendingOpen = [];       // 连接打开前的待发消息
     this.isHost = false;          // 是否房间 host（host 端负责怪物自然生成）
     this.room = 'default';        // 当前房间名（阶段 3：同名房间共享同一世界）
@@ -155,6 +159,31 @@ export class NetworkManager {
     this._pendingDrops = [];
     this._pendingMobs = [];
     this._pendingProfile = null;
+    this._pendingJournalMarkers = null;
+    this._pendingJournalAdds = [];
+    this._pendingJournalRemoves = [];
+    this._clearJournalMarkers(); // B34-A：重连/恢复时旧房间共享标记随缓存一并清空
+  }
+
+  // B34-A：共享标记三态落到本地游记——世界未就绪时缓存，onWorldStarted 统一冲掉
+  // （服务端在 WORLD_INFO 之后才下发，此时 Game.start 可能还在重建本地世界）
+  _applyJournalMarkers(markers) {
+    if (this._ready && this.game && this.game.journal) this.game.journal.setSharedMarkers(markers);
+    else this._pendingJournalMarkers = Array.isArray(markers) ? markers : [];
+  }
+  _applyJournalAdd(marker) {
+    if (this._ready && this.game && this.game.journal) this.game.journal.upsertSharedMarker(marker);
+    else this._pendingJournalAdds.push(marker);
+  }
+  _applyJournalRemove(id) {
+    if (this._ready && this.game && this.game.journal) this.game.journal.removeSharedMarker(id);
+    else this._pendingJournalRemoves.push(id);
+  }
+
+  // B34-A：共享标记跟随房间生命周期——换房/断线/重连/关闭一律清空，防止旧房间标记串味
+  _clearJournalMarkers() {
+    const journal = this.game && this.game.journal;
+    if (journal && typeof journal.setSharedMarkers === 'function') journal.setSharedMarkers([]);
   }
 
   _beginRecovery() {
@@ -212,6 +241,16 @@ export class NetworkManager {
     this._pendingDrops = [];
     for (const m of this._pendingMobs) this._spawnMob(m);
     this._pendingMobs = [];
+    // B34-A：世界就绪后应用房间共享标记（先全量覆盖，再按到达顺序冲掉增量与删除）
+    if (this._pendingJournalMarkers && this.game.journal) {
+      const markers = this._pendingJournalMarkers;
+      this._pendingJournalMarkers = null;
+      this.game.journal.setSharedMarkers(markers);
+      for (const m of this._pendingJournalAdds) this.game.journal.upsertSharedMarker(m);
+      this._pendingJournalAdds = [];
+      for (const id of this._pendingJournalRemoves) this.game.journal.removeSharedMarker(id);
+      this._pendingJournalRemoves = [];
+    }
     // Idea-3C：世界就绪后应用进房下发的档案（换机/重连恢复）
     if (this._pendingProfile) {
       const prof = this._pendingProfile;
@@ -417,6 +456,17 @@ export class NetworkManager {
         if (msg.room === this.room) {
           this.roomSettings = { pvp: msg.pvp !== false, mobs: msg.mobs !== false };
         }
+        break;
+      case MSG.JOURNAL_MARKERS:
+        // B34-A：进房/重连全量下发房间共享标记（覆盖本地旧集合，避免多端不一致）
+        this._applyJournalMarkers(msg.markers);
+        break;
+      case MSG.JOURNAL_MARKER_ADD:
+        // B34-A：他人（或本人）分享成功后入账广播——本人也收到，保证各端顺序一致
+        this._applyJournalAdd(msg.marker);
+        break;
+      case MSG.JOURNAL_MARKER_REMOVED:
+        this._applyJournalRemove(msg.id);
         break;
       case MSG.PLAYER_LEAVE:
         this._remoteDims.delete(msg.id);
@@ -813,11 +863,33 @@ export class NetworkManager {
   sendGamemode(mode) { this._send(MSG.GAMEMODE, { mode }); }
   sendSetTime(t) { this._send(MSG.SET_TIME, { time: t }); }
   sendChat(text) { this._send(MSG.CHAT, { text }); }
+
+  // B34-A：四界游记共享标记——个人标记只在玩家明确点「分享」时才上报；
+  // 服务端清洗、生成权威 id 与归属后再广播（本端不本地预置，等回执保持一致）。
+  // 未连接/世界未就绪/参数非法一律返回 false，调用方据此不把按钮置为「已分享」。
+  sendJournalMarker(marker) {
+    if (!this.connected || !this._ready || !marker || typeof marker !== 'object') return false;
+    const { dim, x, y, z, label, color } = marker;
+    if (typeof dim !== 'string' || typeof label !== 'string' || !label) return false;
+    if (![x, y, z].every((v) => typeof v === 'number' && Number.isFinite(v))) return false;
+    const payload = { dim, x, y, z, label };
+    if (typeof color === 'string') payload.color = color;
+    this._send(MSG.JOURNAL_MARKER, payload);
+    return true;
+  }
+  // 只允许删除本人标记；能不能删由服务端按 owner/operator 判定，越权静默忽略
+  sendJournalMarkerDelete(id) {
+    if (!this.connected || typeof id !== 'string' || !id) return;
+    this._send(MSG.JOURNAL_MARKER_DELETE, { id });
+  }
   createRoom(seed, mode, room, biomeScale) { this._sendQueued(MSG.CREATE_ROOM, { seed, mode, room, biomeScale }); }
   joinRoom(room) { this._sendQueued(MSG.JOIN_ROOM, { room }); }
 
   // 阶段5：世界内换房 / 重建世界（保持连接，服务器回 WORLD_INFO(restart) 后重启本地世界）
-  sendSwitchRoom(room) { this._send(MSG.SWITCH_ROOM, { room }); }
+  sendSwitchRoom(room) {
+    this._clearJournalMarkers(); // B34-A：换房后旧房间的共享标记不再展示
+    this._send(MSG.SWITCH_ROOM, { room });
+  }
   sendWorldReset() { this._send(MSG.WORLD_RESET, {}); }
 
   // M4：维度切换请求（服务器回 player_dimension 广播 + dimension_world 账本，客户端据此重建本地世界）
@@ -826,6 +898,7 @@ export class NetworkManager {
 
   close() {
     if (this.game) this.game.finaleInfo = null;
+    this._clearJournalMarkers(); // B34-A：断开后不保留任何房间标记
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）

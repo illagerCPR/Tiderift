@@ -447,4 +447,17 @@ export const en = {
   "在线": "Online",
   "离线": "Offline",
   "刷新": "Refresh",
+  // ── 四界游记（Build 34 A）──
+  "四界游记": "Journal of the Four Realms",
+  "已揭开 {n} 格 · 发现 {d} 处": "Revealed {n} tiles · {d} discoveries",
+  "已发现遗迹": "Relics Discovered",
+  "已读碑文": "Steles Read",
+  "个人标记": "Personal Markers",
+  "在当前位置添加标记": "Add Marker Here",
+  "标记名称": "Marker Name",
+  "新标记": "New Marker",
+  "分享": "Share",
+  "已分享": "Shared",
+  "房间共享标记": "Shared Room Markers",
+  "暂无记录": "No Records Yet",
 };

@@ -81,6 +81,13 @@ export const MSG = {
   // 房间设置（Idea-4A：{<房间名>: {pvp,mobs}}，缺省全开）
   ROOM_SETTINGS: 'room_settings',     // S2C {room, pvp, mobs}：管理面板改动后向该房间在线玩家热广播
 
+  // 四界游记共享标记（B34-A：房间权威账本；个人标记仅本人可见，分享后才入账并向同房间广播）
+  JOURNAL_MARKER: 'journal_marker',               // C2S {dim, x, y, z, label, color}：分享个人标记（服务端清洗+生成本端权威字段）
+  JOURNAL_MARKER_ADD: 'journal_marker_add',       // S2C {marker}：入账后广播（含分享者本人，多端一致）
+  JOURNAL_MARKER_DELETE: 'journal_marker_delete', // C2S {id}：删除共享标记（仅 owner 或房间 operator）
+  JOURNAL_MARKER_REMOVED: 'journal_marker_removed', // S2C {id, by}：删除广播
+  JOURNAL_MARKERS: 'journal_markers',             // S2C {markers}：进房/重连全量下发房间共享标记
+
   // 世界
   SET_TIME: 'set_time',
   TIME: 'time',

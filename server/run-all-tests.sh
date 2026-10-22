@@ -61,6 +61,7 @@ PURE_NODE_SUITES=(
     mob-ray-select             # 怪物球体射线选择 + dispose 复用 + Boss 列表（纯 node：与改前逐字实现随机对拍 + 源码唯一性断言）
     cw1-mesh-stability         # CW-1 区块边界稳定态收敛（纯 node：缺邻居构建 → 反向标脏 → 重建与参照构建逐顶点一致）
     ui-audio-smoke             # src/ui + src/audio import 冒烟（纯 node：最小 DOM 壳下全量 import + 跨模块具名导出核对）
+    journal-unit               # B34 A 四界游记：Journal 数据模型（纯 node：清洗/幂等/上限/序列化往返/揭图/标记）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -101,7 +102,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

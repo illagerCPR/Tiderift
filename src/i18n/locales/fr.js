@@ -447,4 +447,17 @@ export const fr = {
   "在线": "En ligne",
   "离线": "Hors ligne",
   "刷新": "Actualiser",
+  // ── 四界游记（Build 34 A）──
+  "四界游记": "Journal des Quatre Royaumes",
+  "已揭开 {n} 格 · 发现 {d} 处": "{n} cases révélées · {d} découvertes",
+  "已发现遗迹": "Reliques découvertes",
+  "已读碑文": "Stèles lues",
+  "个人标记": "Marqueurs personnels",
+  "在当前位置添加标记": "Ajouter un marqueur ici",
+  "标记名称": "Nom du marqueur",
+  "新标记": "Nouveau marqueur",
+  "分享": "Partager",
+  "已分享": "Partagé",
+  "房间共享标记": "Marqueurs partagés du salon",
+  "暂无记录": "Aucune entrée",
 };

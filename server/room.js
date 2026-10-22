@@ -101,6 +101,78 @@ export function sanitizePlayerProfile(v) {
   };
 }
 
+// ---- B34-A：四界游记共享标记（房间权威账本）----
+// 上限与客户端 src/core/Journal.js 对齐：全局 256 条、label 48 字符、owner 24 字符、颜色 #rrggbb
+const JOURNAL_MARKER_LIMIT = 256;
+const JOURNAL_MARKER_LABEL_MAX = 48;
+const JOURNAL_MARKER_OWNER_MAX = 24;
+const JOURNAL_MARKER_COORD_MAX = 30000000;
+const JOURNAL_MARKER_ID_RE = /^[a-z0-9-]{1,48}$/i;
+const JOURNAL_MARKER_COLOR_RE = /^#[0-9a-f]{6}$/i;
+const JOURNAL_MARKER_DEFAULT_COLOR = '#f4ca64'; // 与客户端 Journal.sanitizeMarker 的回落色一致
+// 分享/删除写入节流：令牌桶突发 90 条 + 每分钟补 30 条（与 chat 档同量级）。
+// 未登记进 server/ratelimit.js 的 tierOf（该文件与 config.js 不在 B34-A 可改范围），
+// 服务端硬上限（坐标/文本/数量）仍由本文件独立执行，不依赖限速档。
+const JOURNAL_BUCKET_CAP = 90;
+const JOURNAL_BUCKET_PER_MIN = 30;
+
+// 去控制字符 + trim + 截断（与 src/core/Journal.js 的 cleanText 同口径）
+function cleanJournalText(value, max) {
+  return String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
+}
+
+// 坐标：严格 typeof number + 有限 + |v| <= 30000000（不接受字符串强转）
+function journalCoord(v) {
+  return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= JOURNAL_MARKER_COORD_MAX ? v : null;
+}
+
+// 维度：只认注册表中 implemented 的维度（未实现/未知维度直接拒绝，不回退主世界）
+function journalDim(dim) {
+  const d = DIMENSIONS[dim];
+  return d && d.implemented ? dim : null;
+}
+
+// 客户端字段一律不信任：维度白名单 / 有限坐标 / 文本清洗 / 颜色格式；label 清洗后为空视为非法
+export function sanitizeJournalMarker(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const dim = journalDim(raw.dim);
+  if (!dim) return null;
+  const x = journalCoord(raw.x), y = journalCoord(raw.y), z = journalCoord(raw.z);
+  if (x === null || y === null || z === null) return null;
+  const label = cleanJournalText(raw.label, JOURNAL_MARKER_LABEL_MAX);
+  if (!label) return null;
+  const color = typeof raw.color === 'string' && JOURNAL_MARKER_COLOR_RE.test(raw.color)
+    ? raw.color : JOURNAL_MARKER_DEFAULT_COLOR;
+  return { dim, x, y, z, label, color };
+}
+
+// 快照恢复用：客户端字段同样清洗，另要求服务端 id / ownerId / owner 形状合法（坏项跳过，不崩服）
+function sanitizeStoredJournalMarker(raw) {
+  const marker = sanitizeJournalMarker(raw);
+  if (!marker || typeof raw.id !== 'string' || !JOURNAL_MARKER_ID_RE.test(raw.id)) return null;
+  const ownerId = Number.isInteger(raw.ownerId) && raw.ownerId > 0 ? raw.ownerId : 0;
+  return { id: raw.id, ...marker, ownerId, owner: cleanJournalText(raw.owner, JOURNAL_MARKER_OWNER_MAX) };
+}
+
+// 幂等去重键：同一 owner 的同维度同坐标同文本 = 同一条标记（重复分享不再入账）
+function journalContentKey(ownerId, marker) {
+  return `${ownerId}|${marker.dim}|${marker.x}|${marker.y}|${marker.z}|${marker.label}`;
+}
+
+// 写入节流（桶挂在连接对象 player 上，与服务端其余限速同思路；超限静默丢包）
+function allowJournalWrite(player, now = Date.now()) {
+  let b = player._journalBucket;
+  if (!b) b = player._journalBucket = { tokens: JOURNAL_BUCKET_CAP, last: now };
+  const elapsed = Math.max(0, now - b.last);
+  if (elapsed > 0) {
+    b.tokens = Math.min(JOURNAL_BUCKET_CAP, b.tokens + (elapsed / 60000) * JOURNAL_BUCKET_PER_MIN);
+    b.last = now;
+  }
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
 export class Room {
   // name: 房间名（同名房间共享同一世界）；onSave: (room) => void 世界变更落盘回调（index.mjs 注入）
   // config: 服务器配置引用（读取 dropTtlMs 等），管理面板可实时改
@@ -130,6 +202,9 @@ export class Room {
     this.playerProfiles = {};
     this._profilesDirty = false;
     this.playerSkins = new Map(); // Build 21 M2：玩家皮肤（id → {data, model}；内存态，重连后客户端重发）
+    // B34-A：四界游记共享标记账本（id → marker，服务端权威；落盘随房间快照）
+    this.journalMarkers = new Map();
+    this.nextJournalMarkerId = 1;
   }
 
   // 取（或建）指定维度的账本桶
@@ -220,6 +295,17 @@ export class Room {
           ? { vx: d.vx, vy: d.vy, vz: d.vz } : {}),
       });
     }
+    // B34-A：共享标记恢复（旧快照无该字段 → 空表，不崩服；坏项跳过）
+    this.journalMarkers = new Map();
+    this.nextJournalMarkerId = Math.max(1, safeInt(snap.nextJournalMarkerId, 1));
+    if (snap.journalMarkers !== undefined && !Array.isArray(snap.journalMarkers)) {
+      warnBadSnapshot(this.name, '共享标记列表非数组');
+    }
+    for (const raw of (Array.isArray(snap.journalMarkers) ? snap.journalMarkers : [])) {
+      const marker = sanitizeStoredJournalMarker(raw);
+      if (marker) this.journalMarkers.set(marker.id, marker);
+    }
+    while (this.journalMarkers.size > JOURNAL_MARKER_LIMIT) this.journalMarkers.delete(this.journalMarkers.keys().next().value);
     this.hostId = null;
   }
 
@@ -445,6 +531,8 @@ export class Room {
     const info = { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: !!opts.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() };
     if (recovery) { info.recoveryId = recovery.recoveryId; info.dim = recovery.dim; }
     this.sendTo(player, MSG.WORLD_INFO, info);
+    // B34-A：进房/重连下发房间共享标记全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
+    this.sendTo(player, MSG.JOURNAL_MARKERS, this.journalMarkersPayload());
     if (recovery) {
       this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
     } else {
@@ -662,6 +750,8 @@ export class Room {
       case MSG.WORLD_READY: this.onWorldReady(player, msg); break;
       case MSG.SET_TIME: this.onSetTime(player, msg); break;
       case MSG.CHAT: this.onChat(player, msg); break;
+      case MSG.JOURNAL_MARKER: this.onJournalMarker(player, msg); break;
+      case MSG.JOURNAL_MARKER_DELETE: this.onJournalMarkerDelete(player, msg); break;
       case MSG.PING:
         // 阶段10：回显 seq + 客户端时间戳 ts，供客户端直测网络 RTT
         this.sendTo(player, MSG.PONG, { seq: safeInt(msg.seq), ts: safeNum(msg.ts, 0) });
@@ -709,6 +799,46 @@ export class Room {
   }
 
   // T5：容器整箱同步（last-write-wins，与方块账本同仲裁策略；M4：按维度分桶 + 同维广播）
+  // B34-A：四界游记共享标记（房间权威账本）----
+  // 个人标记只在本端可见；玩家明确点「分享」后才上报，这里统一清洗、分配服务端 id 并注入归属。
+  // 上限与客户端 src/core/Journal.js 同口径（256 条 / label 48 / owner 24）。
+  journalMarkersPayload() {
+    return { markers: [...this.journalMarkers.values()] };
+  }
+
+  onJournalMarker(player, msg) {
+    if (!allowJournalWrite(player)) return; // 超量分享静默丢弃，不断开连接
+    const clean = sanitizeJournalMarker(msg);
+    if (!clean) return; // 非法维度/坐标/文本直接忽略（客户端字段一律不可信）
+    // 同 owner 的同维度同坐标同文本 = 同一条标记：重复分享幂等，原样回报已有条目
+    const contentKey = journalContentKey(player.id, clean);
+    for (const marker of this.journalMarkers.values()) {
+      if (journalContentKey(marker.ownerId, marker) === contentKey) {
+        this.sendTo(player, MSG.JOURNAL_MARKER_ADD, { marker });
+        return;
+      }
+    }
+    let id = `j-${this.nextJournalMarkerId}`;
+    while (this.journalMarkers.has(id)) id = `j-${++this.nextJournalMarkerId}`;
+    this.nextJournalMarkerId++;
+    const marker = { id, ...clean, ownerId: player.id, owner: cleanJournalText(player.name, JOURNAL_MARKER_OWNER_MAX) };
+    this.journalMarkers.set(id, marker);
+    while (this.journalMarkers.size > JOURNAL_MARKER_LIMIT) this.journalMarkers.delete(this.journalMarkers.keys().next().value);
+    this.broadcast(MSG.JOURNAL_MARKER_ADD, { marker }); // 含分享者本人：各端顺序一致
+    this.saveSoon();
+  }
+
+  // 删除共享标记：仅 owner 或房间 operator；越权静默拒绝（不回错误码，避免探测他人标记）
+  onJournalMarkerDelete(player, msg) {
+    const id = typeof msg.id === 'string' ? msg.id : '';
+    const marker = this.journalMarkers.get(id);
+    if (!marker) return;
+    if (marker.ownerId !== player.id && !this.isOperator(player)) return;
+    this.journalMarkers.delete(id);
+    this.broadcast(MSG.JOURNAL_MARKER_REMOVED, { id, by: player.id });
+    this.saveSoon();
+  }
+
   onContainerSet(player, msg) {
     const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
     if (!Array.isArray(msg.items) || msg.items.length !== 27) return;
