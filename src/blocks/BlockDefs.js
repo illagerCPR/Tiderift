@@ -1994,7 +1994,7 @@ reg('beacon', {
 });
 
 // ── 天域叙事基石（批次 A，**文件末尾追加**防方块 ID 错位）────────────────
-// 星髓 = 凝固的潮之力（docs/aether-storyline.md §2.2）：矿石 teal 晶簇 / 块体亮脉络。
+// 星髓 = 凝固的潮之力（docs/archives/aether-storyline.md §2.2）：矿石 teal 晶簇 / 块体亮脉络。
 // star_marrow_ore 掉落映射在 Game._blockDrops（→ star_marrow，非矿块本体）。
 reg('star_marrow_ore', { hardness: 3, tool: 'pickaxe', minTier: 2 },
   { star_marrow_ore: oreTex([125, 125, 125], [96, 232, 210], 151) });

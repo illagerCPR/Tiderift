@@ -1,7 +1,7 @@
 # Tiderift 世界观总纲 —— 一潮三分（设计稿 v1；B29 起项目定名 Tiderift/裂潮，总纲即命名来源）
 
 > 日期：2026-09-15 编制 ｜ 最后滚动核对：Alpha Build 23（2026-09-16）｜ 性质：设计大纲 + 叙事状态登记（不随批次 bump BUILD）
-> 关联：`docs/aether-storyline.md`（天域篇定稿）、`docs/agent-notes/dimensions-portals.md`（维度防回退）、`TODO.md` Idea-5
+> 关联：`docs/archives/aether-storyline.md`（天域篇定稿）、`docs/agent-notes/dimensions-portals.md`（维度防回退）、`TODO.md` Idea-5
 > 原则：与天域篇相同——故事全部通过**环境叙事**承载（结构 / 方块 / 物品 lore / 石碑碑文 / 生物行为），不做对话系统；一切新内容服从既有工程约束（确定性生成、i18n ×10、联机协议、性能预算）。
 > 文档作用：**下阶段内容产出的大纲**。新批次立项时从 §6 提案池取项，按 §8 边界与 §5 归属表对齐既有事实；本文档随批次交付滚动更新（§9）。
 
@@ -77,7 +77,7 @@
 
 ### 3.1 天域·天海纪元（✅ 已定稿已交付）
 
-- 全文见 `docs/aether-storyline.md`：退去的天海、永昼的来历、云民的掘心之祸、守誓巨像与复潮终局。
+- 全文见 `docs/archives/aether-storyline.md`：退去的天海、永昼的来历、云民的掘心之祸、守誓巨像与复潮终局。
 - 在总纲中的定位：**主轴的起点与样板**——"一潮三分"的因在此发生；天域篇验证过的手段（石碑家族、残页 lore、结构即证物、Boss 即叙事）是其余三界的施工模板。
 
 ### 3.2 下界·烬火纪（✅ 已实装：Alpha Build 15——烬纹石碑 / 烬火纪碑文 4 章 / 潮火之炉 / 哭嚎者·哀潮之泪）
@@ -204,7 +204,7 @@
 - **三潮之证**：风潮（风暴之核，已有）+ 坠潮（哀潮之泪，P1）+ 雨潮（雨潮残页，P2）→ 在潮心祭坛（复潮后）开启跨维度终局仪式"**潮归其位**"。
 - 定位：全项目叙事线的合龙点；机制形态（合成 / 仪式 / Boss）立项时评审，**不预支实现**。
 - 红线：三件材料分别绑定三个维度的完整旅程（Boss / 结构 / 仪式），收集线本身就是"走完四界碎片"的叙事闭环——若工程成本超预算，降级为纯 lore 合成物（如"三潮纹章"展示物品）。
-- **设想稿已编制并拍板（2026-09-15）：`docs/endgame-proposal.md`**——以 §2.1「原初之潮」为核心意象；评审结论 = **形态 A 四界同潮**（60s 时间窗四界分段并行，换维追潮）+ 到场即证 + 龙蛋 lore 点缀 + 纹章 lore 承载终章 + host 权威；**终局篇三批全部落地（F1 候潮基石 / F2 演出管线 / F3 听潮仪式·Alpha Build 18）——原初之潮已归其位**。
+- **设想稿已编制并拍板（2026-09-15）：`docs/archives/endgame-proposal.md`**——以 §2.1「原初之潮」为核心意象；评审结论 = **形态 A 四界同潮**（60s 时间窗四界分段并行，换维追潮）+ 到场即证 + 龙蛋 lore 点缀 + 纹章 lore 承载终章 + host 权威；**终局篇三批全部落地（F1 候潮基石 / F2 演出管线 / F3 听潮仪式·Alpha Build 18）——原初之潮已归其位**。
 
 ---
 
@@ -228,7 +228,7 @@
 | 界纹石碑 / 拾遗者石环 | 身份层 | Boundary Stele / Gleaner's Ring | P3 末地篇（Build 17 已定型） |
 | 三潮之证 / 潮归其位 | 身份层 | Seals of Three Tides / Tide Homecoming | **已定型**（Build 18：F1 候潮基石 / F2 四界同潮演出 / F3 听潮仪式；三潮之证由风潮·坠潮·雨潮三件材料承载） |
 | 原初之潮 / 原初纹章 | 身份层 | Primordial Tide / Primordial Emblem | **已定型**（F1 入码 names.js 11 列 + 纹章 lore 承载终章；候潮 = 状态章 tide_waiting） |
-| 鲸骨冢 / 鲸骨块 / 归云 | 身份层 | Whalebone Barrow / Whalebone Block / Returned-to-Cloud | **已定型**（Build 19 K1 入码 names.js 11 列；设计方案 docs/whale-barrow-design.md） |
+| 鲸骨冢 / 鲸骨块 / 归云 | 身份层 | Whalebone Barrow / Whalebone Block / Returned-to-Cloud | **已定型**（Build 19 K1 入码 names.js 11 列；设计方案 docs/archives/whale-barrow-design.md） |
 | 长明灯石（荧石重释）/ 溺亡骨泥（灵魂沙重释） | 来历层 | 仅 lore 文案，不改 item id / displayName | 随 P1 |
 
 ---
@@ -295,7 +295,7 @@
 
 ### 10.5 天域后传·鲸骨冢 & Build 19 体验打磨（✅ 已交付：Alpha Build 19）
 
-- **设计方案**：`docs/whale-barrow-design.md`——鲸骨冢 = 天海巨鲸搁浅遗骸的巨型肋骨拱（"三界海难证据链"最后一块拼图：主世界潮冢沉于海底 / 下界坠落的海 / 天域搁浅的巨物）；归云章（天域第 11 章，3 行留白，龙零出场）；新方块 `whale_bone_block` ×1；密度神殿同档稀有；可选风柱复用 wind_current。
+- **设计方案**：`docs/archives/whale-barrow-design.md`——鲸骨冢 = 天海巨鲸搁浅遗骸的巨型肋骨拱（"三界海难证据链"最后一块拼图：主世界潮冢沉于海底 / 下界坠落的海 / 天域搁浅的巨物）；归云章（天域第 11 章，3 行留白，龙零出场）；新方块 `whale_bone_block` ×1；密度神殿同档稀有；可选风柱复用 wind_current。
 - **三批已全部落地**：K1 鲸骨冢（whale_barrow + 鲸骨块 + 归云章 + 考古箱表 + 命令面板探索列表直达）→ K2 修复与纹样（命令面板生物名 11 语全覆盖断言 / 原初祭坛右键候潮章 / 盔甲栏原版纹样 / 飞行翅膀图标）→ K3 终局成就（终局横幅 10s / 存档栏通关标记 ✦已通关·潮归其位✦ / 纹章佩戴槽：无敌+创造式飞行+基岩心形，仅 finaleDone 后显示，**Alpha Build 19**）。
 - 不变量：群系边界与岛场参数零改动 / 既有结构零改动 / 碑文章节克制（+1 章）/ 流体与掉落零回调 / 佩戴效果严格门控 finaleDone（post-game 奖励不触碰终局前难度）。
 - 调参备选（未排期）：哭嚎者 / 石环 / 潮冢等新内容实测反馈的调参批次，视 playtest 结果插入。

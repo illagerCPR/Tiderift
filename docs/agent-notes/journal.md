@@ -1,6 +1,6 @@
 # B34 A 四界游记与手绘地图（New Horizon Part.1 · A）
 
-> 2026-10-22 交付。计划见 `docs/new-horizon-plan-b34.md` §三；B/C 尚未开始。改动涉及 `src/core/Journal.js`、`src/ui/JournalScreen.js`、`src/player/Game.js` 接线、`server/{protocol,room,store}.js` 与 `src/net/NetworkManager.js`。**改动这些文件前必读本文。**
+> 2026-10-22 交付。计划见 `docs/archives/new-horizon-plan-b34.md` §三；B/C 尚未开始。改动涉及 `src/core/Journal.js`、`src/ui/JournalScreen.js`、`src/player/Game.js` 接线、`server/{protocol,room,store}.js` 与 `src/net/NetworkManager.js`。**改动这些文件前必读本文。**
 
 ## 数据模型（`src/core/Journal.js`，纯数据、可 node 直测）
 

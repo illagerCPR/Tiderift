@@ -65,7 +65,7 @@
 
 ### 天域叙事基石批次（批次 A，2026-09-14 交付，未发布——随 Build 14 统一发布）—— 天海纪元内容底座
 
-- **发布单元订正**：天域四批（叙事基石/群风与众生/守誓巨像/复潮）为**开发里程碑**，中间批次只 push+CI 绿不 bump BUILD 不发 Release；BUILD=14 的递增放批次 D 提交内。设计总纲见 `docs/aether-storyline.md`。
+- **发布单元订正**：天域四批（叙事基石/群风与众生/守誓巨像/复潮）为**开发里程碑**，中间批次只 push+CI 绿不 bump BUILD 不发 Release；BUILD=14 的递增放批次 D 提交内。设计总纲见 `docs/archives/aether-storyline.md`。
 - **注册追加纪律（存档根基）**：BlockDefs/ItemDefs 新内容只能**文件末尾追加**（自 beacon 起惯例）——chunk 存档按方块 id 存数字，中途插入=全存档地形错位；`tests/aether-content.mjs` 断言新方块 id > beacon id 防回退。
 - **ItemRegistry 字段白名单陷阱（曾真出）**：`register()` 只拷贝白名单字段——def 里加新字段（本批 `lore`）必须同步在白名单加 `lore: def.lore || null`，否则**静默丢弃**（注册不报错、tooltip 永远空）。
 - **气流命名**：`wind_current` displayName 用「气流」（「风流」现代汉语歧义），zh-TW「氣流」，id 不变；null 像素=透明（pixelSvg 跳过 falsy），淡青竖纹直接 rgba 填 fill 作视觉提示；solid:false + hardness 0.3 可拆。

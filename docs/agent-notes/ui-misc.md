@@ -177,7 +177,7 @@
 - **`controls.mouse*` 是外部契约**：`Controls` / `update()` / `NetworkManager` 都读它，30 处置位语句仍在原位置逐字保留，改协议时**只许改「由谁判断、怎么表达」，不许改置位时机与次数**。注意 `CONSUMED` 与 `ABORT` 目前都归 `exitsMethod()`，两者的区分**只是文档标签**（把某出口的 ABORT 改成 CONSUMED 零行为差异）——真正生效的是原位置位。
 - 新加分支时的规矩：段出口必须显式返回协议状态，**不得**再用「顺手置位当返回值」；跨域基础设施 `_frameRay` / `_anyInputBlockingUI` / `updateRaycast` / `_cellOverlapsPlayer` 仍在 `Game.prototype` 上（`tests/ray-sphere.mjs:145` 借原型直调，别搬走），控制器一律 `g._x(...)` 现取。
 - 既有源码绊线**实测断裂 20 条 / 7 个文件**（`build27-doors-beds` / `build28-block-textures` / `endgame-content` / `ray-sphere` / `build26-fluid` / `endgame-finale` / `build20-fixes`）已改指新模块；`ray-sphere` 的「帧射线 / UI 清单被四处消费」两条改为 `Game + InteractionController` 合计计数。**迁移还会让负向断言退化为恒真式**（`!gameSrc.includes(...)` 的文本已不在 `src/player/`，全仓现 6 条）——改这块时别把恒真式当成还在守。
-- 行为钉子：`tests/game-behavior.mjs` Q 段 36 条（Q1–Q38）。**已知不敏感点**：挖速量级（`dt*speedMul/hardness` 折半仍全绿，Q3 只断言 `prog > 0`）与放置重叠守卫的 0.3 边界（改成 0.0 仍全绿）都只钉了「分支存在」而非量级/边界。**既存缺陷 H1**（放置重叠守卫吞掉弓/掷眼右键）**已于 B30 轮 9 步 1 修复**（守卫移入 `if (blockDef)` 内，Q25 改写 + 补 3 条钉子，见下节），原现状钉住记录与步骤拆解见 `docs/improvement-plan-b30.md` §十二。
+- 行为钉子：`tests/game-behavior.mjs` Q 段 36 条（Q1–Q38）。**已知不敏感点**：挖速量级（`dt*speedMul/hardness` 折半仍全绿，Q3 只断言 `prog > 0`）与放置重叠守卫的 0.3 边界（改成 0.0 仍全绿）都只钉了「分支存在」而非量级/边界。**既存缺陷 H1**（放置重叠守卫吞掉弓/掷眼右键）**已于 B30 轮 9 步 1 修复**（守卫移入 `if (blockDef)` 内，Q25 改写 + 补 3 条钉子，见下节），原现状钉住记录与步骤拆解见 `docs/archives/improvement-plan-b30.md` §十二。
 - 另见 §十三 H2：`Raycast.cast` 的 `includeFluid` 形参从未被消费（流体在候选过滤里一律被排除），空桶舀水分支经真实射线不可达。
 
 

@@ -23,7 +23,7 @@ CubeWorld Wiki（gollum/GitHub Wiki 文档站，44 页）最后一次全量更�
 1. **GitHub Releases 发布说明**：`gh release view alpha-build-<N> --repo illagerCPR/Tiderift` —— 每版玩家可感知变化的权威清单（Changelog 页的主要素材）。
 2. **git 提交标题**：`git log --oneline` —— 本项目提交标题即极详尽交付说明（含实现要点、测试断言数、冒烟结果），比 Release 说明更细，开发者页素材主要来源。
 3. **批次踩坑备忘**：`docs/agent-notes/`（7 篇：worldgen-structures / dimensions-portals / survival-items / mobs-entities / rendering-lighting / multiplayer / ui-misc）—— 按"现象→原因→正确做法"吸收进 Known-Pitfalls 与各页实现要点。
-4. **世界观文档（本次已核对到 Build 23）**：`docs/worldview.md`（一潮三分总纲 + 四界篇章 + 术语表）与 `docs/aether-storyline.md`（天域篇全文）—— 新增叙事页的素材。
+4. **世界观文档（本次已核对到 Build 23）**：`docs/worldview.md`（一潮三分总纲 + 四界篇章 + 术语表）与 `docs/archives/aether-storyline.md`（天域篇全文）—— 新增叙事页的素材。
 5. **源码核对**：`src/`、`server/`、`tests/` —— 所有数量型断言一律运行时对账（见 §6），README 与旧页数字常滞后，**禁止臆造参数**。
 
 ## 3. Build 8 → 23 净增量速览（15 版）
@@ -55,7 +55,7 @@ Build 14–19 的叙事内容在 Wiki 上**完全没有落点**（44 页里没�
 
 - **前半（玩家视角）**：「一潮三分」故事线速览（原初之潮 → 裂潮之日 → 四界现状）→ 四界各有什么可看（碑文在哪些结构里、怎么读、收集线：三残页/三潮之证/终局演出触发条件）→ 留白纪律说明（龙在等什么，碑文不写满）。
 - **末尾「实现要点（给开发者）」小节**：`src/world/steles.js` 章节表与 `steleChapterAt` 机制 / 石碑四格形制（Build 20）/ 术语登记表与 i18n ×10 纪律 / append-only 注册约束。
-- 素材：`docs/worldview.md`（总纲，已核对到 Build 23）+ `docs/aether-storyline.md`（天域篇定稿）。**提炼改写，不搬运**——agent-notes 与 docs 是给开发者的中文备忘，Wiki 玩家段要重写为玩家可读的口吻。
+- 素材：`docs/worldview.md`（总纲，已核对到 Build 23）+ `docs/archives/aether-storyline.md`（天域篇定稿）。**提炼改写，不搬运**——agent-notes 与 docs 是给开发者的中文备忘，Wiki 玩家段要重写为玩家可读的口吻。
 
 ## 5. 可复用流程（批次 1–6 实证沉淀，务必沿用）
 

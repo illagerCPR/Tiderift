@@ -3,7 +3,7 @@
 // 每章必须带 dim 字段（'aether'|'nether'|'overworld'|'end'）——命令面板石碑直读按当前
 // 维度过滤；未标注 dim 的章节对玩家不可达（tests/nether-steles.mjs 断言 dim 完备性）。
 // 新增/改动章节必须同步 10 语言包 + names.js（tests/i18n-parity.mjs 动态键断言兜底）。
-// 章节与故事线的对应关系见 docs/aether-storyline.md §2.5/§3.8 与 docs/worldview.md §3/§10；
+// 章节与故事线的对应关系见 docs/archives/aether-storyline.md §2.5/§3.8 与 docs/worldview.md §3/§10；
 // 章节 id 由结构 meta.steles（批次 B 起）经 StructureManager.steleChapterAt 解析，未注册的
 // 石碑（玩家自放/创造获取）回落 STELE_BLANK。
 // 石碑形制表（Build 20 ①）在此取方块 id——调用方结构 solve 均在方块注册完成后运行。

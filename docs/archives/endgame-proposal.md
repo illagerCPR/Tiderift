@@ -150,7 +150,7 @@ i18n 预估：方案 A ≈ 15-25 键 ×10 包；方案 B ≈ 10-15；方案 C �
 ## 9. 与既有文档的关系
 
 - `docs/worldview.md` §6.4：本文档是其评审材料；拍板后 §6.4 更新状态指针。
-- `docs/aether-storyline.md`：终局是天域五幕之后的"第六幕之外"——不新增天域批次，只在演出与纹章 lore 中回望。
+- `docs/archives/aether-storyline.md`：终局是天域五幕之后的"第六幕之外"——不新增天域批次，只在演出与纹章 lore 中回望。
 - `docs/agent-notes/dimensions-portals.md`：立项时按 §5.4 格式补终局防回退条目（状态位持久化 / 演出边界 / 界碑交互门控）。
 
 ---

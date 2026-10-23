@@ -1,6 +1,6 @@
 # Tiderift Beta Build 35–37 · New Horizon Part.2–4 实施计划
 
-> 2026-10-23 制定。来源：`docs/TODO.md` 的 `Idea-WV1-New-Horizon` 候选 D/E/F/G（A/B/C 已随 Build 34 交付，见 `docs/new-horizon-plan-b34.md`）。
+> 2026-10-23 制定。来源：`docs/TODO.md` 的 `Idea-WV1-New-Horizon` 候选 D/E/F/G（A/B/C 已随 Build 34 交付，见 `docs/archives/new-horizon-plan-b34.md`）。
 > 结论：**D–G 分 3 个 Build（35 / 36 / 37）、5 个开发里程碑**（E → D → F-1 → F-2 → G）。每个里程碑一次签名提交 + 一次 push + 等 CI 绿；版本只在每个 Build 最后一个里程碑的提交内递增并发布。
 
 ## 一、为什么是 3 个 Build
@@ -36,7 +36,7 @@
 | 36 | F-2 熔炉进出料与生产链 | 独立提交 + push，CI 绿后交付 Part.3 | 在 F-2 提交内 `BUILD` → 36，发布 `beta-build-36` |
 | 37 | G 局部潮候与稀有景象 | 独立提交 + push，CI 绿后交付 Part.4 | 在 G 提交内 `BUILD` → 37，发布 `beta-build-37` |
 
-规则沿用 `docs/new-horizon-plan-b34.md` §一：不合并不提前升版；CI 失败先修复再重新评估提交边界，失败提交不算交付；每轮验收、推送、CI 完成后停下；计划文件与 `docs/TODO.md` 的状态更新并入该 Build 的首个提交；执行前先核对远端 Build 号与分支状态，不据记忆推断。
+规则沿用 `docs/archives/new-horizon-plan-b34.md` §一：不合并不提前升版；CI 失败先修复再重新评估提交边界，失败提交不算交付；每轮验收、推送、CI 完成后停下；计划文件与 `docs/TODO.md` 的状态更新并入该 Build 的首个提交；执行前先核对远端 Build 号与分支状态，不据记忆推断。
 
 三个 Build 均为**计划内 Release**，按 `AGENTS.md`「发布授权」在 CI 全绿后直接 `git tag -s` + push tag + `gh release create`，无需逐次再确认。
 

@@ -1,6 +1,6 @@
 # Tiderift B30 改进多轮修复计划
 
-> 来源：`docs/improvement-audit-b30.md`（Build 30 全项目改进审查，共 40 条发现：高 11 / 中 17 / 低 12）
+> 来源：`docs/archives/improvement-audit-b30.md`（Build 30 全项目改进审查，共 40 条发现：高 11 / 中 17 / 低 12）
 > 基准提交：`e7b9a17`（Beta Build 30）· 计划制定：B30 修复会话
 > 交付口径：**每轮结束停下等待用户指令**；Build 递增推迟到四个批次全部完成后进行（见 D5），Release 事前确认。
 

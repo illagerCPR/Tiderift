@@ -89,15 +89,20 @@ Tiderift/
 │   ├── development.md                    # 本文档
 │   ├── lan-multiplayer-design.md         # 局域网联机设计文档（协议表 + 分阶段路线）
 │   ├── worldview.md                      # 世界观总纲「一潮三分」
-│   ├── aether-storyline.md               # 天域 · 天海纪元故事线与开发计划（设计稿）
-│   ├── whale-barrow-design.md            # 鲸骨冢篇与体验打磨设计方案
-│   ├── endgame-proposal.md               # 终局提案设想（评审稿）
-│   ├── TODO.md                           # 项目创意 / 提案暂存
+│   ├── new-horizon-plan-b35-37.md        # Build 35–37 New Horizon Part.2–4 实施计划（在办）
+│   ├── TODO.md                           # 项目创意 / 提案暂存（未交付）
 │   ├── bug.md                            # 已知问题记录
-│   ├── improvement-audit-b30.md          # Build 30 全项目改进审查报告
-│   ├── improvement-plan-b30.md           # Build 30 改进多轮修复计划
 │   ├── agent-browser-eval.md             # agent-browser 引入实测评估报告
 │   ├── wiki-handover-prompt.md           # GitHub Wiki 增量更新交接提示词
+│   ├── archives/                         # 已交付的审计 / 计划 / 设计稿（只读留档，勿在此续写）
+│   │   ├── improvement-audit-b30.md      # Build 30 全项目改进审查报告
+│   │   ├── improvement-plan-b30.md       # Build 30 改进多轮修复计划
+│   │   ├── improvement-audit-b32.md      # Build 32 第二次项目审查报告
+│   │   ├── improvement-plan-b32.md       # Build 32 审查修复计划
+│   │   ├── new-horizon-plan-b34.md       # Build 34 New Horizon Part.1 实施计划
+│   │   ├── aether-storyline.md           # 天域 · 天海纪元故事线与开发计划（设计稿）
+│   │   ├── whale-barrow-design.md        # 鲸骨冢篇与体验打磨设计方案
+│   │   └── endgame-proposal.md           # 终局提案设想（评审稿）
 │   └── agent-notes/                      # 各子系统批次踩坑备忘（改动对应子系统前先读）
 │       ├── worldgen-structures.md        # 地形生成 / 结构 / 群系 / 战利品与交易
 │       ├── dimensions-portals.md         # 维度 / 传送门 / 下界 / 末地 / 天域
