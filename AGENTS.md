@@ -2,7 +2,7 @@
 
 ## 语言
 
-- 对话回复使用简体中文（用户全局约束，见 `~/.claude/CLAUDE.md`）。
+- 对话回复使用简体中文。
 - 代码标识符用英文，不用汉语拼音。
 
 ## 开发命令
@@ -34,7 +34,7 @@ node --check <file>  # 语法检查（唯一可自动化验证手段）
 ## 验证 / playwright-cli
 
 - （Windows）不要直接 `playwright-cli open <url>`（启动失败）。要用带 `.cmd` 扩展的完整路径：
-  `& "C:\Users\illag\AppData\Roaming\npm\playwright-cli.cmd" reload|click|eval|console <args>`
+  `& "$env:APPDATA\npm\playwright-cli.cmd" reload|click|eval|console <args>`（npm 全局 bin 目录，路径随用户名变化，勿硬编码）
 - （Linux/macOS）直接 `playwright-cli reload|click|eval|console <args>`，无 `.cmd` 后缀问题。
 - `playwright-cli eval` 中的字符串字面量常被 PowerShell 吃掉引号/反引号（Windows）；传含 `name: "torch"` 之类参数时改用 `String.fromCharCode(...)` 拼接，或把脚本写到临时文件再 `eval --filename`。Linux/macOS 下 bash 引号规则正常，此陷阱不适用。
 - playwright 无 pointer lock 能力，ESC 暂停 / 死亡屏幕等 pointer-lock 相关流程只能 `eval` 直接调用 `pauseMenu.show()`/`deathScreen.show()` 验证。
@@ -42,7 +42,7 @@ node --check <file>  # 语法检查（唯一可自动化验证手段）
 
 ## 验证 / agent-browser（可真实操作 3D 世界，已实测 2026-08-31）
 
-agent-browser（本机 0.35.2，`npm i -g agent-browser`）是本项目的**第二套浏览器冒烟工具**，与 playwright-cli 互补。核心差异：**能捕获指针锁 + 真实键盘/鼠标输入 → 单机与联机都能真实移动/转向/挖/放/聊天**（playwright-cli 做不到）。DOM UI 用快照 + `@eN` 语义引用（无需选择器），HUD DOM 直接桥接实时 3D 状态（坐标/生物群系/时间/准星方块）。详细实测见 `docs/agent-browser-eval.md`。
+agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第二套浏览器冒烟工具**，与 playwright-cli 互补。核心差异：**能捕获指针锁 + 真实键盘/鼠标输入 → 单机与联机都能真实移动/转向/挖/放/聊天**（playwright-cli 做不到）。DOM UI 用快照 + `@eN` 语义引用（无需选择器），HUD DOM 直接桥接实时 3D 状态（坐标/生物群系/时间/准星方块）。详细实测见 `docs/agent-browser-eval.md`。
 
 **PowerShell 使用注意（仅 Windows，每条命令都要记住；Linux/macOS 下会话变量用内联前缀 `AGENT_BROWSER_SESSION=my-session agent-browser <cmd>`，bash 不吃 `@` 但建议引号）**：
 - `$env:AGENT_BROWSER_SESSION` 在**每次 pwsh 调用间不保留**（新进程）——每条命令内联设置：`$env:AGENT_BROWSER_SESSION="my-session"; agent-browser <cmd>`。
