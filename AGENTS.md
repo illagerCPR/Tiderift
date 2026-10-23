@@ -220,6 +220,8 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 
 **Build 34 · New Horizon Part.1（已交付）**：计划见 `docs/new-horizon-plan-b34.md`，三个里程碑共用一个 Build/Release。**A 四界游记与手绘地图**（`src/core/Journal.js` + `src/ui/JournalScreen.js` + N 键 + 房间共享标记协议）、**B 旧航路修复**（`src/core/Waymarks.js` + `src/ui/WaymarkScreen.js` + 航标芯方块 + `waymark_*` 房间权威协议）均保持 Build 33 提交；**C 御风竞速与自建赛道**（`src/core/RaceTracks.js` + `src/core/RaceRun.js` + `src/ui/RaceScreen.js` + `src/ui/RaceHud.js` + `race_post` 方块 + `race_*` 房间权威账本）在自身提交内把 `BUILD` 升到 34 并发布 `beta-build-34`。防回退见 `docs/agent-notes/journal.md`、`waymarks.md` 与 `races.md`。
 
+**Build 35–37 · New Horizon Part.2–4（已规划，未交付；2026-10-23 定）**：计划见 `docs/new-horizon-plan-b35-37.md`。**Build 35** = E 建筑蓝图与材料清单（先做，保持 Build 34）+ D 可动手解开的遗迹（后做，升 35 并发布）；**Build 36** = F 仓储与运输工程（F-1 漏斗与容器搬运、F-2 熔炉进出料，两次提交、升 36 一次发布）；**Build 37** = G 局部潮候与稀有景象（升 37 发布）。拆分判据：F 是唯一新增"服务器固定节拍权威物品流"的架构面且熔炉内容至今不在联机账本，必须独占一个 Build；D 的完整解法奖励发 E 的蓝图，故 E 与 D 同 Build 且 E 先做；G 只做可见现象与观测记录，红线是不改地形与水位。
+
 ## 批次备忘索引（按需必读，防回退）
 
 本文件只保留每轮会话必需内容；各批次踩坑备忘已按主题搬到 `docs/agent-notes/`（原文搬移未改写）。**改动对应子系统前必须先读对应文件**；新批次备忘写入对应主题文件并同步更新下表，禁止直接追加到本文件（全局级陷阱除外）。
