@@ -64,6 +64,17 @@ export class Hud {
     `;
     document.body.appendChild(this.finaleBanner);
 
+    // 冒泡提示（B35 D 遗迹解开/领取等一次性事件）：准星下方一行，2.6s 后淡出
+    this.toast = document.createElement('div');
+    this.toast.style.cssText = `
+      position: fixed; top: 63%; left: 50%; transform: translateX(-50%);
+      display: none; z-index: 12; pointer-events: none; max-width: 72vw; text-align: center;
+      color: #d8f2ea; font: 600 14px sans-serif; letter-spacing: 1px; opacity: 0;
+      transition: opacity 0.4s ease;
+      text-shadow: 0 1px 3px #000, 0 0 10px rgba(90, 200, 190, 0.55);
+    `;
+    document.body.appendChild(this.toast);
+
     // 滑翔指示（鞘翅展开时显示在准星下方偏上，轻提示不打断视野）
     this.glideTag = document.createElement('div');
     this.glideTag.textContent = '🪂 鞘翅滑翔中';
@@ -181,7 +192,23 @@ export class Hud {
     this.finaleBanner.style.display = 'none';
     this.finaleBanner.style.opacity = '0';
     this.versionTag.style.display = 'none';
+    this.toast.style.display = 'none';
+    this.toast.style.opacity = '0';
     this.witherOverlay.style.opacity = '0'; // 回菜单复位凋零滤镜（防上一存档残留）
+  }
+
+  // 冒泡提示（B35 D）：同时只留最新一条；淡出靠 CSS transition，超时后再撤下 display
+  showToast(text) {
+    if (!this.toast) return;
+    this.toast.textContent = String(text == null ? '' : text);
+    this.toast.style.display = 'block';
+    this.toast.style.opacity = '1';
+    clearTimeout(this._toastTimer);
+    clearTimeout(this._toastHideTimer);
+    this._toastTimer = setTimeout(() => {
+      this.toast.style.opacity = '0';
+      this._toastHideTimer = setTimeout(() => { this.toast.style.display = 'none'; }, 440);
+    }, 2600);
   }
 
   // 终局横幅（Build 19 K3）：金色大字淡入 → 停留 10s → 淡出（获得原初纹章时触发一次）

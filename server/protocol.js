@@ -104,6 +104,13 @@ export const MSG = {
   RACE_RECORD_UPDATE: 'race_record_update', // S2C {id, revision, byId, byName, ms}：成绩入账广播
   RACE_DENY: 'race_deny',                   // S2C {id, reason}：保存/删除/上报被拒
 
+  // Build 35 D：可动手解开的遗迹（房间权威账本；解密判定在客户端，账本与领取去重在服务器）
+  RUIN_STATE: 'ruin_state',   // C2S {key}：本端解开了某处机关；S2C {ruins:{key:{state,byName,at}}}：进房/重连全量下发
+  RUIN_UPDATE: 'ruin_update', // S2C {key, state, byId, byName, at}：入账后广播（含提交者本人，多端顺序一致）
+  RUIN_CLAIM: 'ruin_claim',   // C2S {key}：领取纪念奖励（每处机关全房只发一次，先到者得）
+  RUIN_CLAIMED: 'ruin_claimed', // S2C {key, byId, byName, at}：领取成功回执（只发领取者）
+  RUIN_DENY: 'ruin_deny',     // S2C {key, reason}：上报/领取被拒（key/dim/kind/rate/limit/locked/claimed）
+
   // Build 35 E：房间共享蓝图账本（服务器权威校验与修订）
   BLUEPRINT_SAVE: 'blueprint_save',         // C2S {blueprint:{id,name,size,palette,data}}
   BLUEPRINT_DELETE: 'blueprint_delete',     // C2S {id}

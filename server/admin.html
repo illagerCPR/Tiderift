@@ -358,6 +358,7 @@
       <div style="margin-top:8px;">
         <button class="btn-warn btn-sm" onclick="downloadBackup('${attrRoom(room.name)}')">⬇ 下载备份</button>
         <button class="btn-warn btn-sm" onclick="clearDrops('${attrRoom(room.name)}')">清空掉落物</button>
+        <button class="btn-warn btn-sm" onclick="resetRuins('${attrRoom(room.name)}')">重置遗迹</button>
         <button class="btn-danger btn-sm" onclick="deleteRoom('${attrRoom(room.name)}')">删除房间（重置世界）</button>
       </div>
     `).join('');
@@ -596,6 +597,15 @@
   async function clearDrops(room) {
     const r = await api('/api/room/' + encodeURIComponent(room) + '/clear-drops', 'POST', {});
     toast(`已清空掉落物 (${r.removed ?? 0} 个)`, !!r.error);
+    refresh();
+  }
+
+  // B35 D：遗迹账本重置（留空 = 整个房间；填 key = 单处，格式 dim|kind|ax|az）
+  async function resetRuins(room) {
+    const key = prompt(`重置房间「${room}」的遗迹账本：留空 = 全部重置，填写 = 只重置该处\n（键格式：overworld|tide_sluice|1008|-2032）`, '');
+    if (key === null) return;
+    const r = await api('/api/room/' + encodeURIComponent(room) + '/ruins', 'POST', { key: key.trim() || undefined });
+    toast(r.ok ? `已重置遗迹 ${r.removed ?? 0} 处` : (r.error || '重置失败'), !r.ok);
     refresh();
   }
 

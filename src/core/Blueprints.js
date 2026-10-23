@@ -195,6 +195,13 @@ export class Blueprints {
     return true;
   }
 
+  // B35 D：按 id 或名字去重后再塞进个人集合（遗迹奖励重复领取/换语言后同名不同串都不重复塞）
+  addPersonalUnique(blueprint) {
+    if (!blueprint || typeof blueprint !== 'object') return false;
+    if (this.personal.some((entry) => entry.id === blueprint.id || entry.name === blueprint.name)) return false;
+    return this.createPersonal(blueprint);
+  }
+
   editPersonal(id, changes) {
     const index = this.personal.findIndex((entry) => entry.id === id);
     if (index < 0 || !changes || typeof changes !== 'object' || this.personal[index].rev >= 99999) return false;

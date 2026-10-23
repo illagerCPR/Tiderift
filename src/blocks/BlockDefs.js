@@ -2339,6 +2339,109 @@ reg('race_post', {
   lore: ['御风者系在岛沿的旗桩。', '连成一线，便是可以起风的赛道。'],
 }, { race_post: racePostTex(173) });
 
+
+// ── Build 35 D 可动手解开的遗迹：纪念方块 + 遗迹铭牌（**文件末尾追加**，方块 ID 零漂移）─────
+// 每处机关全房只发一次（房间账本去重）：纪念方块 1 块 + 铭牌 1 块 + 一张 E 蓝图。
+// 只由解谜奖励流程经 inventory.add 发放，无配方、不自然生成、不参与地形生成。
+
+// 顶面：中心菱形徽记 + 内环 + 四角潮纹（三类机关各用自己的配色）
+function keepsakeTopTex(seed, base, accent) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const d = Math.abs(x - 7.5) + Math.abs(y - 7.5);
+      if (d < 2.6) px[y * 16 + x] = rgb(accent, 0.96 + hash2(x, y, seed + 1) * 0.12);
+      else if (d < 4.2) px[y * 16 + x] = rgb(base, 0.7 + hash2(x, y, seed) * 0.08);
+      else if (d < 5.4) px[y * 16 + x] = rgb(accent, 0.6 + hash2(x, y, seed + 2) * 0.1);
+      else px[y * 16 + x] = rgb(base, 0.9 + hash2(x, y, seed) * 0.2);
+    }
+  }
+  for (const [x, y] of [[2, 2], [13, 2], [2, 13], [13, 13]]) setPx(px, x, y, rgb(accent, 1.1));
+  return pixelSvg(px);
+}
+
+// 侧面：石面 + 上沿高光 + 两道徽色刻痕 + 底座压暗
+function keepsakeSideTex(seed, base, accent) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.92 + hash2(x, y, seed) * 0.16;
+      if (y < 2) f *= 1.12;
+      if (y > 13) f *= 0.84;
+      px[y * 16 + x] = rgb(base, f);
+    }
+  }
+  for (let x = 1; x < 15; x++) setPx(px, x, 5, rgb(accent, 0.95));
+  for (let x = 1; x < 15; x++) setPx(px, x, 9, rgb(accent, 0.66));
+  return pixelSvg(px);
+}
+
+// 底面：素石 + 中心刻坑
+function keepsakeBottomTex(seed, base) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(base, 0.72 + hash2(x, y, seed) * 0.14);
+  }
+  fillRect(px, 6, 6, 9, 9, rgb(base, 0.5));
+  return pixelSvg(px);
+}
+
+// 铭牌牌面：深色石板 + 两行刻字 + 四角铆钉（顶面即牌面，侧/底为牌背与底缘）
+function ruinPlaqueTopTex(seed, plate, ink) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(plate, 0.9 + hash2(x, y, seed) * 0.14);
+  }
+  fillRect(px, 2, 4, 13, 5, rgb(ink, 0.95));
+  fillRect(px, 2, 8, 13, 8, rgb(ink, 0.8));
+  fillRect(px, 4, 10, 11, 11, rgb(ink, 0.62));
+  for (const [x, y] of [[1, 1], [14, 1], [1, 14], [14, 14]]) setPx(px, x, y, rgb(ink, 1.1));
+  return pixelSvg(px);
+}
+
+function ruinPlaqueSideTex(seed, plate, ink) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.88 + hash2(x, y, seed) * 0.16;
+      if (y > 13) f *= 0.8;
+      px[y * 16 + x] = rgb(plate, f);
+    }
+  }
+  for (let x = 1; x < 15; x++) setPx(px, x, 3, rgb(ink, 0.7));
+  return pixelSvg(px);
+}
+
+// 三类纪念石：显式 textures（多面方块缺 textures 会整面 fallback 成整张图集）
+function regKeepsake(name, displayName, seed, base, accent, lore) {
+  reg(name, {
+    displayName, hardness: 1.5, tool: 'pickaxe',
+    textures: { top: name + '_top', side: name + '_side', bottom: name + '_bottom' },
+    lore: [lore],
+  }, {
+    [name + '_top']: keepsakeTopTex(seed, base, accent),
+    [name + '_side']: keepsakeSideTex(seed + 1, base, accent),
+    [name + '_bottom']: keepsakeBottomTex(seed + 2, base),
+  });
+}
+
+regKeepsake('tide_keepsake', '潮闸纪念石', 181, [64, 128, 142], [176, 246, 236],
+  '潮水退去后仍在渗水的石头，摸上去像还在等一次涨潮。');
+regKeepsake('ember_keepsake', '烬火纪念石', 191, [96, 52, 44], [255, 150, 84],
+  '永远留着余温的炭石，凑近听能听见四盏灯一齐亮起的声音。');
+regKeepsake('rack_keepsake', '构件架纪念石', 201, [150, 148, 160], [222, 240, 240],
+  '三格凹槽被填满时落下的碎屑，压成一块认得出形状的石头。');
+
+reg('ruin_plaque', {
+  displayName: '遗迹铭牌', hardness: 2, tool: 'pickaxe',
+  textures: { top: 'ruin_plaque_top', side: 'ruin_plaque_side', bottom: 'ruin_plaque_bottom' },
+  lore: ['刻着"此处已被解开"的石牌，落款是海岛自己。'],
+}, {
+  ruin_plaque_top: ruinPlaqueTopTex(211, [58, 64, 70], [228, 211, 155]),
+  ruin_plaque_side: ruinPlaqueSideTex(212, [58, 64, 70], [228, 211, 155]),
+  ruin_plaque_bottom: keepsakeBottomTex(213, [58, 64, 70]),
+});
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

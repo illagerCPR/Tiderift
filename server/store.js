@@ -61,6 +61,10 @@ export function roomSnapshot(room) {
     raceRecords: room.raceRecords ? [...room.raceRecords.entries()].map(([key, v]) => [key, v.ms, v.byName]) : [],
     // Build 35 E：房间共享蓝图账本（只保存服务端清洗后的权威对象）。
     blueprints: room.blueprints ? [...room.blueprints.values()] : [],
+    // B35 D：遗迹解开账本（{ key: {state, byName, at} }）与领取记录（[["key", byId, byName, at]]）。
+    // 对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集。
+    ruins: room.ruins ? Object.fromEntries(room.ruins) : {},
+    ruinClaims: room.ruinClaims ? [...room.ruinClaims.entries()].map(([key, v]) => [key, v.byId, v.byName, v.at]) : [],
     savedAt: Date.now(),
   };
 }
@@ -85,7 +89,7 @@ function archiveCorrupt(dir, file, reason) {
 }
 
 // S2：快照形状校验——内层 entries/containers/drops 必须为数组，否则 Room.restore 迭代时抛 TypeError 崩服
-function isRoomSnapshot(data) {
+export function isRoomSnapshot(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   if (typeof data.name !== 'string' || !Number.isInteger(data.seed)) return false;
   for (const key of ['dimensionBlocks', 'dimensionContainers']) {
@@ -94,9 +98,11 @@ function isRoomSnapshot(data) {
     if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) return false;
     for (const entries of Object.values(bucket)) if (!Array.isArray(entries)) return false;
   }
-  for (const key of ['blocks', 'containers', 'drops', 'journalMarkers', 'waymarks', 'races', 'raceRecords', 'blueprints']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
+  for (const key of ['blocks', 'containers', 'drops', 'journalMarkers', 'waymarks', 'races', 'raceRecords', 'blueprints', 'ruinClaims']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
     if (data[key] !== undefined && !Array.isArray(data[key])) return false;
   }
+  // B35 D：遗迹账本是对象映射（旧快照无该字段 → 回落空表）
+  if (data.ruins !== undefined && (!data.ruins || typeof data.ruins !== 'object' || Array.isArray(data.ruins))) return false;
   return true;
 }
 

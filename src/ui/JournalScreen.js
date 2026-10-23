@@ -3,6 +3,8 @@ import { DIMENSIONS } from '../core/dimensions.js';
 import { Biomes } from '../world/biomes.js';
 import { STELE_CHAPTERS } from '../world/steles.js';
 import { onLocaleChange, t } from '../i18n/index.js';
+import { ruinKey } from '../core/Ruins.js';
+import { getDisplayName } from './itemName.js';
 
 const BIOME_COLORS = {
   [Biomes.PLAINS]: '#648c4a', [Biomes.DESERT]: '#c9a85c', [Biomes.SNOWY_TAIGA]: '#9cb8b0',
@@ -121,9 +123,20 @@ export class JournalScreen {
     stats.style.cssText = 'font-size:13px;color:#c4d2c8;border-bottom:1px solid #3d4742;padding-bottom:8px;';
     this.sidebar.appendChild(stats);
     // Build 34 B：已修复的塔在游记里带「已修复」标记（航标进度是存档/房间共享状态，不在游记内）
+    // Build 35 D：机关房带「已解开 / 未解开」，未解开时给缺件提示（读 ruins.results() 的最近一轮判定）
+    const ruins = this.game.ruins;
+    const ruinResults = new Map((ruins && typeof ruins.results === 'function' ? ruins.results() : []).map((r) => [r.key, r]));
     const discoveries = journal.discoveries.filter((d) => d.dim === this.dim).map((d) => {
       const repaired = d.type === 'aether_tower' && this.game.waymarks && this.game.waymarks.isRepaired(d.x, d.z);
-      return { label: repaired ? t('{name} · 已修复', { name: t(d.label) }) : t(d.label), x: d.x, z: d.z };
+      let label = repaired ? t('{name} · 已修复', { name: t(d.label) }) : t(d.label);
+      let detail = '';
+      if (d.type.startsWith('ruin_')) {
+        const key = ruinKey(d.dim, d.type.slice(5), d.x, d.z);
+        const solved = !!(ruins && ruins.isSolved(key));
+        label = t('{name} · {state}', { name: label, state: solved ? t('已解开') : t('未解开') });
+        if (!solved) detail = this._ruinHint(ruinResults.get(key));
+      }
+      return { label, x: d.x, z: d.z, detail };
     });
     this.sidebar.appendChild(this._section('已发现遗迹', discoveries));
     this.sidebar.appendChild(this._section('已读碑文', [...journal.readSteles].map((id) => ({ label: t(STELE_CHAPTERS[id]?.title || id) }))));
@@ -174,6 +187,19 @@ export class JournalScreen {
     this.sidebar.appendChild(shared);
   }
 
+  // 未解开的机关房缺件提示：关键件坏了先说坏件，否则列出还没就位的判定格
+  _ruinHint(result) {
+    if (!result) return t('走近机关房才会显示缺件。');
+    if (result.badIndex >= 0) return t('关键件被挖毁：先修好它，机关才可能解开。');
+    const missing = Array.isArray(result.missing) ? result.missing : [];
+    if (!missing.length) return '';
+    // 只按材料名归类（判定格的内部标签是数据，不进语言包）
+    const counts = new Map();
+    for (const m of missing) counts.set(m.needName, (counts.get(m.needName) || 0) + 1);
+    const list = [...counts].map(([need, n]) => `${getDisplayName(need)} ×${n}`).join(t('、'));
+    return t('还差 {n} 处未就位：{list}', { n: missing.length, list });
+  }
+
   _section(label, rows) {
     const section = document.createElement('section');
     const title = document.createElement('div'); title.textContent = t(label); title.style.cssText = 'font-weight:bold;color:#e4d39b;margin:2px 0 6px;';
@@ -184,6 +210,11 @@ export class JournalScreen {
     for (const item of rows) {
       const row = document.createElement('div'); row.textContent = item.x === undefined ? item.label : `${item.label} (${Math.floor(item.x)}, ${Math.floor(item.z)})`;
       row.style.cssText = 'font-size:12px;color:#c5cec8;margin:4px 0;'; section.appendChild(row);
+      if (item.detail) {
+        const hint = document.createElement('div'); hint.textContent = item.detail;
+        hint.style.cssText = 'font-size:11px;color:#e0b489;margin:0 0 6px 10px;';
+        section.appendChild(hint);
+      }
     }
     return section;
   }

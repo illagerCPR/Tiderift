@@ -5,6 +5,8 @@
 import { MSG } from './protocol.js';
 import { DIMENSIONS, DEFAULT_DIMENSION } from '../src/core/dimensions.js';
 import { safeBiomeScale } from '../src/world/biomes.js';
+// B35 D：遗迹键/维度作用域与客户端共用同一份纯模块（服务器不重复实现一套键规则）
+import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX } from '../src/core/Ruins.js';
 
 // S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
 const REPLAY_CHUNK = 512;
@@ -224,6 +226,63 @@ function allowWaymarkWrite(player, now = Date.now()) {
   return true;
 }
 
+
+// ---- B35 D：可动手解开的遗迹（房间权威账本）----
+// 判定在客户端（读本地世界），服务器只管「键是否合法 + 维度是否对得上 + 单向入账 + 领取去重」。
+// 上限与客户端 src/core/Ruins.js 同口径：96 处机关 / 昵称 24 字 / 坐标 |v| ≤ 30000000。
+const RUIN_COORD_MAX = 30000000;
+// 写入节流：令牌桶突发 20 次 + 每分钟补 10 次（与 waymarks/races/blueprints 同口径）
+const RUIN_BUCKET_CAP = 20;
+const RUIN_BUCKET_PER_MIN = 10;
+
+// 键校验：格式由共享纯模块把关，这里再补坐标量级与「类型必须属于该维度」两条服务器硬约束
+export function sanitizeRuinKey(raw) {
+  if (typeof raw !== 'string' || !isValidRuinKey(raw)) return '';
+  const parsed = parseRuinKey(raw);
+  if (!parsed) return '';
+  if (Math.abs(parsed.ax) > RUIN_COORD_MAX || Math.abs(parsed.az) > RUIN_COORD_MAX) return '';
+  if (ruinKindForDim(parsed.dim) !== parsed.kind) return '';
+  return raw;
+}
+
+// 快照恢复：[key, {state, byName, at}] 形状不合法一律跳过（旧快照无该字段 → 空表，不崩服）
+function sanitizeStoredRuin(entry) {
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  const key = sanitizeRuinKey(entry[0]);
+  if (!key) return null;
+  const value = entry[1] && typeof entry[1] === 'object' ? entry[1] : {};
+  return [key, {
+    state: 'solved',
+    byName: cleanJournalText(value.byName, RUIN_NAME_MAX),
+    at: Number.isFinite(value.at) ? Math.max(0, Math.floor(value.at)) : 0,
+  }];
+}
+
+// 领取记录恢复：[key, byId, byName, at]（坏项跳过；byId 必须是正整数）
+function sanitizeStoredRuinClaim(entry) {
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  const key = sanitizeRuinKey(entry[0]);
+  const byId = entry[1];
+  if (!key || !Number.isInteger(byId) || byId <= 0) return null;
+  return [key, {
+    byId,
+    byName: cleanJournalText(entry[2], RUIN_NAME_MAX),
+    at: Number.isFinite(entry[3]) ? Math.max(0, Math.floor(entry[3])) : 0,
+  }];
+}
+
+function allowRuinWrite(player, now = Date.now()) {
+  let b = player._ruinBucket;
+  if (!b) b = player._ruinBucket = { tokens: RUIN_BUCKET_CAP, last: now };
+  const elapsed = Math.max(0, now - b.last);
+  if (elapsed > 0) {
+    b.tokens = Math.min(RUIN_BUCKET_CAP, b.tokens + (elapsed / 60000) * RUIN_BUCKET_PER_MIN);
+    b.last = now;
+  }
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
 
 // ---- B34-C：御风赛道与成绩（房间权威账本）----
 // 上限与客户端 src/core/RaceTracks.js 对齐：24 条赛道、3..12 个点位、单段 ≤512 格、24 字名称。
@@ -469,6 +528,9 @@ export class Room {
     this.raceRecords = new Map();
     // Build 35 E：房间共享蓝图（id → 权威蓝图对象）。
     this.blueprints = new Map();
+    // Build 35 D：遗迹解开账本（key → {state:'solved', byName, at}）与领取记录（key → {byId, byName, at}）
+    this.ruins = new Map();
+    this.ruinClaims = new Map();
   }
 
   // 取（或建）指定维度的账本桶
@@ -614,6 +676,25 @@ export class Room {
       if (blueprint) this.blueprints.set(blueprint.id, blueprint);
     }
     while (this.blueprints.size > BLUEPRINT_LIMIT) this.blueprints.delete(this.blueprints.keys().next().value);
+    // Build 35 D：遗迹账本与领取记录恢复（旧快照无字段 → 空表；坏项逐条跳过）
+    this.ruins = new Map();
+    if (snap.ruins !== undefined && (!snap.ruins || typeof snap.ruins !== 'object' || Array.isArray(snap.ruins))) {
+      warnBadSnapshot(this.name, '遗迹账本非对象');
+    } else if (snap.ruins) {
+      for (const [rawKey, value] of Object.entries(snap.ruins)) {
+        const rec = sanitizeStoredRuin([rawKey, value]);
+        if (rec) this.ruins.set(rec[0], rec[1]);
+      }
+    }
+    while (this.ruins.size > RUIN_LIMIT) this.ruins.delete(this.ruins.keys().next().value);
+    this.ruinClaims = new Map();
+    if (snap.ruinClaims !== undefined && !Array.isArray(snap.ruinClaims)) {
+      warnBadSnapshot(this.name, '遗迹领取表非数组');
+    }
+    for (const entry of (Array.isArray(snap.ruinClaims) ? snap.ruinClaims : [])) {
+      const rec = sanitizeStoredRuinClaim(entry);
+      if (rec && this.ruins.has(rec[0])) this.ruinClaims.set(rec[0], rec[1]); // 无主机关的领取记录不恢复
+    }
     this.hostId = null;
   }
 
@@ -799,6 +880,7 @@ export class Room {
     // restart=true 表示世界内换房到新房间：客户端需重启本地世界（新 seed）
     this.sendTo(player, MSG.WORLD_INFO, { seed: this.seed, mode: player.mode, time: this.time, hostId: this.hostId, room: this.name, restart: !!msg.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
     this.sendTo(player, MSG.BLUEPRINTS, this.blueprintsPayload());
+    this.sendTo(player, MSG.RUIN_STATE, this.ruinsPayload()); // B35 D：遗迹账本全量
     this.broadcast(MSG.PLAYER_JOIN, this.joinInfo(player), player.id);
     this.save();
     console.log(`[+] ${player.name} 创建房间「${this.name}」seed=${this.seed} (host)`);
@@ -847,6 +929,8 @@ export class Room {
     // B34-C：进房/重连下发赛道定义与成绩全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
     this.sendTo(player, MSG.RACES, this.racesPayload());
     this.sendTo(player, MSG.BLUEPRINTS, this.blueprintsPayload());
+    // B35 D：进房/重连下发遗迹账本全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
+    this.sendTo(player, MSG.RUIN_STATE, this.ruinsPayload());
     if (recovery) {
       this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
     } else {
@@ -1024,6 +1108,9 @@ export class Room {
     this.dimensionBlocks.clear();
     this.dimensionContainers.clear();
     this.drops.clear();
+    // B35 D：重建世界 = 新种子，旧遗迹键（含锚点）全部失效，账本与领取记录一并清空
+    this.ruins.clear();
+    this.ruinClaims.clear();
     this.time = 0.35;
     this.nextMobId = 1;
     this.nextDropId = 1;
@@ -1067,6 +1154,8 @@ export class Room {
       case MSG.JOURNAL_MARKER: this.onJournalMarker(player, msg); break;
       case MSG.JOURNAL_MARKER_DELETE: this.onJournalMarkerDelete(player, msg); break;
       case MSG.WAYMARK_SUBMIT: this.onWaymarkSubmit(player, msg); break;
+      case MSG.RUIN_STATE: this.onRuinState(player, msg); break;
+      case MSG.RUIN_CLAIM: this.onRuinClaim(player, msg); break;
       case MSG.RACE_SAVE: this.onRaceSave(player, msg); break;
       case MSG.RACE_DELETE: this.onRaceDelete(player, msg); break;
       case MSG.RACE_RECORD: this.onRaceRecord(player, msg); break;
@@ -1183,6 +1272,72 @@ export class Room {
     this.waymarks.set(key, { stage, byName });
     this.broadcast(MSG.WAYMARK_UPDATE, { key, stage, byId: player.id, byName }); // 含提交者本人：各端顺序一致
     this.saveSoon();
+  }
+
+  // B35 D：遗迹全量（进房/重连下发）：{ ruins: { key: { state, byName, at } } }
+  ruinsPayload() {
+    const ruins = {};
+    for (const [key, value] of this.ruins) ruins[key] = { state: value.state, byName: value.byName, at: value.at };
+    return { ruins };
+  }
+
+  // B35 D：上报解开。服务器不重跑判定（读本地世界），只重算键合法性、维度作用域与一次性语义：
+  // 键必须是「维度|类型|锚点x|锚点z」且类型属于该维度；玩家必须在对应维度；已解开则静默幂等。
+  onRuinState(player, msg) {
+    const key = sanitizeRuinKey(msg && msg.key);
+    const deny = (reason) => this.sendTo(player, MSG.RUIN_DENY, { key: key || '', reason });
+    if (!key) return deny('key');
+    const parsed = parseRuinKey(key);
+    if (!parsed || player.dim !== parsed.dim) return deny('dim');
+    if (!allowRuinWrite(player)) return deny('rate');
+    if (this.ruins.has(key)) return; // 幂等：两人同时解开只记一次，不重复广播
+    if (this.ruins.size >= RUIN_LIMIT) return deny('limit');
+    const byName = cleanJournalText(player.name, RUIN_NAME_MAX);
+    const at = Date.now();
+    this.ruins.set(key, { state: 'solved', byName, at });
+    this.broadcast(MSG.RUIN_UPDATE, { key, state: 'solved', byId: player.id, byName, at }); // 含提交者本人
+    this.saveSoon();
+  }
+
+  // B35 D：领取纪念奖励。每处机关全房只发一次（先到者得，其余人 RUIN_DENY reason='claimed'）；
+  // 奖励内容由客户端按类型本地生成，服务器只发回执 —— 客户端不能靠构造 key 造出未解锁的奖励。
+  onRuinClaim(player, msg) {
+    const key = sanitizeRuinKey(msg && msg.key);
+    const deny = (reason) => this.sendTo(player, MSG.RUIN_DENY, { key: key || '', reason });
+    if (!key) return deny('key');
+    const parsed = parseRuinKey(key);
+    if (!parsed || player.dim !== parsed.dim) return deny('dim');
+    if (!allowRuinWrite(player)) return deny('rate');
+    if (!this.ruins.has(key)) return deny('locked');
+    if (this.ruinClaims.has(key)) return deny('claimed');
+    const byName = cleanJournalText(player.name, RUIN_NAME_MAX);
+    const at = Date.now();
+    this.ruinClaims.set(key, { byId: player.id, byName, at });
+    this.sendTo(player, MSG.RUIN_CLAIMED, { key, byId: player.id, byName, at });
+    this.saveSoon();
+  }
+
+  // B35 D：重置遗迹账本（单处或全房间）。玩家触发时只有房间 operator 可做；管理面板经鉴权后直接调用。
+  // 重置会连带清掉该机关的领取记录——重置后重新解开可以再领一次（op 的显式动作）。
+  resetRuins(player, key = null) {
+    if (player && !this.isOperator(player)) return { ok: false, reason: 'owner', removed: 0 };
+    const raw = typeof key === 'string' && key ? key : '';
+    const target = raw ? sanitizeRuinKey(raw) : '';
+    if (raw && !target) return { ok: false, reason: 'key', removed: 0 };
+    let removed = 0;
+    if (target) {
+      if (this.ruins.delete(target)) removed = 1;
+      this.ruinClaims.delete(target);
+    } else {
+      removed = this.ruins.size;
+      this.ruins.clear();
+      this.ruinClaims.clear();
+    }
+    if (removed) {
+      this.broadcast(MSG.RUIN_STATE, this.ruinsPayload()); // 全量覆盖，各端立刻收敛
+      this.saveSoon();
+    }
+    return { ok: true, removed };
   }
 
   // Build 35 E：蓝图全量（进房/重连下发）。

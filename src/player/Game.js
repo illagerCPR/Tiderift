@@ -62,6 +62,10 @@ import { GhostPreview } from '../render/GhostPreview.js';
 import { BlueprintScreen } from '../ui/BlueprintScreen.js';
 import { Journal } from '../core/Journal.js';
 import { Waymarks, waymarkKey, waymarkStageDef } from '../core/Waymarks.js';
+import {
+  Ruins, ruinKindForDim, ruinPuzzle, parseRuinKey, applyUnlock, makeWorldSample,
+  ruinReward, RUIN_KIND_LABEL, RUIN_REWARD_BLUEPRINT_NAME,
+} from '../core/Ruins.js';
 import { RaceTracks, trackLength } from '../core/RaceTracks.js';
 import { RaceRun, formatRaceTime } from '../core/RaceRun.js';
 import { getDimension, setAetherDuskProfile } from '../core/dimensions.js';
@@ -79,6 +83,12 @@ import '../blocks/BlockDefs.js';
 import '../items/ItemDefs.js';
 import { BlockSVGDefinitions } from '../blocks/BlockDefs.js';
 import { ItemSVGDefinitions } from '../items/ItemDefs.js';
+
+// B35 D：遗迹目标集扫描参数——只在玩家附近登记（远处机关 sample 会回 -1，白判），
+// 扫描按 2s 或换区块节流，绝不允许每帧遍历全部结构。
+const RUIN_SCAN_INTERVAL_MS = 2000;
+const RUIN_SCAN_RADIUS = 64;
+const RUIN_SCAN_CELLS = 1;
 
 export class Game {
   constructor(container) {
@@ -125,6 +135,11 @@ export class Game {
     this._raceHudAt = 0;          // 计时条刷新节流
     this._raceCheckAt = 0;        // 赛道完整性巡检节流
     this._waymarkNavCache = null; // 下一座航路查询缓存（随世界重建清空）
+    this.ruins = null;            // 可动手解开的遗迹（新建型：start 创建 / _disposeWorld 释放）
+    this._ruinPuzzles = new Map(); // 当前登记的机关定义（key -> puzzle；开门与游记要用）
+    this._ruinScanAt = 0;         // 目标机关集扫描节流时间戳（performance.now）
+    this._ruinCell = '';          // 上次扫描时的维度+区块格（换格立即重扫）
+    this._ruinSample = null;      // 世界采样器（随目标集一并重建，避免每帧新建闭包）
     this.tradeScreen = null;
     this.pauseMenu = null;
     this.deathScreen = null;
@@ -302,6 +317,12 @@ export class Game {
     if (this.waymarkScreen) { this.waymarkScreen.dispose(); this.waymarkScreen = null; }
     this.waymarks = null;
     this._waymarkNavCache = null;
+    // 可动手解开的遗迹（新建型：账本与待判定集随世界清空——换维由 _composeSwitchLoadData 透传）
+    this.ruins = null;
+    this._ruinPuzzles = new Map();
+    this._ruinScanAt = 0;
+    this._ruinCell = '';
+    this._ruinSample = null;
     // 御风赛道（新建型：界面/计时条摘 DOM，赛道与成绩随世界清空——换维由 _composeSwitchLoadData 透传）
     if (this.raceScreen) { this.raceScreen.dispose(); this.raceScreen = null; }
     if (this.raceHud) { this.raceHud.dispose(); this.raceHud = null; }
@@ -600,6 +621,14 @@ export class Game {
     this.waymarks.reset(loadData ? loadData.waymarks : null);
     this._waymarkNavCache = new Map();
     this.waymarkScreen = new WaymarkScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
+    // 可动手解开的遗迹（Build 35 D）：判定在本地、账本与领取在房间权威侧。
+    // 旧档缺 ruins 字段 → reset(null) 回落空账本（与 waymarks/races 同款回落）。
+    this.ruins = new Ruins(this);
+    this.ruins.reset(loadData ? loadData.ruins : null);
+    this._ruinPuzzles = new Map();
+    this._ruinScanAt = 0;
+    this._ruinCell = '';
+    this._ruinSample = null;
     // 御风赛道（Build 34 C）：数据先于界面创建（RaceScreen.render 直接读 this.races）。
     // 旧档/旧联机档案缺 races 字段时 reset(null) 回落为空赛道表；换维/换档一律重新开始，竞速尝试不跨世界。
     this.races = new RaceTracks(this);
@@ -613,6 +642,7 @@ export class Game {
     // （时序与 C 阶段一致：模型与界面都已重建之后才 flush，否则落到被 _disposeWorld 置空/替换的旧实例上）
     if (this.net && typeof this.net.flushPendingRaces === 'function') this.net.flushPendingRaces();
     if (this.net && typeof this.net.flushPendingBlueprints === 'function') this.net.flushPendingBlueprints();
+    if (this.net && typeof this.net.flushPendingRuins === 'function') this.net.flushPendingRuins();
     this.inventoryScreen = new InventoryScreen(this.inventory, this.player, this);
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
@@ -957,6 +987,109 @@ export class Game {
         journal.recordDiscovery(world.dimension, hit.name, hit.record.ax, hit.record.az, hit.label);
       }
     }
+  }
+
+// ── 可动手解开的遗迹（Build 35 D）──────────────────────────────────────
+  // 判定完全在本地（读块走 makeWorldSample：账本优先、未加载区块 -1 不当空气）；
+  // 账本与领取去重在房间权威侧（服务器重算键合法性，客户端不能自造奖励）。
+  _updateRuins() {
+    const ruins = this.ruins;
+    const world = this.world;
+    if (!ruins || !world || !world.generator) return;
+    if (this.spectating || this.player.spectator || this.player.dead) return;
+    const now = performance.now();
+    const pos = this.player.position;
+    const cell = world.dimension + '|' + Math.floor(pos.x / 16) + ',' + Math.floor(pos.z / 16);
+    if (now - this._ruinScanAt >= RUIN_SCAN_INTERVAL_MS || cell !== this._ruinCell) {
+      this._ruinScanAt = now;
+      this._ruinCell = cell;
+      this._refreshRuinTargets(pos);
+    }
+    if (!this._ruinSample) return;
+    const out = ruins.poll(now, this._ruinSample); // 节流 0.25s 在 Ruins 内部
+    if (out.solved.length) this._onRuinsSolved(out.solved);
+  }
+
+  // 目标机关集：所在维度 + 半径 ≤ 64 内的机关；recordsAround 内部按 cell 缓存记录（抗 LRU 驱逐）
+  _refreshRuinTargets(pos) {
+    const ruins = this.ruins;
+    const world = this.world;
+    if (!ruins || !world || !world.generator) return;
+    this._ruinSample = makeWorldSample(world);
+    this._ruinPuzzles.clear();
+    const dim = world.dimension;
+    const kind = ruinKindForDim(dim);
+    const sm = world.generator.structureManager;
+    if (!kind || !sm || typeof sm.recordsAround !== 'function') {
+      ruins.setTargets([]);
+      return;
+    }
+    const seed = world.generator.seed;
+    const list = [];
+    for (const rec of sm.recordsAround(kind, pos.x, pos.z, RUIN_SCAN_CELLS)) {
+      const dx = rec.ax - pos.x;
+      const dz = rec.az - pos.z;
+      if (dx * dx + dz * dz > RUIN_SCAN_RADIUS * RUIN_SCAN_RADIUS) continue;
+      const puzzle = ruinPuzzle(seed, dim, kind, rec.ax, rec.groundY, rec.az);
+      if (!puzzle) continue;
+      // 结构记录里的 meta.ruin.key 与推导结果必须逐字一致（几何与判定共用同一份布局常量）
+      if (rec.meta && rec.meta.ruin && rec.meta.ruin.key !== puzzle.key) continue;
+      this._ruinPuzzles.set(puzzle.key, puzzle);
+      list.push(puzzle);
+    }
+    ruins.setTargets(list);
+  }
+
+  // 判定通过：开门 → 写游记 → 上报服务器并申请领奖（联机）/ 本地发奖（单机）→ HUD 冒泡
+  _onRuinsSolved(keys) {
+    const world = this.world;
+    for (const key of keys) {
+      const puzzle = this._ruinPuzzles.get(key);
+      if (puzzle && world) applyUnlock(world, puzzle); // 唯一写方块入口（内部只走 world.setBlock）
+      this._ruinPuzzles.delete(key);
+      const parsed = parseRuinKey(key);
+      if (!parsed) continue;
+      const label = RUIN_KIND_LABEL[parsed.kind] || parsed.kind;
+      // 游记：复用 A 的发现记录（同维度+类型+锚点键幂等），不新增第二套地图数据
+      if (this.journal) this.journal.recordDiscovery(parsed.dim, 'ruin_' + parsed.kind, parsed.ax, parsed.az, label);
+      if (this.networkMode && this.net && typeof this.net.sendRuinState === 'function') {
+        this.net.sendRuinState(key);
+        if (typeof this.net.sendRuinClaim === 'function') this.net.sendRuinClaim(key);
+      } else {
+        this._grantRuinReward(key); // 单机：本地去重后直接发奖
+      }
+      const text = t('机关已解开：{name} · 内室的门开了', { name: t(label) });
+      if (this.hud && typeof this.hud.showToast === 'function') this.hud.showToast(text);
+      if (this.chatBox) this.chatBox.add(text, '#8fd0c4');
+      audio.pop();
+    }
+  }
+
+  // 奖励落地：每处机关只发一次（联机以服务器回执为准，单机本地记账）。
+  // 纪念方块 + 铭牌走 inventory.add，蓝图进个人集合且同名/同 id 去重。
+  _grantRuinReward(key) {
+    const parsed = parseRuinKey(key);
+    if (!parsed || !this.ruins) return false;
+    if (this.ruins.isClaimed(key)) return false;
+    const reward = ruinReward(parsed.kind, t(RUIN_REWARD_BLUEPRINT_NAME[parsed.kind]));
+    if (!reward) return false;
+    this.ruins.markClaimed(key, this.net && this.net.name ? this.net.name : '');
+    if (this.inventory) {
+      this.inventory.add(reward.block, 1);
+      this.inventory.add(reward.plaque, 1);
+    }
+    if (this.hotbar) this.hotbar.update();
+    this._addRuinBlueprint(reward.blueprint);
+    const blockName = getDisplayName(reward.block);
+    const text = t('领取纪念物：{block} + 遗迹铭牌 + 蓝图「{name}」', { block: blockName, name: reward.blueprint.name });
+    if (this.hud && typeof this.hud.showToast === 'function') this.hud.showToast(text);
+    if (this.chatBox) this.chatBox.add(text, '#ffe9a8');
+    return true;
+  }
+
+  _addRuinBlueprint(blueprint) {
+    if (!this.blueprints || !blueprint) return false;
+    return this.blueprints.addPersonalUnique(blueprint); // 同名/同 id 去重
   }
 
 // ── 天域旧航路航标（Build 34 B）─────────────────────────────────────────
@@ -1576,6 +1709,8 @@ export class Game {
     
     // 四界游记：按节流推进揭图与结构发现（位置取本帧物理结算后的最终坐标）
     this._updateJournal();
+    // 可动手解开的遗迹：目标机关集按节流重建 + 判定轮询（节流在 Ruins 内部，0.25s 才读一次世界）
+    this._updateRuins();
 
     // HUD
     this.hud.update(this.player);
@@ -2683,6 +2818,7 @@ export class Game {
       redstone: this.redstone ? this.redstone.serialize() : null,
       journal: this.journal ? this.journal.serialize() : null, // 游记跨维透传（换维重建不丢探索记录）
       waymarks: this.waymarks ? this.waymarks.serialize() : null, // 航标进度跨维透传（换维重建不丢）
+      ruins: this.ruins ? this.ruins.serialize() : null, // 遗迹账本与领取记录跨维透传（换维重建不丢）
       races: this.races ? this.races.serialize() : null, // 御风赛道与成绩跨维透传（换维重建不丢；进行中的尝试按规则取消）
       blueprints: this.blueprints ? this.blueprints.serializePersonal() : [],
       sky: { time: this.sky ? this.sky.time : 0.35 }

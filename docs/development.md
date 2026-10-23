@@ -63,7 +63,8 @@ Tiderift/
 │   ├── world/            # 地形生成（SimplexNoise）、生物群系
 │   ├── blocks/ items/    # 方块/物品定义 + SVG 纹理
 │   ├── core/             # World、Chunk、RedstoneSystem、Crafting、SaveSystem、LightEngine、Registry
-│   │   └── Blueprints.js # Build 35 E：蓝图数据、区域捕获、RLE 编解码与材料清单
+│   │   ├── Blueprints.js # Build 35 E：蓝图数据、区域捕获、RLE 编解码与材料清单
+│   │   └── Ruins.js      # Build 35 D：遗迹机关定义推导、判定、状态机、解封写入与奖励定义
 │   ├── render/           # Renderer、ChunkMesh、Sky、SVGTextures、粒子/后处理/手持物/远端快捷栏
 │   │   └── GhostPreview.js # Build 35 E：纯视觉体素预览与超限包围盒降级
 │   ├── entity/           # Mob、MobManager、RemotePlayer(远端玩家)、WitherAI/DragonAI(Boss AI)
@@ -77,7 +78,7 @@ Tiderift/
 │   ├── room.js           # 房间：玩家集合、方块账本、消息路由、世界恢复、踢人/清掉落物
 │   ├── store.js          # 世界落盘 + 快照备份（server/world/<房间名>.json）
 │   ├── config.js         # 服务器配置（默认值 + 读写 server/config.json）
-│   ├── ratelimit.js      # 令牌桶限速（聊天/方块/状态三档，热生效）
+│   ├── ratelimit.js      # 令牌桶限速（聊天/方块/状态/房间写入等分档，热生效）
 │   ├── admin.html        # 服务器管理面板页面（房间/玩家/配置/世界/白名单/账号管理）
 │   ├── protocol.js       # 消息类型常量（浏览器与服务器共用）
 │   ├── client-sim.mjs    # 双端验证模拟客户端
@@ -115,6 +116,7 @@ Tiderift/
 │       ├── rendering-lighting.md         # 渲染 / 光照 / 材质 / 网格构建 / UI 图标链
 │       ├── multiplayer.md                # 联机协议 / 插值 / 面板 / 玩家档案 / 房间开关
 │       ├── blueprints.md                 # 建筑蓝图的数据、捕获、预览、同步与生命周期约定
+│       ├── ruins.md                      # 可动手解开的遗迹：机关机制、判定口径、房间账本与奖励链路
 │       └── ui-misc.md                    # 菜单 / 粒子 / UI / 音频 / 更名引用面
 ├── .github/workflows/ci.yml  # CI：全量 node --check + build + 全套件
 ├── start.cmd             # 开发/联机服务器启停脚本（Windows）

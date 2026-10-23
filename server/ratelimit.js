@@ -44,12 +44,21 @@ export function tierOf(msgType, MSG) {
   if (msgType === MSG.CREATE_ROOM || msgType === MSG.JOIN_ROOM || msgType === MSG.SWITCH_ROOM) return 'join';
   if (msgType === MSG.SKIN_SET) return 'skin';         // 16KB 皮肤数据向全房广播
   if (msgType === MSG.PROFILE_SAVE) return 'profile';  // 整档字段校验（+ 节流落盘）
+  // B35 D：遗迹上报/领取（每次解开或领取才发一条，低频；房间内另有 20+10/min 令牌桶把二次关）
+  if (msgType === MSG.RUIN_STATE || msgType === MSG.RUIN_CLAIM) return 'ruin';
   return null;
 }
+
+// 未进 server/config.js 白名单的档位在这里给代码级兜底值（config 一旦收录同名键即以 config 为准）
+const TIER_FALLBACK = { ruin: 120 };
 
 // 按连接创建限速器组（闭包活读 config.rateLimits，热生效）
 export function createConnectionLimiters(config) {
   const limits = () => (config && config.rateLimits) || {};
+  const tier = (name) => {
+    const value = limits()[name];
+    return value === undefined ? TIER_FALLBACK[name] : value;
+  };
   return {
     chat: new RateLimiter(() => limits().chat),
     block: new RateLimiter(() => limits().block),
@@ -57,5 +66,6 @@ export function createConnectionLimiters(config) {
     join: new RateLimiter(() => limits().join),
     skin: new RateLimiter(() => limits().skin),
     profile: new RateLimiter(() => limits().profile),
+    ruin: new RateLimiter(() => tier('ruin')),
   };
 }

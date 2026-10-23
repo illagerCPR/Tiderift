@@ -33,3 +33,12 @@ registerStructureType('tide_barrow', TIDE_BARROW_DEF);
 registerStructureType('gleaner_ring', GLEANER_RING_DEF);
 // 天域后传（鲸骨冢篇 K1）：鲸骨冢（defs 自带 dims: ['aether']）
 registerStructureType('whale_barrow', WHALE_BARROW_DEF);
+
+// ── D 可动手解开的遗迹（机关房三种，各占一维：主世界/下界/天域）──────────────────
+// defs 自带 dims；几何与判定共用 core/Ruins.js 的布局常量，阶段 2 按 ruinPuzzle 接线。
+import { TIDE_SLUICE_DEF } from './tide_sluice.js';
+import { EMBER_CIRCUIT_DEF } from './ember_circuit.js';
+import { FRAME_RACK_DEF } from './frame_rack.js';
+registerStructureType('tide_sluice', TIDE_SLUICE_DEF);
+registerStructureType('ember_circuit', EMBER_CIRCUIT_DEF);
+registerStructureType('frame_rack', FRAME_RACK_DEF);

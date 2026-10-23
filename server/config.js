@@ -32,6 +32,7 @@ const DEFAULTS = {
     skin: 30,            // S6：skin_set（16KB 数据向全房广播）
     profile: 60,         // S6：profile_save（整档校验）
     skinFetch: 30,       // S7：/api/skin/ 按来源 IP 限频（每分钟次数）
+    ruin: 120,           // B35 D：ruin_state/ruin_claim（每次解开或领取才发一条，低频）
   },
 };
 
@@ -112,14 +113,14 @@ export function sanitizeRoomSettings(raw) {
 }
 
 // Idea-4C：校验速率限制表（每分钟次数，0=不限制）；S6/S7 扩档为七项：
-// 连接级 chat/block/state/join/skin/profile + 皮肤代理 IP 级 skinFetch。
+// 连接级 chat/block/state/join/skin/profile + 皮肤代理 IP 级 skinFetch；B35 D 增 ruin（遗迹上报/领取）。
 // 缺省项回落当前值（applyConfig 传入 current）或默认值；非法数字忽略该项
 export function sanitizeRateLimits(raw, current = null) {
   const base = current || DEFAULTS.rateLimits;
   if (raw === undefined || raw === null) return { ...base };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const out = {};
-  for (const key of ['chat', 'block', 'state', 'join', 'skin', 'profile', 'skinFetch']) {
+  for (const key of ['chat', 'block', 'state', 'join', 'skin', 'profile', 'skinFetch', 'ruin']) {
     const src = raw[key] !== undefined ? raw[key] : base[key];
     const n = Number(src);
     out[key] = Number.isFinite(n) && n >= 0 && n <= RATE_LIMITS_MAX ? Math.round(n) : base[key];

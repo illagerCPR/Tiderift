@@ -7,6 +7,7 @@
 import { CHUNK_SIZE, CHUNK_HEIGHT } from '../../core/Chunk.js';
 import { BlockRegistry } from '../../core/BlockRegistry.js';
 import { fillBox } from './StructureKit.js';
+import { RUIN_KIND_LABEL } from '../../core/Ruins.js';
 
 // 32 位确定性哈希（seed/坐标/盐 → uint32），不同盐的流互不相关
 function hash32(seed, a, b, salt) {
@@ -306,6 +307,7 @@ export class StructureManager {
         if (name === 'tide_barrow') return '潮冢';
         if (name === 'gleaner_ring') return '拾遗者石环';
         if (name === 'whale_barrow') return '鲸骨冢';
+        if (RUIN_KIND_LABEL[name]) return RUIN_KIND_LABEL[name]; // B35 D：三种机关房
         return name;
       }
     }
@@ -332,6 +334,7 @@ export class StructureManager {
         else if (name === 'tide_barrow') label = '潮冢';
         else if (name === 'gleaner_ring') label = '拾遗者石环';
         else if (name === 'whale_barrow') label = '鲸骨冢';
+        else if (RUIN_KIND_LABEL[name]) label = RUIN_KIND_LABEL[name]; // B35 D：三种机关房
         return { name, label, record: rec };
       }
     }

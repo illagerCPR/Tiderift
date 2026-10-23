@@ -7,6 +7,7 @@ import { playerColorCss } from './playerColor.js';
 import { createNetStats, pushRttSample } from './netStats.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { getDimension } from '../core/dimensions.js';
+import { isValidRuinKey } from '../core/Ruins.js';
 import { parseServerMessage } from './netMessage.js';
 
 const RECONNECT_MAX = 8; // 断线自动重连最大尝试次数
@@ -25,6 +26,20 @@ const RACE_DENY_TEXT = {
 
 function raceDenyText(reason) {
   return t(RACE_DENY_TEXT[reason] || '未知原因');
+}
+
+// B35 D：遗迹上报/领取被拒的原因文案（键必须存在于语言包）
+const RUIN_DENY_TEXT = {
+  key: '机关位置无法识别',
+  dim: '你不在该机关所在的维度',
+  rate: '操作过于频繁',
+  limit: '本房间的遗迹记录已满',
+  locked: '这处机关还没有被解开',
+  claimed: '这处机关的纪念奖励已被其他玩家领取',
+};
+
+function ruinDenyText(reason) {
+  return t(RUIN_DENY_TEXT[reason] || '未知原因');
 }
 
 export class NetworkManager {
@@ -62,6 +77,11 @@ export class NetworkManager {
     this._pendingBlueprints = null;
     this._pendingBlueprintUpdates = [];
     this._pendingBlueprintRemoves = [];
+    // B35 D：遗迹账本缓存（世界未就绪时先存，onWorldStarted 统一冲掉）+ 本端已领取的键
+    this._pendingRuins = null;
+    this._pendingRuinUpdates = [];
+    this._pendingRuinClaims = [];
+    this._ruinClaimed = new Set();
     this._pendingOpen = [];       // 连接打开前的待发消息
     this.isHost = false;          // 是否房间 host（host 端负责怪物自然生成）
     this.room = 'default';        // 当前房间名（阶段 3：同名房间共享同一世界）
@@ -192,6 +212,7 @@ export class NetworkManager {
     this._clearWaymarks(); // B34-B：航标进度缓存同样随连接重置
     this._clearRaces(); // B34-C：赛道/成绩缓存与进行中的计时尝试同样随连接重置
     this._clearBlueprints();
+    this._clearRuins(); // B35 D：遗迹账本同样随连接重置
   }
 
   // B34-A：共享标记三态落到本地游记——世界未就绪时缓存，onWorldStarted 统一冲掉
@@ -262,6 +283,87 @@ export class NetworkManager {
   _clearWaymarks() {
     this._pendingWaymarks = null;
     this._pendingWaymarkUpdates = [];
+  }
+
+  // B35 D：遗迹账本——服务器权威全量覆盖本地（本地只读展示，不作判据）
+  _applyRuins(ruins) {
+    const src = (ruins && typeof ruins === 'object' && !Array.isArray(ruins)) ? ruins : {};
+    const game = this.game;
+    if (this._ready && game && game.ruins) {
+      game.ruins.reset({ ruins: src });
+      for (const key of this._ruinClaimed) game.ruins.markClaimed(key); // 领取记录是个人本地态，全量覆盖后重放
+    } else {
+      this._pendingRuins = src;
+    }
+  }
+
+  // 他人（或本人）解开的入账广播：本地只记账并移出待判定集，不重复开门/发奖
+  _applyRuinUpdate(msg) {
+    const key = typeof msg.key === 'string' ? msg.key : '';
+    if (!isValidRuinKey(key)) return;
+    const byName = typeof msg.byName === 'string' ? msg.byName : '';
+    const at = Number.isFinite(Number(msg.at)) ? Math.max(0, Math.floor(Number(msg.at))) : 0;
+    const game = this.game;
+    if (this._ready && game && game.ruins) {
+      game.ruins.markSolved(key, byName, at);
+      game.ruins.untrack(key);
+      if (game._ruinPuzzles) game._ruinPuzzles.delete(key);
+    } else {
+      this._pendingRuinUpdates.push({ key, byName, at });
+    }
+  }
+
+  // 领取成功回执（只发给领取者本人）：奖励在这里落地
+  _applyRuinClaimed(msg) {
+    const key = typeof msg.key === 'string' ? msg.key : '';
+    if (!isValidRuinKey(key)) return;
+    this._ruinClaimed.add(key);
+    const game = this.game;
+    if (this._ready && game && game.ruins && typeof game._grantRuinReward === 'function') game._grantRuinReward(key);
+    else this._pendingRuinClaims.push(key);
+  }
+
+  _applyRuinDeny(msg) {
+    const key = msg && typeof msg.key === 'string' ? msg.key : '';
+    const reason = msg && msg.reason;
+    const game = this.game;
+    if (!game) return;
+    // 已被别人领走：本地记账但不再发奖（避免每次走到机关都重发一次 claim）
+    if (reason === 'claimed' && key && game.ruins) game.ruins.markClaimed(key);
+    if (game.chatBox) game.chatBox.add(t('遗迹操作被拒绝：{reason}', { reason: ruinDenyText(reason) }), '#fbb');
+  }
+
+  // 遗迹状态跟随房间生命周期——换房/断线/重连一律清空（服务器会重新下发全量）
+  _clearRuins() {
+    this._pendingRuins = null;
+    this._pendingRuinUpdates = [];
+    this._pendingRuinClaims = [];
+    this._ruinClaimed = new Set();
+    if (this.game && this.game.ruins) this.game.ruins.clear();
+  }
+
+  // 世界就绪后应用遗迹账本（先全量覆盖，再按到达顺序冲掉增量与领取回执）
+  flushPendingRuins() {
+    const game = this.game;
+    if (!game || !game.ruins) return false;
+    const snapshot = this._pendingRuins;
+    const updates = this._pendingRuinUpdates.slice();
+    const claims = this._pendingRuinClaims.slice();
+    this._pendingRuins = null;
+    this._pendingRuinUpdates = [];
+    this._pendingRuinClaims = [];
+    if (snapshot !== null) {
+      game.ruins.reset({ ruins: snapshot });
+      for (const key of this._ruinClaimed) game.ruins.markClaimed(key);
+    }
+    for (const u of updates) {
+      game.ruins.markSolved(u.key, u.byName, u.at);
+      game.ruins.untrack(u.key);
+    }
+    for (const key of claims) {
+      if (typeof game._grantRuinReward === 'function') game._grantRuinReward(key);
+    }
+    return true;
   }
 
   // B34-C：赛道定义与成绩两态落到本地账本——世界未就绪时缓存，onWorldStarted 统一冲掉
@@ -522,6 +624,7 @@ export class NetworkManager {
     // B34-C：世界就绪后应用房间赛道与成绩（先全量覆盖，再按到达顺序冲掉增量/成绩/删除）
     this.flushPendingRaces();
     this.flushPendingBlueprints();
+    this.flushPendingRuins(); // B35 D
     // Idea-3C：世界就绪后应用进房下发的档案（换机/重连恢复）
     if (this._pendingProfile) {
       const prof = this._pendingProfile;
@@ -639,7 +742,7 @@ export class NetworkManager {
         if (this.isRecovering && !msg.restart &&
             (msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim)) break;
         const nextRoom = msg.room || this.room;
-        if (this.room !== nextRoom) this._clearBlueprints();
+        if (this.room !== nextRoom) { this._clearBlueprints(); this._clearRuins(); }
         this.room = nextRoom;
         // Idea-4A：房间开关随 world_info 下发（首次进入/换房/重连三条路径统一在此更新）
         if (msg.settings && typeof msg.settings === 'object') {
@@ -763,6 +866,20 @@ export class NetworkManager {
         break;
       case MSG.WAYMARK_DENY:
         this._applyWaymarkDeny(msg);
+        break;
+      case MSG.RUIN_STATE:
+        // B35 D：进房/重连/op 重置全量下发（覆盖本地账本，多端一致）
+        this._applyRuins(msg.ruins);
+        break;
+      case MSG.RUIN_UPDATE:
+        // B35 D：解开的入账广播（含提交者本人，各端顺序一致）
+        this._applyRuinUpdate(msg);
+        break;
+      case MSG.RUIN_CLAIMED:
+        this._applyRuinClaimed(msg);
+        break;
+      case MSG.RUIN_DENY:
+        this._applyRuinDeny(msg);
         break;
       case MSG.RACES:
         // B34-C：进房/重连全量下发赛道与成绩（覆盖本地旧表，避免多端不一致）
@@ -1223,6 +1340,17 @@ export class NetworkManager {
     this._send(MSG.RACE_DELETE, { id });
     return true;
   }
+  // B35 D：遗迹上报解开 / 领取纪念奖励。未连接、未就绪或键非法一律返回 false。
+  sendRuinState(key) {
+    if (!this.connected || !this._ready || !isValidRuinKey(key)) return false;
+    this._send(MSG.RUIN_STATE, { key });
+    return true;
+  }
+  sendRuinClaim(key) {
+    if (!this.connected || !this._ready || !isValidRuinKey(key)) return false;
+    this._send(MSG.RUIN_CLAIM, { key });
+    return true;
+  }
   sendBlueprintSave(blueprint) {
     if (!this.connected || !this._ready || !blueprint || typeof blueprint !== 'object') return false;
     const { id, name, size, palette, data } = blueprint;
@@ -1251,6 +1379,7 @@ export class NetworkManager {
     this._clearWaymarks(); // B34-B：换房后旧房间的航标进度不再展示
     this._clearRaces('换房'); // B34-C：换房后旧房间的赛道不再展示，进行中的计时作废
     this._clearBlueprints();
+    this._clearRuins(); // B35 D：换房后旧房间的遗迹账本不再展示
     this._send(MSG.SWITCH_ROOM, { room });
   }
   sendWorldReset() { this._send(MSG.WORLD_RESET, {}); }
@@ -1265,6 +1394,7 @@ export class NetworkManager {
     this._clearWaymarks(); // B34-B：断开后不保留航标进度缓存
     this._clearRaces('断线'); // B34-C：断开后不保留赛道缓存，进行中的计时作废
     this._clearBlueprints();
+    this._clearRuins(); // B35 D：断开后不保留遗迹账本缓存
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）

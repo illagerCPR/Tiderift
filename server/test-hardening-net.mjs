@@ -273,7 +273,7 @@ console.log('服务器加固（网络层）回归 ================');
   assert('skin/profile 档已接入 tierOf 与连接限速器组', rl.includes("return 'skin'") && rl.includes("return 'profile'") && rl.includes('join: new RateLimiter') && rl.includes('skin: new RateLimiter') && rl.includes('profile: new RateLimiter'));
   const cfgSrc = fs.readFileSync(path.join(DIR, 'config.js'), 'utf8');
   assert('默认限速四档齐备（join30/skin30/profile60/skinFetch30）', /join: 30,/.test(cfgSrc) && /skin: 30,/.test(cfgSrc) && /profile: 60,/.test(cfgSrc) && /skinFetch: 30,/.test(cfgSrc));
-  assert('sanitizeRateLimits 键集含新档', cfgSrc.includes("['chat', 'block', 'state', 'join', 'skin', 'profile', 'skinFetch']"));
+  assert('sanitizeRateLimits 键集含新档', cfgSrc.includes("['chat', 'block', 'state', 'join', 'skin', 'profile', 'skinFetch', 'ruin']"));
 }
 
 // 皮肤 IP 令牌桶是跨套件共享的进程内状态：留足补充时间，避免后续套件（test-skinlog）连吃 429

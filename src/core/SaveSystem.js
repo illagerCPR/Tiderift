@@ -54,6 +54,7 @@ export class SaveSystem {
         redstone: game.redstone ? game.redstone.serialize() : null,
         journal: game.journal ? game.journal.serialize() : null,
         waymarks: game.waymarks ? game.waymarks.serialize() : null,
+        ruins: game.ruins ? game.ruins.serialize() : null, // 遗迹账本 + 领取记录（Build 35 D）
         races: game.races ? game.races.serialize() : null, // 御风赛道与个人最佳（Build 34 C）
         blueprints: game.blueprints ? game.blueprints.serializePersonal() : [],
         sky: { time: game.sky.time || 0 }
@@ -72,6 +73,7 @@ export class SaveSystem {
       if (!raw) return null;
       const data = JSON.parse(raw);
       if (!Array.isArray(data.blueprints)) data.blueprints = [];
+      if (!data.ruins || typeof data.ruins !== 'object' || Array.isArray(data.ruins)) data.ruins = null; // 旧档缺字段 → reset(null) 回落空账本
       if (data.version === 1) {
         // V1 → V2 迁移：旧平铺字段归入主世界桶（内存中升级，不回写）
         data.version = SAVE_VERSION;

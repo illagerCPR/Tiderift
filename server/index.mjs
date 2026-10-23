@@ -621,6 +621,26 @@ async function handleHttpRequest(req, res) {
         logAdmin('backup', `导出房间「${roomName}」世界备份（${body.length} 字节）`);
         return;
       }
+      // B35 D：遗迹账本——GET 列表（只读）/ POST 重置（body.key 缺省 = 整个房间）
+      const rm = p.match(/^\/api\/room\/([^/]+)\/ruins$/);
+      if (rm && (req.method === 'GET' || req.method === 'POST')) {
+        const roomName = decodeURIComponent(rm[1]);
+        const room = rooms.get(roomName);
+        if (!room) { sendJson(res, 404, { error: '房间不存在' }); return; }
+        if (req.method === 'GET') {
+          const ruins = [...room.ruins.entries()].map(([key, value]) => ({
+            key, byName: value.byName, at: value.at, claimedBy: (room.ruinClaims.get(key) || {}).byName || '',
+          }));
+          sendJson(res, 200, { ok: true, room: roomName, ruins });
+          return;
+        }
+        const body = await readBody(req);
+        const result = room.resetRuins(null, typeof body.key === 'string' ? body.key : null);
+        if (!result.ok) { sendJson(res, 400, { error: result.reason === 'key' ? '遗迹键非法' : '重置失败' }); return; }
+        logAdmin('ruin-reset', `房间「${roomName}」重置遗迹 ${result.removed} 处${body.key ? '（单处 ' + body.key + '）' : '（全房）'}`);
+        sendJson(res, 200, { ok: true, removed: result.removed });
+        return;
+      }
       // /api/room/<name>/<action>
       const m = p.match(/^\/api\/room\/([^/]+)\/(clear-drops|delete)$/);
       if (m && req.method === 'POST') {
