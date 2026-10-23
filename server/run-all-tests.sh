@@ -64,6 +64,7 @@ PURE_NODE_SUITES=(
     journal-unit               # B34 A 四界游记：Journal 数据模型（纯 node：清洗/幂等/上限/序列化往返/揭图/标记）
     waymarks-unit              # B34 B 旧航路修复：航标进度与塔身份（纯 node：阶段/清洗/递增一次性/材料缺口/同种子双端一致）
     race-unit                  # B34 C 御风竞速：赛道定义与顺序检查点判定（纯 node：清洗/校验/成绩/乱序折返高速穿过取消超时）
+    blueprint-unit             # B35 E 蓝图模型/RLE/捕获/材料需求/个人与房间集合（纯 node）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -104,7 +105,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

@@ -64,6 +64,20 @@ export class InteractionController {
   handleMouseInput(dt) {
     const g = this.game;
     g._miningActive = false; // 默认非挖掘（早退分支自然复位）
+    if (g.blueprintScreen && g.blueprintScreen.captureMode) {
+      if (g.controls.mouseLeft) {
+        g.controls.mouseLeft = false;
+        if (g.selectedBlock) {
+          const handled = g.blueprintScreen.handleCaptureClick(g.selectedBlock.block);
+          if (handled && !g.blueprintScreen.captureMode) g._finishBlueprintCapture();
+        }
+      }
+      g.controls.mouseRight = false;
+      g.breakingProgress = 0;
+      if (g.breakMesh) g.breakMesh.visible = false;
+      g._miningActive = false;
+      return;
+    }
     // 弓蓄力通道（Idea-2A）：独立于下方单击分支——蓄力中吞掉全部右键语义防中途误触，
     // 松手在此检测（mouseup 后 controls.mouseRight 变 false，下方 mouseRight 块不会再进）。
     if (exitsMethod(this._handleBowChannel(dt))) return;

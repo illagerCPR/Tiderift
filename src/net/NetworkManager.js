@@ -59,6 +59,9 @@ export class NetworkManager {
     this._pendingRaceRemoves = [];
     this._pendingJournalAdds = [];      // 增量分享
     this._pendingJournalRemoves = [];   // 增量删除
+    this._pendingBlueprints = null;
+    this._pendingBlueprintUpdates = [];
+    this._pendingBlueprintRemoves = [];
     this._pendingOpen = [];       // 连接打开前的待发消息
     this.isHost = false;          // 是否房间 host（host 端负责怪物自然生成）
     this.room = 'default';        // 当前房间名（阶段 3：同名房间共享同一世界）
@@ -111,6 +114,7 @@ export class NetworkManager {
     this._pendingOpen = [];
     this.dim = 'overworld';      // 新连接 = 服务器侧新玩家，恒从主世界开始
     this._remoteDims = new Map();
+    this._clearBlueprints();
     this._connectSocket(false);
   }
 
@@ -187,6 +191,7 @@ export class NetworkManager {
     this._clearJournalMarkers(); // B34-A：重连/恢复时旧房间共享标记随缓存一并清空
     this._clearWaymarks(); // B34-B：航标进度缓存同样随连接重置
     this._clearRaces(); // B34-C：赛道/成绩缓存与进行中的计时尝试同样随连接重置
+    this._clearBlueprints();
   }
 
   // B34-A：共享标记三态落到本地游记——世界未就绪时缓存，onWorldStarted 统一冲掉
@@ -388,6 +393,93 @@ export class NetworkManager {
   }
 
   // 世界就绪后调用（Game.start 完成后）：落地缓存的远端玩家/方块/掉落物/怪物
+  _applyBlueprints(blueprints) {
+    if (this._ready && this.game && this.game.blueprints) {
+      this.game.blueprints.resetShared(blueprints);
+      this.game.blueprintScreen?.render();
+    } else {
+      this._pendingBlueprints = Array.isArray(blueprints) ? blueprints : [];
+      this._pendingBlueprintUpdates = [];
+      this._pendingBlueprintRemoves = [];
+    }
+  }
+
+  _applyBlueprintUpdate(blueprint) {
+    if (!blueprint || typeof blueprint.id !== 'string') return;
+    if (this._ready && this.game && this.game.blueprints) {
+      const mine = String(blueprint.byId) === String(this.selfId);
+      if (mine) this.game.blueprints.removePersonal(blueprint.id);
+      if (!this.game.blueprints.applyShared(blueprint)) return;
+      if (this.game.blueprintScreen) this.game.blueprintScreen.onSharedSaved(blueprint, mine);
+      if (!mine && this.game.chatBox) {
+        // byId 是服务器下发的 String(player.id)，而 remotePlayers 以服务器数字 id 为键——两种键都查，
+        // 否则 get 恒 miss、聊天提示永远显示兜底名。Number 结果非有限值时不查（NaN 键无意义）。
+        const remoteId = Number(blueprint.byId);
+        const remote = this.game.remotePlayers.get(blueprint.byId)
+          || (Number.isFinite(remoteId) ? this.game.remotePlayers.get(remoteId) : undefined);
+        this.game.chatBox.add(t('由 {name} 分享', { name: remote ? remote.name : t('玩家') }), '#8fd0c4');
+      }
+    } else {
+      this._pendingBlueprintUpdates.push(blueprint);
+    }
+  }
+
+  _applyBlueprintRemoved(id) {
+    if (typeof id !== 'string' || !id) return;
+    if (this._ready && this.game && this.game.blueprints) {
+      this.game.blueprints.removeShared(id);
+      if (this.game.blueprintScreen) {
+        if (this.game.blueprintScreen.selectedId === id) {
+          this.game.blueprintScreen.selectedId = null;
+          this.game.ghostPreview?.hide();
+        }
+        this.game.blueprintScreen.render();
+      }
+    } else {
+      this._pendingBlueprintRemoves.push(id);
+    }
+  }
+
+  _applyBlueprintDeny(message) {
+    const game = this.game;
+    if (game && game.blueprintScreen) game.blueprintScreen.onDenied(message && message.reason || 'unknown');
+  }
+
+  flushPendingBlueprints() {
+    if (!this.game || !this.game.blueprints) return false;
+    const snapshot = this._pendingBlueprints;
+    const updates = this._pendingBlueprintUpdates.slice();
+    const removals = this._pendingBlueprintRemoves.slice();
+    if (snapshot === null && !updates.length && !removals.length) return false;
+    this._pendingBlueprints = null;
+    this._pendingBlueprintUpdates = [];
+    this._pendingBlueprintRemoves = [];
+    if (snapshot !== null) this.game.blueprints.resetShared(snapshot);
+    for (const blueprint of updates) {
+      if (!blueprint || typeof blueprint.id !== 'string') continue;
+      const mine = String(blueprint.byId) === String(this.selfId);
+      if (!this.game.blueprints.applyShared(blueprint)) continue;
+      if (this.game.blueprintScreen) this.game.blueprintScreen.onSharedSaved(blueprint, mine);
+    }
+    for (const id of removals) this._applyBlueprintRemoved(id);
+    if (this.game.blueprintScreen && this.game.blueprintScreen.visible) this.game.blueprintScreen.render();
+    return true;
+  }
+
+  _clearBlueprints() {
+    this._pendingBlueprints = null;
+    this._pendingBlueprintUpdates = [];
+    this._pendingBlueprintRemoves = [];
+    const model = this.game && this.game.blueprints;
+    if (model) model.resetShared([]);
+    if (this.game && this.game.blueprintScreen) {
+      this.game.blueprintScreen.selectedId = null;
+      this.game.blueprintScreen.pending = false;
+      if (this.game.ghostPreview) this.game.ghostPreview.hide();
+      if (this.game.blueprintScreen.visible) this.game.blueprintScreen.render();
+    }
+  }
+
   onWorldStarted({ preserveProfilePosition = false } = {}) {
     this._ready = true;
     for (const info of this._pendingPlayers) this._addRemote(info);
@@ -429,6 +521,7 @@ export class NetworkManager {
     }
     // B34-C：世界就绪后应用房间赛道与成绩（先全量覆盖，再按到达顺序冲掉增量/成绩/删除）
     this.flushPendingRaces();
+    this.flushPendingBlueprints();
     // Idea-3C：世界就绪后应用进房下发的档案（换机/重连恢复）
     if (this._pendingProfile) {
       const prof = this._pendingProfile;
@@ -545,7 +638,9 @@ export class NetworkManager {
       case MSG.WORLD_INFO:
         if (this.isRecovering && !msg.restart &&
             (msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim)) break;
-        this.room = msg.room || this.room;
+        const nextRoom = msg.room || this.room;
+        if (this.room !== nextRoom) this._clearBlueprints();
+        this.room = nextRoom;
         // Idea-4A：房间开关随 world_info 下发（首次进入/换房/重连三条路径统一在此更新）
         if (msg.settings && typeof msg.settings === 'object') {
           this.roomSettings = { pvp: msg.settings.pvp !== false, mobs: msg.settings.mobs !== false };
@@ -638,6 +733,18 @@ export class NetworkManager {
       case MSG.JOURNAL_MARKERS:
         // B34-A：进房/重连全量下发房间共享标记（覆盖本地旧集合，避免多端不一致）
         this._applyJournalMarkers(msg.markers);
+        break;
+      case 'blueprints':
+        this._applyBlueprints(msg.blueprints);
+        break;
+      case 'blueprint_update':
+        this._applyBlueprintUpdate(msg.blueprint);
+        break;
+      case 'blueprint_removed':
+        this._applyBlueprintRemoved(msg.id);
+        break;
+      case 'blueprint_deny':
+        this._applyBlueprintDeny(msg);
         break;
       case MSG.JOURNAL_MARKER_ADD:
         // B34-A：他人（或本人）分享成功后入账广播——本人也收到，保证各端顺序一致
@@ -1116,6 +1223,17 @@ export class NetworkManager {
     this._send(MSG.RACE_DELETE, { id });
     return true;
   }
+  sendBlueprintSave(blueprint) {
+    if (!this.connected || !this._ready || !blueprint || typeof blueprint !== 'object') return false;
+    const { id, name, size, palette, data } = blueprint;
+    this._send('blueprint_save', { blueprint: { id, name, size, palette, data } });
+    return true;
+  }
+  sendBlueprintDelete(id) {
+    if (!this.connected || !this._ready || typeof id !== 'string' || !id) return false;
+    this._send('blueprint_delete', { id });
+    return true;
+  }
   sendRaceRecord(id, revision, ms) {
     if (!this.connected || !this._ready) return false;
     if (typeof id !== 'string' || !id) return false;
@@ -1132,6 +1250,7 @@ export class NetworkManager {
     this._clearJournalMarkers(); // B34-A：换房后旧房间的共享标记不再展示
     this._clearWaymarks(); // B34-B：换房后旧房间的航标进度不再展示
     this._clearRaces('换房'); // B34-C：换房后旧房间的赛道不再展示，进行中的计时作废
+    this._clearBlueprints();
     this._send(MSG.SWITCH_ROOM, { room });
   }
   sendWorldReset() { this._send(MSG.WORLD_RESET, {}); }
@@ -1145,6 +1264,7 @@ export class NetworkManager {
     this._clearJournalMarkers(); // B34-A：断开后不保留任何房间标记
     this._clearWaymarks(); // B34-B：断开后不保留航标进度缓存
     this._clearRaces('断线'); // B34-C：断开后不保留赛道缓存，进行中的计时作废
+    this._clearBlueprints();
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）

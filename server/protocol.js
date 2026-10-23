@@ -104,6 +104,14 @@ export const MSG = {
   RACE_RECORD_UPDATE: 'race_record_update', // S2C {id, revision, byId, byName, ms}：成绩入账广播
   RACE_DENY: 'race_deny',                   // S2C {id, reason}：保存/删除/上报被拒
 
+  // Build 35 E：房间共享蓝图账本（服务器权威校验与修订）
+  BLUEPRINT_SAVE: 'blueprint_save',         // C2S {blueprint:{id,name,size,palette,data}}
+  BLUEPRINT_DELETE: 'blueprint_delete',     // C2S {id}
+  BLUEPRINTS: 'blueprints',                 // S2C {blueprints:[...]}：进房/重连全量下发
+  BLUEPRINT_UPDATE: 'blueprint_update',     // S2C {blueprint}：保存/编辑广播（含提交者）
+  BLUEPRINT_REMOVED: 'blueprint_removed',   // S2C {id}：删除广播
+  BLUEPRINT_DENY: 'blueprint_deny',         // S2C {id, reason}：保存/删除被拒
+
   // 世界
   SET_TIME: 'set_time',
   TIME: 'time',

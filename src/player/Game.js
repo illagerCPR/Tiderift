@@ -57,6 +57,9 @@ import { LocalPlayerModel } from '../entity/LocalPlayerModel.js';
 import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLight.js';
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
 import { SaveSystem } from '../core/SaveSystem.js';
+import { Blueprints, captureBlueprint } from '../core/Blueprints.js';
+import { GhostPreview } from '../render/GhostPreview.js';
+import { BlueprintScreen } from '../ui/BlueprintScreen.js';
 import { Journal } from '../core/Journal.js';
 import { Waymarks, waymarkKey, waymarkStageDef } from '../core/Waymarks.js';
 import { RaceTracks, trackLength } from '../core/RaceTracks.js';
@@ -108,6 +111,9 @@ export class Game {
     this.steleScreen = null;
     this.journal = null;        // 四界游记数据（新建型：start 创建 / _disposeWorld 释放）
     this.journalScreen = null;  // 四界游记界面（新建型：_disposeWorld 摘 DOM 与监听器）
+    this.blueprints = null;
+    this.blueprintScreen = null;
+    this.ghostPreview = null;
     this._journalObserveAt = 0;   // 揭图节流时间戳（performance.now）
     this._journalDiscoveryAt = 0; // 结构发现节流时间戳
     this.waymarks = null;         // 天域旧航路航标进度（新建型：start 创建 / _disposeWorld 释放）
@@ -210,7 +216,8 @@ export class Game {
   // 这些界面 show() 时置 controls.enabled=false 并退指针锁，但鼠标按键状态可能残留，
   // 故挖掘/攻击/弓蓄力与指针锁自动暂停都必须先问这里——新增此类界面只改这一处。
   _anyInputBlockingUI() {
-    return !!((this.inventoryScreen && this.inventoryScreen.visible) ||
+    return !!((this.blueprintScreen && this.blueprintScreen.visible) ||
+      (this.inventoryScreen && this.inventoryScreen.visible) ||
       (this.chestScreen && this.chestScreen.visible) ||
       (this.furnaceScreen && this.furnaceScreen.visible) ||
       (this.tradeScreen && this.tradeScreen.visible) ||
@@ -226,6 +233,9 @@ export class Game {
     this._worldStartToken = (this._worldStartToken || 0) + 1;
     this._loopToken = (this._loopToken || 0) + 1;
     const scene = this.renderer.scene;
+    if (this.blueprintScreen) { this.blueprintScreen.dispose(); this.blueprintScreen = null; }
+    if (this.ghostPreview) { this.ghostPreview.dispose(); this.ghostPreview = null; }
+    this.blueprints = null;
     // B-①/B-②：地形/网格 Worker 随世界销毁（新建型资源，跨存档/换维必须 terminate）
     if (this.world && this.world.terrainWorker) {
       this.world.terrainWorker.dispose();
@@ -578,9 +588,13 @@ export class Game {
     // 旧档/旧联机档案缺 journal 字段时 reset(null) 回落为空游记（reset 内部即全量重建）。
     this.journal = new Journal(this); // 新建型：_disposeWorld 释放
     this.journal.reset(loadData ? loadData.journal : null);
+    this.blueprints = new Blueprints();
+    this.blueprints.resetPersonal(loadData ? loadData.blueprints : null);
     this._journalObserveAt = 0;
     this._journalDiscoveryAt = 0;
     this.journalScreen = new JournalScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
+    this.ghostPreview = new GhostPreview(this.renderer.scene);
+    this.blueprintScreen = new BlueprintScreen(this);
     // 天域旧航路航标（Build 34 B）：进度是存档/房间共享状态，界面直接读 this.waymarks，故先建数据再建界面。
     this.waymarks = new Waymarks(this);
     this.waymarks.reset(loadData ? loadData.waymarks : null);
@@ -595,8 +609,10 @@ export class Game {
     this._raceCheckAt = 0;
     this.raceHud = new RaceHud(this); // 新建型：挂 body，_disposeWorld 移除
     this.raceScreen = new RaceScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
-    // 联机：世界重建期间到达的赛道消息只进了 NetworkManager 缓存，这里主动兜底落地一次
+    // 联机：世界重建期间到达的赛道/蓝图消息只进了 NetworkManager 缓存，这里主动兜底落地一次
+    // （时序与 C 阶段一致：模型与界面都已重建之后才 flush，否则落到被 _disposeWorld 置空/替换的旧实例上）
     if (this.net && typeof this.net.flushPendingRaces === 'function') this.net.flushPendingRaces();
+    if (this.net && typeof this.net.flushPendingBlueprints === 'function') this.net.flushPendingBlueprints();
     this.inventoryScreen = new InventoryScreen(this.inventory, this.player, this);
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
@@ -761,7 +777,16 @@ export class Game {
         if (this._anyInputBlockingUI()) return; // 容器/石碑以外的界面开着时不叠加
         if (this.journalScreen) this.journalScreen.show();
       }
-      // G 键：御风赛道（建赛道 / 开始 / 编辑 / 删除 / 看成绩）。互斥规则与 N 键同款。
+      if (e.code === 'KeyB') {
+        if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
+        if (this.pauseMenu && this.pauseMenu.visible) return;
+        if (this.chatBox && this.chatBox.input) return;
+        if (this.commandPanel && this.commandPanel.visible) return;
+        if (this.blueprintScreen && this.blueprintScreen.visible) { this.blueprintScreen.hide(); return; }
+        if (this._anyInputBlockingUI()) return;
+        this.blueprintScreen?.show();
+      }
+      // G 键：御风赛道（建赛道 / 开始 / 编辑 / 删除 / 看成绩）。互斥规则与 N 键同款.
       if (e.code === 'KeyG') {
         if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
         if (this.pauseMenu && this.pauseMenu.visible) return;
@@ -1529,6 +1554,14 @@ export class Game {
     
     // 射线选择
     this.updateRaycast();
+    if (this.ghostPreview && this.ghostPreview.blueprint) {
+      const anchor = this.selectedBlock ? this.selectedBlock.block : this.player.position;
+      const blueprint = this.ghostPreview.blueprint;
+      const rotation = this.ghostPreview.rotation;
+      const widthX = rotation % 2 ? blueprint.size.z : blueprint.size.x;
+      const widthZ = rotation % 2 ? blueprint.size.x : blueprint.size.z;
+      this.ghostPreview.setAnchor(Math.floor(anchor.x) + 0.5 - widthX / 2, Math.floor(anchor.y), Math.floor(anchor.z) + 0.5 - widthZ / 2);
+    }
     
     // 鼠标交互（观战模式不操作方块/物品）
     if (this.spectating) {
@@ -1887,6 +1920,42 @@ export class Game {
   }
 
   handleMouseInput(dt) { return this.interactionController.handleMouseInput(dt); }
+
+  saveBlueprints() {
+    if (this.networkMode || !this.blueprints) return false;
+    return SaveSystem.save(this, this.currentSlot);
+  }
+
+  _finishBlueprintCapture() {
+    const screen = this.blueprintScreen;
+    if (!screen || screen.corners.length !== 2 || !this.world) return;
+    const result = captureBlueprint(this.world, screen.corners[0], screen.corners[1], { id: this._newBlueprintId(), name: 'blueprint', byId: '' }); // 占位名，仅用于校验，真实名称在草稿面板里填
+    if (!result.ok) {
+      screen.captureMode = true;
+      screen.visible = true;
+      screen.el.style.display = 'flex';
+      screen.render();
+      const warning = result.reason === 'unloaded' ? '所选区域包含未加载区块，无法捕获。'
+        : result.reason === 'size' ? '区域边长不能超过 32，体积不能超过 32768 格。'
+          : result.reason === 'data' ? '蓝图数据超过 16 KB 上限。'
+            : '数据格式无效。';
+      screen.status && (screen.status.textContent = t('捕获失败：{reason}', { reason: t(warning) }));
+      return;
+    }
+    screen.draftCorners = screen.corners.map((point) => ({ ...point }));
+    screen.captureMode = false;
+    screen.visible = true;
+    screen.el.style.display = 'flex';
+    screen.render();
+  }
+
+  _newBlueprintId() {
+    const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+    const bytes = new Uint8Array(10);
+    if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') globalThis.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join('').slice(0, 16);
+  }
   // 掷末影之眼：消耗 1 颗，发光小球朝最近环带锚点飞 2.5s 后落回（20% 碎裂，原版）
   _throwEnderEye() {
     this.projectiles.throwEnderEye();
@@ -2615,6 +2684,7 @@ export class Game {
       journal: this.journal ? this.journal.serialize() : null, // 游记跨维透传（换维重建不丢探索记录）
       waymarks: this.waymarks ? this.waymarks.serialize() : null, // 航标进度跨维透传（换维重建不丢）
       races: this.races ? this.races.serialize() : null, // 御风赛道与成绩跨维透传（换维重建不丢；进行中的尝试按规则取消）
+      blueprints: this.blueprints ? this.blueprints.serializePersonal() : [],
       sky: { time: this.sky ? this.sky.time : 0.35 }
     };
   }

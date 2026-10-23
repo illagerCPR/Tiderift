@@ -63,11 +63,14 @@ Tiderift/
 │   ├── world/            # 地形生成（SimplexNoise）、生物群系
 │   ├── blocks/ items/    # 方块/物品定义 + SVG 纹理
 │   ├── core/             # World、Chunk、RedstoneSystem、Crafting、SaveSystem、LightEngine、Registry
+│   │   └── Blueprints.js # Build 35 E：蓝图数据、区域捕获、RLE 编解码与材料清单
 │   ├── render/           # Renderer、ChunkMesh、Sky、SVGTextures、粒子/后处理/手持物/远端快捷栏
+│   │   └── GhostPreview.js # Build 35 E：纯视觉体素预览与超限包围盒降级
 │   ├── entity/           # Mob、MobManager、RemotePlayer(远端玩家)、WitherAI/DragonAI(Boss AI)
 │   ├── audio/            # AudioEngine（WebAudio 程序化合成音效/BGM/怪物语音）
 │   ├── workers/          # 地形生成 / 网格构建 Worker（主线程不卡顿）
 │   ├── ui/               # MenuScreen、HUD、Hotbar、InventoryScreen、ChatBox、BeaconScreen 等
+│   │   └── BlueprintScreen.js # Build 35 E：蓝图列表、两次框选捕获、预览控制与材料清单
 │   └── net/              # NetworkManager（联机客户端网络层）、playerColor（玩家配色）
 ├── server/               # 局域网房间服务器（Node + ws）
 │   ├── index.mjs         # 入口（http 管理面板 + WebSocket /ws，多房间管理 + /api 接口）
@@ -111,6 +114,7 @@ Tiderift/
 │       ├── mobs-entities.md              # 怪物与实体
 │       ├── rendering-lighting.md         # 渲染 / 光照 / 材质 / 网格构建 / UI 图标链
 │       ├── multiplayer.md                # 联机协议 / 插值 / 面板 / 玩家档案 / 房间开关
+│       ├── blueprints.md                 # 建筑蓝图的数据、捕获、预览、同步与生命周期约定
 │       └── ui-misc.md                    # 菜单 / 粒子 / UI / 音频 / 更名引用面
 ├── .github/workflows/ci.yml  # CI：全量 node --check + build + 全套件
 ├── start.cmd             # 开发/联机服务器启停脚本（Windows）

@@ -59,6 +59,8 @@ export function roomSnapshot(room) {
     // B34-C：御风赛道定义（[{id,name,dim,mode,revision,byId,byName,points}]）与逐人最佳成绩（[["id#rev#byId", ms, byName]]）
     races: room.races ? [...room.races.values()] : [],
     raceRecords: room.raceRecords ? [...room.raceRecords.entries()].map(([key, v]) => [key, v.ms, v.byName]) : [],
+    // Build 35 E：房间共享蓝图账本（只保存服务端清洗后的权威对象）。
+    blueprints: room.blueprints ? [...room.blueprints.values()] : [],
     savedAt: Date.now(),
   };
 }
@@ -92,7 +94,7 @@ function isRoomSnapshot(data) {
     if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) return false;
     for (const entries of Object.values(bucket)) if (!Array.isArray(entries)) return false;
   }
-  for (const key of ['blocks', 'containers', 'drops', 'journalMarkers', 'waymarks', 'races', 'raceRecords']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
+  for (const key of ['blocks', 'containers', 'drops', 'journalMarkers', 'waymarks', 'races', 'raceRecords', 'blueprints']) { // 含 V1 平铺旧格式（restore 回退分支同样要迭代）
     if (data[key] !== undefined && !Array.isArray(data[key])) return false;
   }
   return true;

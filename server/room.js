@@ -334,6 +334,102 @@ function allowRaceWrite(player, now = Date.now()) {
   return true;
 }
 
+// Build 35 E：共享蓝图字段约束与写入令牌桶。
+const BLUEPRINT_LIMIT = 24;
+const BLUEPRINT_DATA_MAX = 16384;
+const BLUEPRINT_BUCKET_CAP = 20;
+const BLUEPRINT_BUCKET_PER_MIN = 10;
+const BLUEPRINT_ID_RE = /^[a-z0-9]{6,20}$/;
+const BLUEPRINT_DIMS = ['overworld', 'nether', 'end', 'aether'];
+
+function cleanBlueprintId(raw) {
+  return typeof raw === 'string' && BLUEPRINT_ID_RE.test(raw) ? raw : '';
+}
+
+function cleanBlueprintName(raw) {
+  if (typeof raw !== 'string') return null;
+  const name = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
+  if (!name || [...name].length > 24) return null;
+  for (const char of name) {
+    const code = char.codePointAt(0);
+    if (code >= 0xd800 && code <= 0xdfff) return null;
+  }
+  return name;
+}
+
+function cleanBlueprintSize(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const { x, y, z } = raw;
+  if (![x, y, z].every((value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 32)) return null;
+  const volume = x * y * z;
+  return volume <= 32768 ? { size: { x, y, z }, volume } : null;
+}
+
+function cleanBlueprintPalette(raw) {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 256 || raw[0] !== 0) return null;
+  const seen = new Set();
+  const palette = [];
+  for (const blockId of raw) {
+    if (typeof blockId !== 'number' || !Number.isInteger(blockId) || blockId < 0 || blockId > 255 || seen.has(blockId)) return null;
+    seen.add(blockId);
+    palette.push(blockId === 0 ? 0 : blockId);
+  }
+  return palette;
+}
+
+function isCanonicalBlueprintRle(data, paletteSize, volume) {
+  if (typeof data !== 'string' || data.length > BLUEPRINT_DATA_MAX) return false;
+  let total = 0;
+  let previousIndex = -1;
+  for (const token of data.split(',')) {
+    const match = /^(0|[1-9a-z][0-9a-z]*)\.([1-9a-z][0-9a-z]*)$/.exec(token);
+    if (!match) return false;
+    const index = Number.parseInt(match[1], 36);
+    const run = Number.parseInt(match[2], 36);
+    if (!Number.isSafeInteger(index) || index.toString(36) !== match[1] || index >= paletteSize) return false;
+    if (!Number.isSafeInteger(run) || run.toString(36) !== match[2] || run > volume - total) return false;
+    if (index === previousIndex) return false;
+    previousIndex = index;
+    total += run;
+  }
+  return total === volume;
+}
+
+function sanitizeBlueprintContent(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { blueprint: null, reason: 'blueprint' };
+  const id = cleanBlueprintId(raw.id);
+  if (!id) return { blueprint: null, reason: 'id' };
+  const name = cleanBlueprintName(raw.name);
+  if (!name) return { blueprint: null, reason: 'name' };
+  const dimensions = cleanBlueprintSize(raw.size);
+  if (!dimensions) return { blueprint: null, reason: 'size' };
+  const palette = cleanBlueprintPalette(raw.palette);
+  if (!palette) return { blueprint: null, reason: 'palette' };
+  if (!isCanonicalBlueprintRle(raw.data, palette.length, dimensions.volume)) return { blueprint: null, reason: 'data' };
+  return { blueprint: { id, name, size: dimensions.size, palette, data: raw.data }, reason: '' };
+}
+
+function sanitizeStoredBlueprint(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !BLUEPRINT_DIMS.includes(raw.dim)) return null;
+  if (!Number.isInteger(raw.rev) || raw.rev < 1 || raw.rev > 99999 || typeof raw.byId !== 'string' || !raw.byId || raw.byId.length > 40) return null;
+  const result = sanitizeBlueprintContent(raw);
+  if (!result.blueprint) return null;
+  return { ...result.blueprint, dim: raw.dim, rev: raw.rev, byId: raw.byId };
+}
+
+function allowBlueprintWrite(player, now = Date.now()) {
+  let bucket = player._blueprintBucket;
+  if (!bucket) bucket = player._blueprintBucket = { tokens: BLUEPRINT_BUCKET_CAP, last: now };
+  const elapsed = Math.max(0, now - bucket.last);
+  if (elapsed > 0) {
+    bucket.tokens = Math.min(BLUEPRINT_BUCKET_CAP, bucket.tokens + (elapsed / 60000) * BLUEPRINT_BUCKET_PER_MIN);
+    bucket.last = now;
+  }
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
+
 export class Room {
   // name: 房间名（同名房间共享同一世界）；onSave: (room) => void 世界变更落盘回调（index.mjs 注入）
   // config: 服务器配置引用（读取 dropTtlMs 等），管理面板可实时改
@@ -371,6 +467,8 @@ export class Room {
     // B34-C：御风赛道（id → track）与逐人最佳成绩（"id#rev#byId" → {ms, byName}）
     this.races = new Map();
     this.raceRecords = new Map();
+    // Build 35 E：房间共享蓝图（id → 权威蓝图对象）。
+    this.blueprints = new Map();
   }
 
   // 取（或建）指定维度的账本桶
@@ -506,6 +604,16 @@ export class Room {
       this.raceRecords.set(rec[0], rec[1]);
     }
     while (this.raceRecords.size > RACE_RECORD_LIMIT) this.raceRecords.delete(this.raceRecords.keys().next().value);
+    // Build 35 E：蓝图恢复（旧快照无字段时为空表；每个坏项独立跳过）。
+    this.blueprints = new Map();
+    if (snap.blueprints !== undefined && !Array.isArray(snap.blueprints)) {
+      warnBadSnapshot(this.name, '蓝图表非数组');
+    }
+    for (const raw of (Array.isArray(snap.blueprints) ? snap.blueprints : [])) {
+      const blueprint = sanitizeStoredBlueprint(raw);
+      if (blueprint) this.blueprints.set(blueprint.id, blueprint);
+    }
+    while (this.blueprints.size > BLUEPRINT_LIMIT) this.blueprints.delete(this.blueprints.keys().next().value);
     this.hostId = null;
   }
 
@@ -690,6 +798,7 @@ export class Room {
     this.sendTo(player, MSG.ROOM_CREATED, { roomId: this.name });
     // restart=true 表示世界内换房到新房间：客户端需重启本地世界（新 seed）
     this.sendTo(player, MSG.WORLD_INFO, { seed: this.seed, mode: player.mode, time: this.time, hostId: this.hostId, room: this.name, restart: !!msg.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
+    this.sendTo(player, MSG.BLUEPRINTS, this.blueprintsPayload());
     this.broadcast(MSG.PLAYER_JOIN, this.joinInfo(player), player.id);
     this.save();
     console.log(`[+] ${player.name} 创建房间「${this.name}」seed=${this.seed} (host)`);
@@ -737,6 +846,7 @@ export class Room {
     this.sendTo(player, MSG.WAYMARKS, this.waymarksPayload());
     // B34-C：进房/重连下发赛道定义与成绩全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
     this.sendTo(player, MSG.RACES, this.racesPayload());
+    this.sendTo(player, MSG.BLUEPRINTS, this.blueprintsPayload());
     if (recovery) {
       this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
     } else {
@@ -960,6 +1070,8 @@ export class Room {
       case MSG.RACE_SAVE: this.onRaceSave(player, msg); break;
       case MSG.RACE_DELETE: this.onRaceDelete(player, msg); break;
       case MSG.RACE_RECORD: this.onRaceRecord(player, msg); break;
+      case MSG.BLUEPRINT_SAVE: this.onBlueprintSave(player, msg); break;
+      case MSG.BLUEPRINT_DELETE: this.onBlueprintDelete(player, msg); break;
       case MSG.PING:
         // 阶段10：回显 seq + 客户端时间戳 ts，供客户端直测网络 RTT
         this.sendTo(player, MSG.PONG, { seq: safeInt(msg.seq), ts: safeNum(msg.ts, 0) });
@@ -1070,6 +1182,49 @@ export class Room {
     const byName = cleanJournalText(player.name, WAYMARK_OWNER_MAX);
     this.waymarks.set(key, { stage, byName });
     this.broadcast(MSG.WAYMARK_UPDATE, { key, stage, byId: player.id, byName }); // 含提交者本人：各端顺序一致
+    this.saveSoon();
+  }
+
+  // Build 35 E：蓝图全量（进房/重连下发）。
+  blueprintsPayload() {
+    return { blueprints: [...this.blueprints.values()] };
+  }
+
+  onBlueprintSave(player, msg) {
+    const raw = msg && msg.blueprint;
+    const id = cleanBlueprintId(raw && raw.id);
+    const deny = (reason) => this.sendTo(player, MSG.BLUEPRINT_DENY, { id, reason });
+    if (!id) return deny('id');
+    const existing = this.blueprints.get(id);
+    const ownerId = String(player.id);
+    if (existing && existing.byId !== ownerId && !this.isOperator(player)) return deny('owner');
+    if (!existing && this.blueprints.size >= BLUEPRINT_LIMIT) return deny('limit');
+    if (existing && existing.rev >= 99999) return deny('revision');
+    if (!BLUEPRINT_DIMS.includes(player.dim)) return deny('dim');
+    if (!allowBlueprintWrite(player)) return deny('rate');
+    const result = sanitizeBlueprintContent(raw);
+    if (!result.blueprint) return deny(result.reason);
+    const blueprint = {
+      ...result.blueprint,
+      dim: player.dim,
+      rev: existing ? existing.rev + 1 : 1,
+      byId: existing ? existing.byId : ownerId,
+    };
+    this.blueprints.set(id, blueprint);
+    this.broadcast(MSG.BLUEPRINT_UPDATE, { blueprint });
+    this.saveSoon();
+  }
+
+  onBlueprintDelete(player, msg) {
+    const id = cleanBlueprintId(msg && msg.id);
+    const deny = (reason) => this.sendTo(player, MSG.BLUEPRINT_DENY, { id, reason });
+    if (!id) return deny('id');
+    const existing = this.blueprints.get(id);
+    if (!existing) return deny('missing');
+    if (existing.byId !== String(player.id) && !this.isOperator(player)) return deny('owner');
+    if (!allowBlueprintWrite(player)) return deny('rate');
+    this.blueprints.delete(id);
+    this.broadcast(MSG.BLUEPRINT_REMOVED, { id });
     this.saveSoon();
   }
 

@@ -220,7 +220,9 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 
 **Build 34 · New Horizon Part.1（已交付）**：计划见 `docs/archives/new-horizon-plan-b34.md`，三个里程碑共用一个 Build/Release。**A 四界游记与手绘地图**（`src/core/Journal.js` + `src/ui/JournalScreen.js` + N 键 + 房间共享标记协议）、**B 旧航路修复**（`src/core/Waymarks.js` + `src/ui/WaymarkScreen.js` + 航标芯方块 + `waymark_*` 房间权威协议）均保持 Build 33 提交；**C 御风竞速与自建赛道**（`src/core/RaceTracks.js` + `src/core/RaceRun.js` + `src/ui/RaceScreen.js` + `src/ui/RaceHud.js` + `race_post` 方块 + `race_*` 房间权威账本）在自身提交内把 `BUILD` 升到 34 并发布 `beta-build-34`。防回退见 `docs/agent-notes/journal.md`、`waymarks.md` 与 `races.md`。
 
-**Build 35–37 · New Horizon Part.2–4（已规划，未交付；2026-10-23 定）**：计划见 `docs/new-horizon-plan-b35-37.md`。**Build 35** = E 建筑蓝图与材料清单（先做，保持 Build 34）+ D 可动手解开的遗迹（后做，升 35 并发布）；**Build 36** = F 仓储与运输工程（F-1 漏斗与容器搬运、F-2 熔炉进出料，两次提交、升 36 一次发布）；**Build 37** = G 局部潮候与稀有景象（升 37 发布）。拆分判据：F 是唯一新增"服务器固定节拍权威物品流"的架构面且熔炉内容至今不在联机账本，必须独占一个 Build；D 的完整解法奖励发 E 的蓝图，故 E 与 D 同 Build 且 E 先做；G 只做可见现象与观测记录，红线是不改地形与水位。
+**Build 35 · E 建筑蓝图与材料清单（已交付，保持 Build 34，未发布）**：`src/core/Blueprints.js`（描述式模型 + RLE 编解码 + 区域捕获 + 材料统计）、`src/render/GhostPreview.js`（纯视觉体素预览 + 超限包围盒降级）、`src/ui/BlueprintScreen.js`（B 键界面：两次框选捕获、预览控制、材料三列、分享/删除）、`blueprint_*` 房间权威账本（服务器重算 `dim`/`byId`/`rev`，创建者或 op 可删改，20+10/min 令牌桶）。捕获只读已加载区块，未加载即拒不读成空气；空气进 RLE 但不渲染不计料。**发布仍与 D 同批**（本批不动 `src/version.js`）。防回退见 `docs/agent-notes/blueprints.md`。
+
+**Build 35–37 · New Horizon Part.2–4（E 已交付，D/F/G 未交付；2026-10-23 定）**：计划见 `docs/new-horizon-plan-b35-37.md`。**Build 35** = E 建筑蓝图与材料清单（已交付，保持 Build 34）+ D 可动手解开的遗迹（后做，升 35 并发布）；**Build 36** = F 仓储与运输工程（F-1 漏斗与容器搬运、F-2 熔炉进出料，两次提交、升 36 一次发布）；**Build 37** = G 局部潮候与稀有景象（升 37 发布）。拆分判据：F 是唯一新增"服务器固定节拍权威物品流"的架构面且熔炉内容至今不在联机账本，必须独占一个 Build；D 的完整解法奖励发 E 的蓝图，故 E 与 D 同 Build 且 E 先做；G 只做可见现象与观测记录，红线是不改地形与水位。
 
 ## 批次备忘索引（按需必读，防回退）
 
@@ -242,5 +244,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/journal.md` | B34 A 四界游记（探索揭图/遗迹发现/碑文回看/个人与房间共享标记） | 改动 Journal/JournalScreen/N 键、共享标记协议、房间账本或 `roomSnapshot` 时 |
 | `docs/agent-notes/waymarks.md` | B34 B 旧航路修复（三阶段航标修复/航标芯方块/下一座航路导航/房间权威进度） | 改动 Waymarks/WaymarkScreen、航标协议、`StructureManager.waymarkTowerAt`/`nextTowerFrom` 或修复流程时 |
 | `docs/agent-notes/races.md` | B34 C 御风竞速与自建赛道（标桩赛道定义/顺序检查点判定/个人与房间最佳/取消规则/房间账本） | 改动 RaceTracks/RaceRun/RaceScreen/RaceHud、`race_*` 协议、赛道账本、`PauseMenu`/`DeathScreen` 的取消收口时 |
+| `docs/agent-notes/blueprints.md` | B35 E 建筑蓝图与材料清单（描述式模型/RLE 规范形式/只读已加载区块的捕获/预览资源释放/材料统计口径/`blueprint_*` 房间账本与限速） | 改动 Blueprints/GhostPreview/BlueprintScreen、`blueprint_*` 协议、蓝图快照或材料统计时 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。
