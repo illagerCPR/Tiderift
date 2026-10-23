@@ -136,6 +136,9 @@ export class PauseMenu {
     }
     if (document.pointerLockElement) document.exitPointerLock();
     if (this.game.paused !== undefined) this.game.paused = true;
+    // Build 34 C：暂停即取消进行中的竞速尝试。必须在这里收口——暂停后 Game.update 不再被调用，
+    // 靠 _updateRace 的条件判断永远等不到这一帧（指针锁丢失/ESC 都汇集到 PauseMenu.show）
+    if (typeof this.game._cancelRace === 'function') this.game._cancelRace('暂停');
   }
 
   hide() {

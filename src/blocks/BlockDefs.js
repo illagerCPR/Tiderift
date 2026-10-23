@@ -2305,6 +2305,40 @@ reg('aether_waymark', {
   lore: ['旧航路的最后一枚眼睛。', '潮力重燃时，它会替云民指出下一座岛。'],
 }, { aether_waymark: aetherWaymarkTex(151) });
 
+function racePostTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const c = y >= 13 ? [62, 78, 86] : [28, 38, 44]; // 上：深色底（风旗与立柱的衬底）；下：石座
+      px[y * 16 + x] = rgb(c, 0.9 + hash2(x, y, seed) * 0.2);
+    }
+  }
+  // 石座上的青光带：一眼能看出是「赛道点」而不是普通柱子
+  for (let x = 2; x < 14; x++) setPx(px, x, 12, rgb([124, 228, 220]));
+  for (let x = 3; x < 13; x++) setPx(px, x, 15, rgb([70, 132, 138], 0.9 + hash2(x, 15, seed) * 0.2));
+  // 立柱
+  for (let y = 0; y < 13; y++) {
+    setPx(px, 6, y, rgb([176, 138, 96]));
+    setPx(px, 7, y, rgb([128, 96, 64]));
+  }
+  // 右向三角风旗
+  for (let x = 9; x < 16; x++) {
+    const d = x - 9;
+    const top = Math.round(2 + d * 0.5);
+    const bottom = Math.round(8 - d * 0.5);
+    for (let y = top; y <= bottom; y++) {
+      const near = y <= top + 1;
+      setPx(px, x, y, rgb(near ? [208, 250, 244] : [88, 198, 204], 0.92 + hash2(x, y, seed) * 0.14));
+    }
+  }
+  return pixelSvg(px);
+}
+
+reg('race_post', {
+  displayName: '御风标桩', light: 12, hardness: 2, tool: 'pickaxe',
+  lore: ['御风者系在岛沿的旗桩。', '连成一线，便是可以起风的赛道。'],
+}, { race_post: racePostTex(173) });
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

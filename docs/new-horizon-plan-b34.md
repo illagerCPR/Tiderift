@@ -1,6 +1,6 @@
 # Tiderift Beta Build 34 · New Horizon Part.1（新视野）实施计划
 
-> 2026-10-20 制定。来源：`docs/TODO.md` 的 `Idea-WV1-New-Horizon`。本文件是实施方案，当前未开始编码或发布。
+> 2026-10-20 制定。来源：`docs/TODO.md` 的 `Idea-WV1-New-Horizon`。**2026-10-23：A/B/C 三个里程碑已全部交付**（A/B 各自独立提交并保持 Build 33，C 在自身提交内升 Build 34 并发布 `beta-build-34`）。
 > 范围只含 A 四界游记与手绘地图、B 旧航路修复、C 御风竞速与自建赛道；D–G 仍是未排期候选。
 
 ## 一、交付节奏

@@ -398,6 +398,12 @@ export class InteractionController {
             return CLICK_CONSUMED;
           }
         }
+        // Build 34 C：御风标桩——右键打开赛道界面（建/改/开始都在界面里，不消耗方块）
+        if (targetDef && targetDef.name === 'race_post' && g.raceScreen && !g.player.spectator) {
+          g.raceScreen.show();
+          g.controls.mouseRight = false;
+          return CLICK_CONSUMED;
+        }
         // 红石交互：拉杆/按钮
         if (targetDef && g.redstone) {
           const interacted = g.redstone.onBlockInteract(hit.block.x, hit.block.y, hit.block.z, hit.id);

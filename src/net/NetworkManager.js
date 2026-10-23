@@ -11,6 +11,22 @@ import { parseServerMessage } from './netMessage.js';
 
 const RECONNECT_MAX = 8; // 断线自动重连最大尝试次数
 
+// B34-C：服务器拒绝原因 → 界面可见文案（键必须存在于语言包）
+const RACE_DENY_TEXT = {
+  id: '赛道编号非法',
+  dim: '赛道维度不匹配',
+  owner: '只有创建者或房间管理员可以修改',
+  limit: '赛道数量已达上限',
+  rate: '操作过于频繁',
+  track: '赛道定义不合法',
+  revision: '赛道已被编辑，成绩作废',
+  time: '成绩不合法',
+};
+
+function raceDenyText(reason) {
+  return t(RACE_DENY_TEXT[reason] || '未知原因');
+}
+
 export class NetworkManager {
   constructor(game) {
     this.game = game;
@@ -36,6 +52,11 @@ export class NetworkManager {
     this._pendingMobs = [];       // 世界就绪前的 mob_spawn 缓存
     // B34-A：世界就绪前的房间共享标记缓存（WORLD_INFO 之后才下发，此时本地世界可能正在重建）
     this._pendingJournalMarkers = null; // 全量（null = 未收到）
+    // B34-C：赛道与成绩缓存（世界未就绪时先存，onWorldStarted 统一冲掉）
+    this._pendingRaces = null;
+    this._pendingRaceUpdates = [];
+    this._pendingRaceRecords = [];
+    this._pendingRaceRemoves = [];
     this._pendingJournalAdds = [];      // 增量分享
     this._pendingJournalRemoves = [];   // 增量删除
     this._pendingOpen = [];       // 连接打开前的待发消息
@@ -165,6 +186,7 @@ export class NetworkManager {
     this._pendingJournalRemoves = [];
     this._clearJournalMarkers(); // B34-A：重连/恢复时旧房间共享标记随缓存一并清空
     this._clearWaymarks(); // B34-B：航标进度缓存同样随连接重置
+    this._clearRaces(); // B34-C：赛道/成绩缓存与进行中的计时尝试同样随连接重置
   }
 
   // B34-A：共享标记三态落到本地游记——世界未就绪时缓存，onWorldStarted 统一冲掉
@@ -235,6 +257,98 @@ export class NetworkManager {
   _clearWaymarks() {
     this._pendingWaymarks = null;
     this._pendingWaymarkUpdates = [];
+  }
+
+  // B34-C：赛道定义与成绩两态落到本地账本——世界未就绪时缓存，onWorldStarted 统一冲掉
+  _applyRaces(payload) {
+    const tracks = Array.isArray(payload && payload.tracks) ? payload.tracks : [];
+    const records = Array.isArray(payload && payload.records) ? payload.records : [];
+    if (this._ready && this.game && this.game.races) {
+      this.game.races.reset({ tracks, records });
+    } else {
+      this._pendingRaces = { tracks, records };
+      this._pendingRaceUpdates = [];
+      this._pendingRaceRecords = [];
+      this._pendingRaceRemoves = [];
+    }
+  }
+
+  // 赛道新增/编辑广播（含保存者本人）：本人收到回执才关草稿，避免被拒后界面假装已保存
+  _applyRaceUpdate(msg) {
+    const track = msg && msg.track;
+    if (!track || !track.id) return;
+    const mine = track.byId !== undefined && track.byId !== null && String(track.byId) === String(this.selfId);
+    if (!(this._ready && this.game && this.game.races)) {
+      this._pendingRaceUpdates.push(track);
+      return;
+    }
+    const game = this.game;
+    const saved = game.races.applyTrack(track);
+    if (!saved) return;
+    if (game.raceRun && game.raceRun.track.id === saved.id) game._cancelRace('赛道已编辑');
+    if (game.raceScreen) {
+      if (mine) game.raceScreen.onTrackSaved(saved, true);
+      else if (game.raceScreen.visible) game.raceScreen.render();
+    }
+    if (!mine && game.chatBox) {
+      game.chatBox.add(t('{who}保存了赛道「{name}」。', { who: saved.byName || t('其他玩家'), name: saved.name }), '#8fd0c4');
+    }
+  }
+
+  _applyRaceRemoved(msg) {
+    const id = msg && msg.id;
+    if (typeof id !== 'string' || !id) return;
+    if (this._ready && this.game && this.game.races) this.game._removeRaceTrack(id);
+    else this._pendingRaceRemoves.push(id);
+  }
+
+  _applyRaceRecordUpdate(msg) {
+    if (!msg || typeof msg.id !== 'string') return;
+    const entry = {
+      id: msg.id,
+      revision: Number(msg.revision) | 0,
+      byId: msg.byId === undefined || msg.byId === null ? '' : String(msg.byId),
+      byName: typeof msg.byName === 'string' ? msg.byName : '',
+      ms: Number(msg.ms) | 0,
+    };
+    if (this._ready && this.game && this.game.races) this.game._applyRaceRecord(entry);
+    else this._pendingRaceRecords.push(entry);
+  }
+
+  _applyRaceDeny(msg) {
+    const game = this.game;
+    if (!game) return;
+    if (game.raceScreen) game.raceScreen.onTrackDenied();
+    if (game.chatBox) {
+      game.chatBox.add(t('赛道操作未通过：{reason}。', { reason: raceDenyText(msg && msg.reason) }), '#fbb');
+    }
+  }
+
+  // 赛道缓存落地：世界重建期间到达的消息只入缓存，靠这里落盘。
+  // 除 onWorldStarted 外，Game.start 在创建完 races 后也会主动调一次——两级兜底，
+  // 避免「消息先于世界就绪/世界就绪后才到」两种时序里漏掉任意一侧。
+  flushPendingRaces() {
+    if (!this._pendingRaces || !this.game || !this.game.races) return false;
+    const snapshot = this._pendingRaces;
+    this._pendingRaces = null;
+    this.game.races.reset(snapshot);
+    for (const track of this._pendingRaceUpdates) this.game.races.applyTrack(track);
+    this._pendingRaceUpdates = [];
+    for (const id of this._pendingRaceRemoves) this.game._removeRaceTrack(id);
+    this._pendingRaceRemoves = [];
+    for (const rec of this._pendingRaceRecords) this.game._applyRaceRecord(rec);
+    this._pendingRaceRecords = [];
+    return true;
+  }
+
+  // 赛道缓存跟随房间生命周期——换房/断线/重连一律清空；进行中的计时尝试按规则取消
+  _clearRaces(reason = '断线') {
+    this._pendingRaces = null;
+    this._pendingRaceUpdates = [];
+    this._pendingRaceRecords = [];
+    this._pendingRaceRemoves = [];
+    const game = this.game;
+    if (game && game.raceRun && typeof game._cancelRace === 'function') game._cancelRace(reason);
   }
 
   _beginRecovery() {
@@ -313,6 +427,8 @@ export class NetworkManager {
       }
       this._pendingWaymarkUpdates = [];
     }
+    // B34-C：世界就绪后应用房间赛道与成绩（先全量覆盖，再按到达顺序冲掉增量/成绩/删除）
+    this.flushPendingRaces();
     // Idea-3C：世界就绪后应用进房下发的档案（换机/重连恢复）
     if (this._pendingProfile) {
       const prof = this._pendingProfile;
@@ -540,6 +656,23 @@ export class NetworkManager {
         break;
       case MSG.WAYMARK_DENY:
         this._applyWaymarkDeny(msg);
+        break;
+      case MSG.RACES:
+        // B34-C：进房/重连全量下发赛道与成绩（覆盖本地旧表，避免多端不一致）
+        this._applyRaces(msg);
+        break;
+      case MSG.RACE_UPDATE:
+        // B34-C：赛道新增/编辑广播（含保存者本人，保证各端顺序一致）
+        this._applyRaceUpdate(msg);
+        break;
+      case MSG.RACE_REMOVED:
+        this._applyRaceRemoved(msg);
+        break;
+      case MSG.RACE_RECORD_UPDATE:
+        this._applyRaceRecordUpdate(msg);
+        break;
+      case MSG.RACE_DENY:
+        this._applyRaceDeny(msg);
         break;
       case MSG.PLAYER_LEAVE:
         this._remoteDims.delete(msg.id);
@@ -964,6 +1097,33 @@ export class NetworkManager {
     this._send(MSG.WAYMARK_SUBMIT, { key: `${ax},${az}`, stage });
     return true;
   }
+  // B34-C：赛道保存/删除/成绩上报。未连接或未就绪一律返回 false，调用方据此不进入待回执态。
+  sendRaceSave(track) {
+    if (!this.connected || !this._ready || !track || typeof track !== 'object') return false;
+    if (typeof track.id !== 'string' || !track.id) return false;
+    if (!Array.isArray(track.points) || track.points.length < 3) return false;
+    this._send(MSG.RACE_SAVE, {
+      id: track.id,
+      name: track.name,
+      dim: track.dim,
+      mode: track.mode,
+      points: track.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+    });
+    return true;
+  }
+  sendRaceDelete(id) {
+    if (!this.connected || !this._ready || typeof id !== 'string' || !id) return false;
+    this._send(MSG.RACE_DELETE, { id });
+    return true;
+  }
+  sendRaceRecord(id, revision, ms) {
+    if (!this.connected || !this._ready) return false;
+    if (typeof id !== 'string' || !id) return false;
+    if (!Number.isInteger(revision) || !Number.isInteger(ms)) return false;
+    this._send(MSG.RACE_RECORD, { id, revision, ms });
+    return true;
+  }
+
   createRoom(seed, mode, room, biomeScale) { this._sendQueued(MSG.CREATE_ROOM, { seed, mode, room, biomeScale }); }
   joinRoom(room) { this._sendQueued(MSG.JOIN_ROOM, { room }); }
 
@@ -971,6 +1131,7 @@ export class NetworkManager {
   sendSwitchRoom(room) {
     this._clearJournalMarkers(); // B34-A：换房后旧房间的共享标记不再展示
     this._clearWaymarks(); // B34-B：换房后旧房间的航标进度不再展示
+    this._clearRaces('换房'); // B34-C：换房后旧房间的赛道不再展示，进行中的计时作废
     this._send(MSG.SWITCH_ROOM, { room });
   }
   sendWorldReset() { this._send(MSG.WORLD_RESET, {}); }
@@ -983,6 +1144,7 @@ export class NetworkManager {
     if (this.game) this.game.finaleInfo = null;
     this._clearJournalMarkers(); // B34-A：断开后不保留任何房间标记
     this._clearWaymarks(); // B34-B：断开后不保留航标进度缓存
+    this._clearRaces('断线'); // B34-C：断开后不保留赛道缓存，进行中的计时作废
     this._explicitClose = true; // 主动关闭：不触发自动重连
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.clearFluidBatch(); // B26：断开时丢弃未发流体批量（连接已失效，重连后由 host 全量收敛）

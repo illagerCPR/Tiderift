@@ -54,6 +54,7 @@ export class SaveSystem {
         redstone: game.redstone ? game.redstone.serialize() : null,
         journal: game.journal ? game.journal.serialize() : null,
         waymarks: game.waymarks ? game.waymarks.serialize() : null,
+        races: game.races ? game.races.serialize() : null, // 御风赛道与个人最佳（Build 34 C）
         sky: { time: game.sky.time || 0 }
       };
       localStorage.setItem(SAVE_PREFIX + slot, JSON.stringify(data));

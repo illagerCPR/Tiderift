@@ -77,6 +77,9 @@ export class DeathScreen {
     }
     if (document.pointerLockElement) document.exitPointerLock();
     if (this.game.paused !== undefined) this.game.paused = true;
+    // Build 34 C：死亡即取消进行中的竞速尝试。与本文件一样在 show 内收口——死亡屏会置 paused，
+    // 之后 Game.update 不再被调用，Game._updateRace 里的死亡判断等不到下一帧
+    if (typeof this.game._cancelRace === 'function') this.game._cancelRace('死亡');
   }
 
   hide() {

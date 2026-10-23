@@ -217,7 +217,7 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 
 后续候选（见 `docs/lan-multiplayer-design.md` §11 阶段 12）：Tab 玩家列表面板、远端盔甲外观同步、服务器性能面板（消息速率图表）、房间私聊/队伍分组。
 
-**Build 34 · New Horizon Part.1（进行中）**：计划见 `docs/new-horizon-plan-b34.md`，三个里程碑共用一个 Build/Release。**A 四界游记与手绘地图已交付**（`src/core/Journal.js` + `src/ui/JournalScreen.js` + N 键 + 房间共享标记协议）；**B 旧航路修复已交付**（`src/core/Waymarks.js` + `src/ui/WaymarkScreen.js` + 航标芯方块 + `waymark_*` 房间权威协议）；均保持 Build 33 不升版本。C 御风竞速未开始。防回退见 `docs/agent-notes/journal.md` 与 `docs/agent-notes/waymarks.md`。
+**Build 34 · New Horizon Part.1（已交付）**：计划见 `docs/new-horizon-plan-b34.md`，三个里程碑共用一个 Build/Release。**A 四界游记与手绘地图**（`src/core/Journal.js` + `src/ui/JournalScreen.js` + N 键 + 房间共享标记协议）、**B 旧航路修复**（`src/core/Waymarks.js` + `src/ui/WaymarkScreen.js` + 航标芯方块 + `waymark_*` 房间权威协议）均保持 Build 33 提交；**C 御风竞速与自建赛道**（`src/core/RaceTracks.js` + `src/core/RaceRun.js` + `src/ui/RaceScreen.js` + `src/ui/RaceHud.js` + `race_post` 方块 + `race_*` 房间权威账本）在自身提交内把 `BUILD` 升到 34 并发布 `beta-build-34`。防回退见 `docs/agent-notes/journal.md`、`waymarks.md` 与 `races.md`。
 
 ## 批次备忘索引（按需必读，防回退）
 
@@ -236,5 +236,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控、B30 轮 8 步 8 鼠标交互域迁出（InteractionController + 点击消费协议） | 菜单/视频设置、粒子、UI 界面、作弊面板、音频、更名引用面、创造物品栏、鼠标交互域（点击消费协议） |
 | `docs/agent-notes/journal.md` | B34 A 四界游记（探索揭图/遗迹发现/碑文回看/个人与房间共享标记） | 改动 Journal/JournalScreen/N 键、共享标记协议、房间账本或 `roomSnapshot` 时 |
 | `docs/agent-notes/waymarks.md` | B34 B 旧航路修复（三阶段航标修复/航标芯方块/下一座航路导航/房间权威进度） | 改动 Waymarks/WaymarkScreen、航标协议、`StructureManager.waymarkTowerAt`/`nextTowerFrom` 或修复流程时 |
+| `docs/agent-notes/races.md` | B34 C 御风竞速与自建赛道（标桩赛道定义/顺序检查点判定/个人与房间最佳/取消规则/房间账本） | 改动 RaceTracks/RaceRun/RaceScreen/RaceHud、`race_*` 协议、赛道账本、`PauseMenu`/`DeathScreen` 的取消收口时 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

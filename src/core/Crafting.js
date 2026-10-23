@@ -155,6 +155,9 @@ addShaped('iron_door', 3, [['iron_ingot','iron_ingot'],['iron_ingot','iron_ingot
 addShaped('oak_trapdoor', 2, [['oak_planks','oak_planks','oak_planks'],['oak_planks','oak_planks','oak_planks']]);
 addShaped('note_block', 1, [['oak_planks','oak_planks','oak_planks'],['oak_planks','redstone','oak_planks'],['oak_planks','oak_planks','oak_planks']]);
 
+// 御风赛道标桩（Build 34 C）：铁框 + 红石 + 罗盘，一次出 2 个（一条最短赛道要 3 个点）
+addShaped('race_post', 2, ['iron_ingot','redstone','iron_ingot', null,'compass', null, 'iron_ingot','redstone','iron_ingot']);
+
 // 还原配方
 addShaped('oak_log', 1, ['oak_planks','oak_planks','oak_planks','oak_planks']);
 

@@ -94,6 +94,16 @@ export const MSG = {
   WAYMARK_DENY: 'waymark_deny',     // S2C {key, stage, current, reason}：拒绝并回权威当前阶段（客户端据此不扣材料）
   WAYMARKS: 'waymarks',             // S2C {list:[[key, stage, byName], ...]}：进房/重连全量下发
 
+  // 御风赛道与成绩（B34-C：房间权威账本；赛道定义 + 逐人最佳成绩）
+  RACE_SAVE: 'race_save',                   // C2S {id, name, dim, mode, points:[{x,y,z}]}：新建/编辑（服务端分配修订号）
+  RACE_DELETE: 'race_delete',               // C2S {id}：删除（创建者或房间 operator）
+  RACE_RECORD: 'race_record',               // C2S {id, revision, ms}：上报完赛用时（服务端只留更快的一条）
+  RACES: 'races',                           // S2C {tracks:[...], records:[[key, ms, byName], ...]}：进房/重连全量下发
+  RACE_UPDATE: 'race_update',               // S2C {track}：赛道新增/编辑后广播（含保存者本人）
+  RACE_REMOVED: 'race_removed',             // S2C {id}：赛道删除广播
+  RACE_RECORD_UPDATE: 'race_record_update', // S2C {id, revision, byId, byName, ms}：成绩入账广播
+  RACE_DENY: 'race_deny',                   // S2C {id, reason}：保存/删除/上报被拒
+
   // 世界
   SET_TIME: 'set_time',
   TIME: 'time',

@@ -224,6 +224,116 @@ function allowWaymarkWrite(player, now = Date.now()) {
   return true;
 }
 
+
+// ---- B34-C：御风赛道与成绩（房间权威账本）----
+// 上限与客户端 src/core/RaceTracks.js 对齐：24 条赛道、3..12 个点位、单段 ≤512 格、24 字名称。
+// 服务器只保证「定义合法 + 成绩结构合法 + 每人每条赛道每修订只留最佳」，不验证真实运动轨迹，
+// 客户端界面也不得宣称服务器已验证轨迹（公开榜/幽灵回放/防作弊留待后续单独评审）。
+const RACE_LIMIT = 24;
+const RACE_NAME_MAX = 24;
+const RACE_POINT_MIN = 3;
+const RACE_POINT_MAX = 12;
+const RACE_COORD_MAX = 30000000;
+const RACE_SEGMENT_MAX = 512;
+const RACE_RECORD_LIMIT = 240;
+const RACE_MIN_MS = 1000;
+const RACE_MAX_MS = 3600000;
+const RACE_ID_RE = /^[a-z0-9]{6,20}$/;
+const RACE_MODES = ['glide', 'free'];
+const RACE_DIMS = ['overworld', 'nether', 'end', 'aether'];
+// 写入节流：令牌桶突发 20 次 + 每分钟补 10 次（建赛道/上报成绩都是低频操作，超限拒绝并回执）
+const RACE_BUCKET_CAP = 20;
+const RACE_BUCKET_PER_MIN = 10;
+
+export function cleanRaceId(raw) {
+  return (typeof raw === 'string' && RACE_ID_RE.test(raw)) ? raw : '';
+}
+
+function cleanRacePoint(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const x = Number(raw.x), y = Number(raw.y), z = Number(raw.z);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return null;
+  if (Math.abs(x) > RACE_COORD_MAX || Math.abs(z) > RACE_COORD_MAX) return null;
+  if (y < 0 || y > 255) return null;
+  return { x, y, z };
+}
+
+function cleanRaceMillis(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  const ms = Math.round(n);
+  return ms >= RACE_MIN_MS && ms <= RACE_MAX_MS ? ms : 0;
+}
+
+// 客户端提交 → 服务端权威赛道：维度/归属/修订号一律由服务器决定，点位做完整校验
+function sanitizeRaceTrack(raw, { dim, byId, byName, revision }) {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = cleanRaceId(raw.id);
+  if (!id) return null;
+  const name = cleanJournalText(raw.name, RACE_NAME_MAX);
+  if (!name) return null;
+  if (!RACE_DIMS.includes(dim)) return null;
+  if (!Array.isArray(raw.points)) return null;
+  if (raw.points.length < RACE_POINT_MIN || raw.points.length > RACE_POINT_MAX) return null;
+  const points = [];
+  for (const item of raw.points) {
+    const point = cleanRacePoint(item);
+    if (!point) return null;
+    if (points.length) {
+      const prev = points[points.length - 1];
+      if (prev.x === point.x && prev.y === point.y && prev.z === point.z) return null;
+      const dist = Math.hypot(point.x - prev.x, point.y - prev.y, point.z - prev.z);
+      if (dist > RACE_SEGMENT_MAX) return null;
+    }
+    points.push(point);
+  }
+  return {
+    id,
+    name,
+    dim,
+    mode: RACE_MODES.includes(raw.mode) ? raw.mode : RACE_MODES[0],
+    revision: Math.max(1, Math.min(99999, Number(revision) | 0)),
+    byId,
+    byName: cleanJournalText(byName, RACE_NAME_MAX),
+    points,
+  };
+}
+
+// 快照恢复：坏项跳过不崩服（旧快照无 races 字段 → 空表）
+function sanitizeStoredRaceTrack(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return sanitizeRaceTrack(raw, {
+    dim: raw.dim,
+    byId: (raw.byId === null || raw.byId === undefined) ? '' : String(raw.byId).slice(0, 40),
+    byName: raw.byName,
+    revision: raw.revision,
+  });
+}
+
+// 快照恢复成绩："id#rev#byId" → { ms, byName }
+function sanitizeStoredRaceRecord(entry) {
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  const key = typeof entry[0] === 'string' ? entry[0] : '';
+  const m = /^([a-z0-9]{6,20})#(\d{1,5})#([A-Za-z0-9_-]{0,40})$/.exec(key);
+  if (!m) return null;
+  const ms = cleanRaceMillis(entry[1]);
+  if (!ms) return null;
+  return [key, { ms, byName: cleanJournalText(entry[2], RACE_NAME_MAX) }];
+}
+
+function allowRaceWrite(player, now = Date.now()) {
+  let b = player._raceBucket;
+  if (!b) b = player._raceBucket = { tokens: RACE_BUCKET_CAP, last: now };
+  const elapsed = Math.max(0, now - b.last);
+  if (elapsed > 0) {
+    b.tokens = Math.min(RACE_BUCKET_CAP, b.tokens + (elapsed / 60000) * RACE_BUCKET_PER_MIN);
+    b.last = now;
+  }
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
 export class Room {
   // name: 房间名（同名房间共享同一世界）；onSave: (room) => void 世界变更落盘回调（index.mjs 注入）
   // config: 服务器配置引用（读取 dropTtlMs 等），管理面板可实时改
@@ -258,6 +368,9 @@ export class Room {
     this.nextJournalMarkerId = 1;
     // B34-B：天域旧航路航标进度（"ax,az" → {stage, byName}；服务器权威，落盘随房间快照）
     this.waymarks = new Map();
+    // B34-C：御风赛道（id → track）与逐人最佳成绩（"id#rev#byId" → {ms, byName}）
+    this.races = new Map();
+    this.raceRecords = new Map();
   }
 
   // 取（或建）指定维度的账本桶
@@ -369,6 +482,30 @@ export class Room {
       if (rec) this.waymarks.set(rec[0], rec[1]);
     }
     while (this.waymarks.size > WAYMARK_LIMIT) this.waymarks.delete(this.waymarks.keys().next().value);
+    // B34-C：赛道与成绩恢复（旧快照无该字段 → 空表；坏项跳过）
+    this.races = new Map();
+    if (snap.races !== undefined && !Array.isArray(snap.races)) {
+      warnBadSnapshot(this.name, '赛道表非数组');
+    }
+    for (const raw of (Array.isArray(snap.races) ? snap.races : [])) {
+      const track = sanitizeStoredRaceTrack(raw);
+      if (track) this.races.set(track.id, track);
+    }
+    while (this.races.size > RACE_LIMIT) this.races.delete(this.races.keys().next().value);
+    this.raceRecords = new Map();
+    if (snap.raceRecords !== undefined && !Array.isArray(snap.raceRecords)) {
+      warnBadSnapshot(this.name, '成绩表非数组');
+    }
+    for (const entry of (Array.isArray(snap.raceRecords) ? snap.raceRecords : [])) {
+      const rec = sanitizeStoredRaceRecord(entry);
+      if (!rec) continue;
+      const [recordTrackId, recordRevision] = rec[0].split('#');
+      const recordTrack = this.races.get(recordTrackId);
+      // 无主赛道、或修订号已过期的成绩不恢复：旧成绩不充当新赛道的纪录
+      if (!recordTrack || recordTrack.revision !== Number(recordRevision)) continue;
+      this.raceRecords.set(rec[0], rec[1]);
+    }
+    while (this.raceRecords.size > RACE_RECORD_LIMIT) this.raceRecords.delete(this.raceRecords.keys().next().value);
     this.hostId = null;
   }
 
@@ -598,6 +735,8 @@ export class Room {
     this.sendTo(player, MSG.JOURNAL_MARKERS, this.journalMarkersPayload());
     // B34-B：进房/重连下发航标进度全量（客户端在世界就绪前缓存，onWorldStarted 统一应用）
     this.sendTo(player, MSG.WAYMARKS, this.waymarksPayload());
+    // B34-C：进房/重连下发赛道定义与成绩全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
+    this.sendTo(player, MSG.RACES, this.racesPayload());
     if (recovery) {
       this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
     } else {
@@ -818,6 +957,9 @@ export class Room {
       case MSG.JOURNAL_MARKER: this.onJournalMarker(player, msg); break;
       case MSG.JOURNAL_MARKER_DELETE: this.onJournalMarkerDelete(player, msg); break;
       case MSG.WAYMARK_SUBMIT: this.onWaymarkSubmit(player, msg); break;
+      case MSG.RACE_SAVE: this.onRaceSave(player, msg); break;
+      case MSG.RACE_DELETE: this.onRaceDelete(player, msg); break;
+      case MSG.RACE_RECORD: this.onRaceRecord(player, msg); break;
       case MSG.PING:
         // 阶段10：回显 seq + 客户端时间戳 ts，供客户端直测网络 RTT
         this.sendTo(player, MSG.PONG, { seq: safeInt(msg.seq), ts: safeNum(msg.ts, 0) });
@@ -928,6 +1070,86 @@ export class Room {
     const byName = cleanJournalText(player.name, WAYMARK_OWNER_MAX);
     this.waymarks.set(key, { stage, byName });
     this.broadcast(MSG.WAYMARK_UPDATE, { key, stage, byId: player.id, byName }); // 含提交者本人：各端顺序一致
+    this.saveSoon();
+  }
+
+  // B34-C：赛道定义 + 成绩全量（进房/重连下发）
+  racesPayload() {
+    return {
+      tracks: [...this.races.values()].map((t) => ({ ...t, points: t.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) })),
+      records: [...this.raceRecords.entries()].map(([key, value]) => [key, value.ms, value.byName]),
+    };
+  }
+
+  // 删除赛道时清掉它的成绩：只清指定修订，或整条赛道（rev=null）
+  _purgeRaceRecords(id, revision = null) {
+    for (const key of [...this.raceRecords.keys()]) {
+      const parts = key.split('#');
+      if (parts[0] !== id) continue;
+      if (revision !== null && Number(parts[1]) !== revision) continue;
+      this.raceRecords.delete(key);
+    }
+  }
+
+  // 赛道保存：维度/归属/修订号由服务器决定；编辑只有创建者或房间 operator 可做。
+  // 编辑会递增修订号，并清掉旧修订的成绩——旧成绩不充当新赛道的纪录。
+  onRaceSave(player, msg) {
+    const id = cleanRaceId(msg && msg.id);
+    const deny = (reason) => this.sendTo(player, MSG.RACE_DENY, { id: id || '', reason });
+    if (!id) return deny('id');
+    if (!msg || msg.dim !== player.dim) return deny('dim'); // 客户端声明的维度必须与服务器记录一致
+    const existing = this.races.get(id);
+    if (existing && existing.byId !== player.id && !this.isOperator(player)) return deny('owner');
+    if (!existing && this.races.size >= RACE_LIMIT) return deny('limit');
+    if (!allowRaceWrite(player)) return deny('rate');
+    const revision = existing ? Math.min(99999, existing.revision + 1) : 1;
+    const track = sanitizeRaceTrack(msg, {
+      dim: player.dim,
+      byId: existing ? existing.byId : player.id,
+      byName: existing ? existing.byName : player.name,
+      revision,
+    });
+    if (!track) return deny('track');
+    this.races.set(track.id, track);
+    if (existing) this._purgeRaceRecords(track.id, existing.revision);
+    this.broadcast(MSG.RACE_UPDATE, { track }); // 含保存者本人：各端顺序一致
+    this.saveSoon();
+  }
+
+  onRaceDelete(player, msg) {
+    const id = cleanRaceId(msg && msg.id);
+    if (!id) return;
+    const track = this.races.get(id);
+    if (!track) return;
+    if (track.byId !== player.id && !this.isOperator(player)) {
+      this.sendTo(player, MSG.RACE_DENY, { id, reason: 'owner' });
+      return;
+    }
+    this.races.delete(id);
+    this._purgeRaceRecords(id); // 赛道没了，成绩一并清掉
+    this.broadcast(MSG.RACE_REMOVED, { id });
+    this.saveSoon();
+  }
+
+  // 成绩上报：只接受当前修订与本人所在维度；每人每条赛道每修订只留更快的一条。
+  // 边界：服务器不验证真实运动轨迹（客户端本地计时），界面不得宣称已验证。
+  onRaceRecord(player, msg) {
+    const id = cleanRaceId(msg && msg.id);
+    const deny = (reason) => this.sendTo(player, MSG.RACE_DENY, { id: id || '', reason });
+    const track = id ? this.races.get(id) : null;
+    if (!track) return deny('track');
+    if (safeInt(msg.revision) !== track.revision) return deny('revision'); // 编辑后的旧修订成绩不接受
+    if (track.dim !== player.dim) return deny('dim');
+    const ms = cleanRaceMillis(msg.ms);
+    if (!ms) return deny('time');
+    if (!allowRaceWrite(player)) return deny('rate');
+    const key = `${id}#${track.revision}#${player.id}`;
+    const prev = this.raceRecords.get(key);
+    if (prev && prev.ms <= ms) return; // 不是更快：静默忽略（不重复广播）
+    if (!prev && this.raceRecords.size >= RACE_RECORD_LIMIT) return deny('limit');
+    const byName = cleanJournalText(player.name, RACE_NAME_MAX);
+    this.raceRecords.set(key, { ms, byName });
+    this.broadcast(MSG.RACE_RECORD_UPDATE, { id, revision: track.revision, byId: player.id, byName, ms });
     this.saveSoon();
   }
 

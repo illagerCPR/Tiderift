@@ -33,6 +33,8 @@ import { BeaconScreen } from '../ui/BeaconScreen.js';
 import { SteleScreen } from '../ui/SteleScreen.js';
 import { JournalScreen } from '../ui/JournalScreen.js';
 import { WaymarkScreen } from '../ui/WaymarkScreen.js';
+import { RaceScreen } from '../ui/RaceScreen.js';
+import { RaceHud } from '../ui/RaceHud.js';
 import { t } from '../i18n/index.js';
 import { tName } from '../i18n/name.js';
 import { getDisplayName } from '../ui/itemName.js';
@@ -57,6 +59,8 @@ import { RedstoneSystem } from '../core/RedstoneSystem.js';
 import { SaveSystem } from '../core/SaveSystem.js';
 import { Journal } from '../core/Journal.js';
 import { Waymarks, waymarkKey, waymarkStageDef } from '../core/Waymarks.js';
+import { RaceTracks, trackLength } from '../core/RaceTracks.js';
+import { RaceRun, formatRaceTime } from '../core/RaceRun.js';
 import { getDimension, setAetherDuskProfile } from '../core/dimensions.js';
 import { DEFAULT_BIOME_SCALE, safeBiomeScale } from '../world/biomes.js';
 import { FirstPersonHand } from '../render/FirstPersonHand.js';
@@ -108,6 +112,12 @@ export class Game {
     this._journalDiscoveryAt = 0; // 结构发现节流时间戳
     this.waymarks = null;         // 天域旧航路航标进度（新建型：start 创建 / _disposeWorld 释放）
     this.waymarkScreen = null;    // 旧航标界面（新建型：_disposeWorld 摘 DOM 与监听器）
+    this.races = null;            // 御风赛道与个人成绩（新建型：start 创建 / _disposeWorld 释放）
+    this.raceScreen = null;       // 御风赛道界面（新建型：_disposeWorld 摘 DOM 与监听器）
+    this.raceHud = null;          // 竞速计时条（新建型：挂 body，_disposeWorld 移除）
+    this.raceRun = null;          // 当前竞速尝试（RaceRun；无尝试时 null）
+    this._raceHudAt = 0;          // 计时条刷新节流
+    this._raceCheckAt = 0;        // 赛道完整性巡检节流
     this._waymarkNavCache = null; // 下一座航路查询缓存（随世界重建清空）
     this.tradeScreen = null;
     this.pauseMenu = null;
@@ -207,7 +217,8 @@ export class Game {
       (this.beaconScreen && this.beaconScreen.visible) ||
       (this.steleScreen && this.steleScreen.visible) ||
       (this.journalScreen && this.journalScreen.visible) ||
-      (this.waymarkScreen && this.waymarkScreen.visible));
+      (this.waymarkScreen && this.waymarkScreen.visible) ||
+      (this.raceScreen && this.raceScreen.visible));
   }
 
   // 清理旧世界所有 Three.js 资源和 UI DOM，防止切换存档时残留"幽灵方块"等
@@ -281,6 +292,13 @@ export class Game {
     if (this.waymarkScreen) { this.waymarkScreen.dispose(); this.waymarkScreen = null; }
     this.waymarks = null;
     this._waymarkNavCache = null;
+    // 御风赛道（新建型：界面/计时条摘 DOM，赛道与成绩随世界清空——换维由 _composeSwitchLoadData 透传）
+    if (this.raceScreen) { this.raceScreen.dispose(); this.raceScreen = null; }
+    if (this.raceHud) { this.raceHud.dispose(); this.raceHud = null; }
+    this.races = null;
+    this.raceRun = null;
+    this._raceHudAt = 0;
+    this._raceCheckAt = 0;
     if (this.furnaceScreen) { this.furnaceScreen.dispose(); this.furnaceScreen = null; }
     if (this.recipeViewer) { this.recipeViewer.dispose(); this.recipeViewer = null; }
     if (this.tradeScreen) { this.tradeScreen.dispose(); this.tradeScreen = null; }
@@ -568,6 +586,17 @@ export class Game {
     this.waymarks.reset(loadData ? loadData.waymarks : null);
     this._waymarkNavCache = new Map();
     this.waymarkScreen = new WaymarkScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
+    // 御风赛道（Build 34 C）：数据先于界面创建（RaceScreen.render 直接读 this.races）。
+    // 旧档/旧联机档案缺 races 字段时 reset(null) 回落为空赛道表；换维/换档一律重新开始，竞速尝试不跨世界。
+    this.races = new RaceTracks(this);
+    this.races.reset(loadData ? loadData.races : null);
+    this.raceRun = null;
+    this._raceHudAt = 0;
+    this._raceCheckAt = 0;
+    this.raceHud = new RaceHud(this); // 新建型：挂 body，_disposeWorld 移除
+    this.raceScreen = new RaceScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
+    // 联机：世界重建期间到达的赛道消息只进了 NetworkManager 缓存，这里主动兜底落地一次
+    if (this.net && typeof this.net.flushPendingRaces === 'function') this.net.flushPendingRaces();
     this.inventoryScreen = new InventoryScreen(this.inventory, this.player, this);
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
@@ -731,6 +760,16 @@ export class Game {
         if (this.journalScreen && this.journalScreen.visible) { this.journalScreen.hide(); return; }
         if (this._anyInputBlockingUI()) return; // 容器/石碑以外的界面开着时不叠加
         if (this.journalScreen) this.journalScreen.show();
+      }
+      // G 键：御风赛道（建赛道 / 开始 / 编辑 / 删除 / 看成绩）。互斥规则与 N 键同款。
+      if (e.code === 'KeyG') {
+        if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
+        if (this.pauseMenu && this.pauseMenu.visible) return;
+        if (this.chatBox && this.chatBox.input) return;
+        if (this.commandPanel && this.commandPanel.visible) return;
+        if (this.raceScreen && this.raceScreen.visible) { this.raceScreen.hide(); return; }
+        if (this._anyInputBlockingUI()) return;
+        if (this.raceScreen) this.raceScreen.show();
       }
       // R/U/A：配方查询键。浮层内作用于悬浮/当前物品；
       // 背包/箱子/熔炉界面内悬浮物品按 R 查配方、按 U 查用途
@@ -964,6 +1003,267 @@ export class Game {
     return true;
   }
 
+  // ── 御风竞速与自建赛道（Build 34 C）─────────────────────────────────
+  // 赛道点位只认「御风标桩」方块，且以方块账本为权威：区块未加载也能判定，
+  // 被拆掉的桩在账本里记为 0（World.setBlock 覆盖写入），因此不会出现幽灵点位。
+  _racePosts(maxRadius = 512) {
+    const world = this.world;
+    if (!world || !world.modifiedBlocks) return [];
+    const id = BlockRegistry.getId('race_post');
+    if (id === undefined || id === null) return [];
+    const pos = (this.player && this.player.position) || { x: 0, y: 64, z: 0 };
+    const out = [];
+    for (const [key, blockId] of world.modifiedBlocks) {
+      if (blockId !== id) continue;
+      const parts = key.split(',');
+      if (parts.length !== 3) continue;
+      const x = Number(parts[0]);
+      const y = Number(parts[1]);
+      const z = Number(parts[2]);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+      const dist = Math.hypot(x - pos.x, y - pos.y, z - pos.z);
+      if (dist > maxRadius) continue;
+      out.push({ x, y, z, dist: Math.round(dist) });
+    }
+    out.sort((a, b) => a.dist - b.dist || a.x - b.x || a.z - b.z);
+    return out.slice(0, 80); // 界面一次最多列 80 根，避免超长列表拖慢渲染
+  }
+
+  _racePostAt(point) {
+    const world = this.world;
+    if (!world || !world.modifiedBlocks || !point) return false;
+    const id = BlockRegistry.getId('race_post');
+    if (id === undefined || id === null) return false;
+    return world.modifiedBlocks.get(`${point.x},${point.y},${point.z}`) === id;
+  }
+
+  // 赛道完整性：点位必须仍是真实的御风标桩，且必须落在当前维度（跨维点位视为失效）
+  _raceTrackValidity(track) {
+    if (!track || !Array.isArray(track.points) || !track.points.length) return { ok: false, badIndex: 0 };
+    if (!this.world || this.world.dimension !== track.dim) return { ok: false, badIndex: 0 };
+    for (let i = 0; i < track.points.length; i++) {
+      if (!this._racePostAt(track.points[i])) return { ok: false, badIndex: i };
+    }
+    return { ok: true, badIndex: -1 };
+  }
+
+  _raceTrackLength(track) {
+    return trackLength(track);
+  }
+
+  // 联机以 selfId 区分「我的最佳」与「房间最佳」；单机 who 恒为空串
+  _raceSelfKey() {
+    const net = this.networkMode ? this.net : null;
+    return net && net.selfId ? String(net.selfId) : '';
+  }
+
+  _raceBest(track) {
+    if (!this.races || !track) return null;
+    return this.races.best(track.id, track.revision, this._raceSelfKey());
+  }
+
+  _raceRoomBest(track) {
+    if (!this.races || !track) return null;
+    return this.races.roomBest(track.id, track.revision, this._raceSelfKey());
+  }
+
+  // 创造/旁观/终局纹章御风：照常计时，但不入最佳成绩（御风赛道与自由赛道不混榜）
+  _raceAssisted(track) {
+    const p = this.player;
+    if (!p) return false;
+    if (p.gamemode === 'creative' || p.gamemode === 'spectator') return true;
+    if (track && track.mode === 'glide' && p.emblemWorn) return true;
+    return false;
+  }
+
+  // 单机落库（联机走服务器回执 → NetworkManager 调 applyTrack + setRecord）
+  _saveRaceTrack(track) {
+    if (!this.races || !track) return null;
+    const existing = this.races.get(track.id);
+    const revision = existing ? Math.min(99999, existing.revision + 1) : 1;
+    const saved = this.races.applyTrack({ ...track, revision });
+    if (!saved) return null;
+    if (this.raceRun && this.raceRun.track.id === saved.id) this._cancelRace('赛道已编辑');
+    this._raceAddJournalMarker(saved);
+    if (this.chatBox) this.chatBox.add(t('赛道「{name}」已保存（修订 {rev}）。', { name: saved.name, rev: saved.revision }), '#8fd0c4');
+    if (this.raceScreen && this.raceScreen.visible) this.raceScreen.render();
+    return saved;
+  }
+
+  _removeRaceTrack(id) {
+    if (!this.races) return false;
+    const existing = this.races.get(id);
+    if (!this.races.remove(id)) return false;
+    if (this.raceRun && this.raceRun.track.id === id) this._cancelRace('赛道已删除');
+    if (existing && this.chatBox) this.chatBox.add(t('赛道「{name}」已删除。', { name: existing.name }), '#8fd0c4');
+    if (this.raceScreen && this.raceScreen.visible) this.raceScreen.render();
+    return true;
+  }
+
+  // 赛道起点同时登记为游记个人标记（A 轮标记体系可直接管理/删除）
+  _raceAddJournalMarker(track) {
+    const journal = this.journal;
+    if (!journal || !track || !track.points.length) return;
+    const start = track.points[0];
+    const exists = (journal.markers || []).some((m) => m.dim === track.dim
+      && m.label === track.name && Math.abs(m.x - start.x) <= 4 && Math.abs(m.z - start.z) <= 4);
+    if (exists) return;
+    journal.addMarker(track.dim, start.x, start.y, start.z, track.name);
+  }
+
+  // 报名：先落 armed，真正穿过起点才计时（「必须从起点主动开始」）
+  _armRaceTrack(track) {
+    if (!track || !this.races || !this.player) return false;
+    if (!this.world || this.world.dimension !== track.dim) return false;
+    const valid = this._raceTrackValidity(track);
+    if (!valid.ok) {
+      if (this.chatBox) this.chatBox.add(t('赛道有御风标桩已缺失，请编辑后重新保存。'), '#fbb');
+      return false;
+    }
+    this.raceRun = new RaceRun(track, { now: performance.now(), pos: this.player.position, assisted: this._raceAssisted(track) });
+    this._raceHudAt = 0;
+    this._raceCheckAt = 0;
+    this._raceHudClearAt = 0;
+    if (this.chatBox) this.chatBox.add(t('已报名「{name}」：穿过起点开始计时。', { name: track.name }), '#8fd0c4');
+    return true;
+  }
+
+  _cancelRace(reason) {
+    const run = this.raceRun;
+    this.raceRun = null;
+    this._raceLastFinish = null;
+    if (!run) return false;
+    run.cancel(reason);
+    if (this.raceHud) this.raceHud.setState('cancelled', { reason });
+    this._raceHudClearAt = performance.now() + 2600;
+    return true;
+  }
+
+  _raceDirLabel(dx, dz) {
+    const ew = dx > 0 ? t('东') : (dx < 0 ? t('西') : '');
+    const ns = dz < 0 ? t('北') : (dz > 0 ? t('南') : '');
+    return (ew + ns) || t('原地');
+  }
+
+  // 竞速主循环：取消条件优先，其次推进判定、刷新计时条、给下一目标打点
+  _updateRace(dt) {
+    const now = performance.now();
+    const hud = this.raceHud;
+    const run = this.raceRun;
+    if (!run) {
+      if (this._raceHudClearAt && now >= this._raceHudClearAt) {
+        this._raceHudClearAt = 0;
+        if (hud) hud.hide();
+      }
+      return;
+    }
+    if (this.paused) { this._cancelRace('暂停'); return; }
+    if (this.spectating || (this.deathScreen && this.deathScreen.visible) || (this.player && this.player.health <= 0)) {
+      this._cancelRace('死亡');
+      return;
+    }
+    if (!this.world || this.world.dimension !== run.track.dim) { this._cancelRace('换维'); return; }
+    // 每秒巡检一次赛道完整性：标桩被拆 → 本次尝试作废（不静默保留不可完成的跑道）
+    if (now >= this._raceCheckAt) {
+      this._raceCheckAt = now + 1000;
+      if (!this._raceTrackValidity(run.track).ok) { this._cancelRace('标桩已缺失'); return; }
+    }
+    const pos = this.player.position;
+    const events = run.update(now, pos);
+    for (const ev of events) {
+      if (ev.type === 'start') {
+        if (this.chatBox) this.chatBox.add(t('已过起点，计时开始。'), '#8fd0c4');
+      } else if (ev.type === 'checkpoint') {
+        audio.pop();
+        if (this.chatBox) this.chatBox.add(t('检查点 {i}/{n}', { i: run.checkpointsPassed, n: run.checkpointTotal }), '#8fd0c4');
+      } else if (ev.type === 'finish') {
+        this._finishRace(run);
+        audio.pop();
+        return;
+      } else if (ev.type === 'timeout') {
+        this._cancelRace('出发超时');
+        return;
+      }
+    }
+    // 下一目标打点（每 0.5 秒一簇，96 格内才发射，离开即停止——不堆常驻特效）
+    if (run.state === 'running' && this.particles && now >= (this._raceNoticeAt || 0)) {
+      this._raceNoticeAt = now + 500;
+      const target = run.nextPoint();
+      const near = Math.hypot(target.x - pos.x, target.y - pos.y, target.z - pos.z) <= 96;
+      if (near) {
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          this.particles.spawn(
+            target.x + 0.5 + Math.cos(a) * 1.7, target.y + 0.5 + (i % 3) * 0.5, target.z + 0.5 + Math.sin(a) * 1.7,
+            Math.cos(a) * 0.3, 0.75, Math.sin(a) * 0.3, 0.55, 0.95, 0.92, 1.1, -0.25, 0.9,
+          );
+        }
+      }
+    }
+    // 计时条节流刷新（66ms ≈ 15Hz：毫秒位看得清，又不每帧重建 DOM）
+    if (hud && now >= this._raceHudAt) {
+      this._raceHudAt = now + 66;
+      const target = run.state === 'armed' ? run.track.points[0] : run.nextPoint();
+      const dx = target.x - pos.x;
+      const dz = target.z - pos.z;
+      const dist = Math.round(Math.hypot(dx, target.y - pos.y, dz));
+      const dir = this._raceDirLabel(dx, dz);
+      if (run.state === 'armed') {
+        hud.setState('armed', { name: run.track.name, dist, dir });
+      } else {
+        hud.setState('running', {
+          name: run.track.name, elapsed: run.elapsedMs,
+          passed: run.checkpointsPassed, total: run.checkpointTotal, dist, dir,
+        });
+      }
+    }
+  }
+
+  // 完赛：单机直接记个人最佳，联机上报服务器（只收清洗后的成绩，不宣称验证轨迹）
+  _finishRace(run) {
+    const track = run.track;
+    const elapsed = run.elapsedMs;
+    const assisted = run.assisted || this._raceAssisted(track);
+    this.raceRun = null;
+    let isBest = false;
+    if (!assisted) {
+      const net = this.networkMode ? this.net : null;
+      if (net && typeof net.sendRaceRecord === 'function') {
+        const prev = this._raceBest(track);
+        isBest = prev === null || elapsed < prev;
+        // 成绩按整数毫秒上报（服务器只接受整数；计时本身是浮点）
+        net.sendRaceRecord(track.id, track.revision, Math.round(elapsed));
+      } else if (this.races) {
+        isBest = !!this.races.submitBest(track.id, track.revision, elapsed, '', '').isBest;
+      }
+    }
+    this._raceLastFinish = { trackId: track.id, revision: track.revision, elapsed, assisted, isBest };
+    if (this.raceHud) {
+      this.raceHud.setState('finished', { elapsed, best: this._raceBest(track), isBest, assisted });
+    }
+    this._raceHudClearAt = performance.now() + 6000;
+    if (this.chatBox) this.chatBox.add(t('「{name}」完赛：{t}', { name: track.name, t: formatRaceTime(elapsed) }), '#ffe9a8');
+  }
+
+  // 联机成绩回执：更新本地成绩表，并在结算条仍显示时刷新「个人最佳」
+  _applyRaceRecord(msg) {
+    if (!this.races || !msg || !msg.id) return;
+    this.races.setRecord(msg.id, msg.revision, msg.byId || '', msg.ms, msg.byName || '');
+    if (this._raceLastFinish && this._raceLastFinish.trackId === msg.id
+      && this._raceLastFinish.revision === (msg.revision | 0) && this.raceHud) {
+      const track = this.races.get(msg.id);
+      if (track) {
+        this.raceHud.setState('finished', {
+          elapsed: this._raceLastFinish.elapsed,
+          best: this._raceBest(track),
+          isBest: this._raceLastFinish.isBest,
+          assisted: this._raceLastFinish.assisted,
+        });
+      }
+    }
+    if (this.raceScreen && this.raceScreen.visible) this.raceScreen.render();
+  }
+
   // 御风斗篷穿戴检测（批次 C）：胸甲槽 = armor[1]
   _hasGaleCloak() {
     return this.glideWind.hasGaleCloak();
@@ -1024,6 +1324,8 @@ export class Game {
     this._updateColossusAura(dt);
     // 鞘翅滑翔折叠判定（水中/落地等环境变化要在移动分支前收口，gliding 不得跨分支残留）
     this._updateGlideFold();
+    // 御风竞速：推进计时与顺序检查点判定（取消条件也在此收口）
+    this._updateRace(dt);
 
     // 受击无敌帧衰减
     if (this.player.invulnerable > 0) {
@@ -2312,6 +2614,7 @@ export class Game {
       redstone: this.redstone ? this.redstone.serialize() : null,
       journal: this.journal ? this.journal.serialize() : null, // 游记跨维透传（换维重建不丢探索记录）
       waymarks: this.waymarks ? this.waymarks.serialize() : null, // 航标进度跨维透传（换维重建不丢）
+      races: this.races ? this.races.serialize() : null, // 御风赛道与成绩跨维透传（换维重建不丢；进行中的尝试按规则取消）
       sky: { time: this.sky ? this.sky.time : 0.35 }
     };
   }
