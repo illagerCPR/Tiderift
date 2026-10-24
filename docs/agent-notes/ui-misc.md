@@ -188,3 +188,14 @@
 - 钉子：Q25 由「蓄力被吞」改写为「进入蓄力」（`_bowCharging=true` 且 `mouseRight` 保持 true）；新增 Q25a（同场景手持 cobblestone → 放置邻格零写入、库存不减、不消费，**正对照**）、Q25b（末影之眼 → 消耗 1 颗、生成 eyeFlight）、Q25c（手持 stick 无专属分支 → 末尾兜底置位消费）。反证：删守卫 → Q25a 红；守卫放回原位 → Q25/Q25b/Q25c 红；守卫出口改为置位消费 → Q25a 红（每次 md5 逐字节还原）。
 - 行为变更（必然推论，已钉死）：手持无专属分支的杂物在重叠格右键，旧「静默不消费」→ 新「末尾兜底置位消费 `mouseRight`」。
 - 文件头注释的「已知既存缺陷 H1」段已改写为「已修复」口径；`tests/game-behavior.mjs` 断言 187 → 190。
+
+### B38 L1 · Tab 玩家列表面板（PlayerListScreen）
+
+- **形态**：`src/ui/PlayerListScreen.js`，**按住 Tab 显示、松开隐藏**（原版语义，不是 toggle）。DOM **惰性创建**——`_ensureDom()` 在首次 `show()` 时才建节点，单人模式全程零节点（`playerListScreen` 对象存在但 `el` 为 null）。
+- **键位接在 keydown 最前段**：`Game.setupKeyBindings` 在 editable/输入法合成守卫之后立刻处理 `e.code === 'Tab'`——`running` 时**一律** `preventDefault()`（否则浏览器把焦点移出渲染画布），随后 `_showPlayerList()` 并 `return`；`keyup` 收起。与计划的一处偏差：计划写「仅联机时 preventDefault」，实测单机同样要吞键，否则单机按 Tab 焦点跑掉（`_showPlayerList` 此时返回 false，面板不出现）。
+- **失焦兜底**：面板自己监听 `window blur` 收起——按住 Tab 时切窗口，`keyup` 永远收不到，不兜底会卡在显示态。
+- **门控**：`show()` 置 `controls.enabled=false` 并清 `mouseLeft/mouseRight`（与背包/箱子同款）；`hide()` 只在「没有其它阻断界面」时才恢复（按住 Tab 期间可能又用 E 打开了背包，那种情况必须保持输入关闭）。面板同时进 `Game._anyInputBlockingUI()`，鼠标链与指针锁自动暂停都会先问它 → 列表可见时点左键不挖方块。
+- **布局**：同维度在前、其他维度在后（各带小标题），本端恒排第一，其余按 `localeCompare` 稳定排序（避免 250ms 节流重绘时行序来回跳）；维度名走 `getDimension(id).name` + `t()`，延迟未知显示 `t('未测得')`。刷新由 `Game.update` 调 `tick(now)`，面板内部 250ms 节流。
+- **清理**：新建型子系统（`Game.start` 创建 / `_disposeWorld` 里 `dispose()` 摘 DOM 与 blur 监听器）。
+- **验证陷阱**：agent-browser 的 `press Tab` 是按下即抬起，看不到面板；要 `eval` 派发 `keydown`（不带 `keyup`）→ 读 `game.playerListScreen.el.textContent` → 最后补一条 `keyup`。两个 WebGL 实例并行时 CDP 会 `Runtime.evaluate` 超时，验完一个会话就 `close` 掉再开下一个。
+

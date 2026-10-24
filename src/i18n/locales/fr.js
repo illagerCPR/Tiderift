@@ -675,4 +675,12 @@ export const fr = {
   "潮候现象: {v}": "Marées : {v}",
   "四界潮候全部观测在案后才会落到手里的铭牌。": "Une plaque qui ne vous parvient qu'une fois les quatre marées consignées.",
   "青、橙、白、绿四道线，各记着一次过境。": "Quatre lignes — turquoise, orange, blanche, verte — chacune gardant un passage.",
+
+  // ── B38 L1 Tab 玩家列表 ──
+  "玩家列表": "Joueurs",
+  "同维度": "Même dimension",
+  "其他维度": "Autres dimensions",
+  "未测得": "n/d",
+  "(你)": "(vous)",
+  "在线 {n} 人": "{n} en ligne",
 };

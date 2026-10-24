@@ -1,7 +1,7 @@
 # Tiderift Beta Build 38 · 局域网打磨三项 实施计划
 
-> 状态：**在办（未开工）**。规划日期 2026-10-23。
-> 交付形态：本文件只是计划，不含代码改动（用户明确要求本轮只规划）。
+> 状态：**在办**。规划日期 2026-10-23；L1 已交付（见 §4.5），L2/L3 待做。
+> 交付形态：计划文件本身不含代码；实现按里程碑推进并各自留交付记录。
 > 上游候选来源：`docs/lan-multiplayer-design.md` §11「阶段 12 及以后」。
 
 ## 一、范围
@@ -59,6 +59,13 @@
 - 单人模式按 Tab 无任何变化、不报错。
 - 列表可见期间点左键不会挖方块（`_anyInputBlockingUI` 生效）。
 - `node --check` + `npm test` 全绿；`i18n-parity` 覆盖新键。
+
+### 4.5 交付记录（2026-10-23）
+
+- 状态：**已交付**（防回退备忘见 `docs/agent-notes/multiplayer.md` 与 `ui-misc.md` 的 B38 L1 节）。
+- 与计划的差异（均实测验证后保留）：① **名单与 `RemotePlayer` 解耦**——异维度玩家没有远端实体，列表数据源改为 `NetworkManager._roster` + `playerRoster()`，`RemotePlayer.setRtt` 只保留实体侧用途；② `preventDefault()` **单机也生效**（计划只写联机），否则单机按 Tab 焦点会跑出渲染画布；③ `rtt` 只在取整值变化时随 `player_state` 附带，20Hz 下不白占带宽。
+- 回归：`server/test-mp.mjs` 补 2 条断言（同房间透传 / 更晚加入者的回放）；`npm test` 全绿。
+- 浏览器实测：双会话同房间——面板显示「同维度」两行、ping 与对方自报值一致、跨维度分组与「(你)」标记正常；面板可见期间 `controls.enabled=false` 且 `_anyInputBlockingUI()` 为真，松开后恢复；单机按 Tab 无面板、无 DOM、焦点不跑。
 
 ## 五、L2 · 服务器性能面板
 

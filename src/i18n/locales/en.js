@@ -675,4 +675,12 @@ export const en = {
   "潮候现象: {v}": "Tides: {v}",
   "四界潮候全部观测在案后才会落到手里的铭牌。": "A plaque that only reaches your hand once all four tides are on record.",
   "青、橙、白、绿四道线，各记着一次过境。": "Four lines — teal, orange, white, green — each holding one passage.",
+
+  // ── B38 L1 Tab 玩家列表 ──
+  "玩家列表": "Players",
+  "同维度": "Same dimension",
+  "其他维度": "Other dimensions",
+  "未测得": "n/a",
+  "(你)": "(you)",
+  "在线 {n} 人": "{n} online",
 };

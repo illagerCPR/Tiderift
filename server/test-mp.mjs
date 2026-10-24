@@ -210,6 +210,22 @@ F.ws.send(JSON.stringify({ t: 'chat', text: '/rooms' }));
 await sleep(200);
 assert('F 收到 /rooms 回复(含 alpha)', !!F.queue.find(m => m.t === 'chat' && m.fromId === 0 && m.text.includes('alpha')));
 
+// B38 L1：延迟透传——A 自报 player_state.rtt，同房间的 J 收到；更晚加入者还要能从 player_join 回放里拿到
+const J = await connect('Jack');
+J.ws.send(JSON.stringify({ t: 'join_room' }));
+await sleep(250);
+J.queue.length = 0; // 只看自己发 rtt 之后到达的包（进房回放里的旧状态不应参与断言）
+A.ws.send(JSON.stringify({ t: 'player_state', x: 1, y: 64, z: 2, yaw: 0, pitch: 0, rtt: 137 }));
+await sleep(200);
+const jState = J.queue.filter(m => m.t === 'player_state' && m.id === A.selfId).pop();
+assert('B38 L1：player_state 透传 rtt', !!jState && jState.rtt === 137);
+const I = await connect('Iris');
+I.ws.send(JSON.stringify({ t: 'join_room' }));
+await sleep(250);
+const iJoin = I.queue.find(m => m.t === 'player_join' && m.id === A.selfId);
+assert('B38 L1：player_join 回放带 rtt', !!iJoin && iJoin.rtt === 137);
+I.ws.close(); J.ws.close();
+
 // 断开
 A.ws.close(); E.ws.close(); F.ws.close(); G.ws.close(); H.ws.close();
 await sleep(100);

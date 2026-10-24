@@ -675,4 +675,12 @@ export const de = {
   "潮候现象: {v}": "Gezeiten: {v}",
   "四界潮候全部观测在案后才会落到手里的铭牌。": "Eine Plakette, die erst in deine Hand gelangt, wenn alle vier Gezeiten verzeichnet sind.",
   "青、橙、白、绿四道线，各记着一次过境。": "Vier Linien — Türkis, Orange, Weiß, Grün —, jede steht für einen Durchzug.",
+
+  // ── B38 L1 Tab 玩家列表 ──
+  "玩家列表": "Spieler",
+  "同维度": "Gleiche Dimension",
+  "其他维度": "Andere Dimensionen",
+  "未测得": "n. v.",
+  "(你)": "(du)",
+  "在线 {n} 人": "{n} online",
 };

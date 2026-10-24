@@ -127,3 +127,13 @@
 - **方块 id 表**：`server/furnace.js` 的 `FURNACE_ID_INFO`（71/200/201/202 熄灭 + 203/204/205/206 点燃，各带朝向）是客户端注册顺序的镜像，由 `tests/furnace-unit.mjs` 逐 id 与 `BlockRegistry`/`furnaceLitId` 对拍。
 - **已知限制**：① 分类器与矿车按计划不做；② 玩家本地视图与服务端的 last-write-wins 竞态（见上）；③ 物品飞出的粒子动画仍未做；④ 单机存档里的整炉内容不会随存档迁到联机账本（服务器只认自己的账本），进联机后需要重新放料。
 - **测试**：`tests/furnace-unit.mjs`（112 断言：id 钉值/烧炼语义/大步长追赶有界/漏斗进出料路由/快照恢复/权威 tick 产出与点燃态切换/挖毁散落）与 `server/test-furnace.mjs`（18 断言：open 权威回执/改动按 by 广播/服务器产出恰好一份/点燃态方块/漏斗取产物送仓库/挖毁清理与散落）已入 `run-all-tests.sh`。
+
+### B38 L1 · Tab 玩家列表的数据通道（player_state.rtt + 玩家名单）
+
+- **延迟数据不是现成的**：既有 `rttMs` 只是**本端↔服务器**的往返（`PING/PONG` 每 2 秒），服务端从不把「某玩家的延迟」发给别人。L1 为此新开一条数据：`player_state` 增**可选** `rtt`（0~9999 整数，取 `netStats.rttMs` 四舍五入），服务端 `Room.onPlayerState` 用 `safeInt` 钳后存 `player.rtt` 并原样透传；`joinInfo()` 也带 `rtt`，新加入者不必等下一次 20Hz 包。
+- **只在变化时附带**：客户端记 `_sentRtt`，取整后的值与上次相同就不带该字段——20Hz 下不会每包多十来个字节；未测得（`null`）时不带，服务器沿用上次值。
+- **名单必须与远端实体解耦**：异维度玩家**没有远端实体**（`_addRemote` 在维度不符时早退），所以 Tab 列表不能遍历 `game.remotePlayers`。`NetworkManager._roster`（`id -> {name,mode,dim,rtt}`）是唯一数据源，写入点四处：`_queueOrAdd`（welcome / `player_join` 回放，含中途加入）、`player_state`、`player_dimension`、`player_leave`；本端不入表，由 `playerRoster()` 现算（dim 取 `this.dim`、rtt 取 `netStats`）。`RemotePlayer.setRtt` 仍保留——实体侧要用同一份数值时直接喂，别另开一条通道。
+- **重连 = 服务器侧全新玩家对象**：`_connectSocket` 与 `WELCOME` 都清 `_roster` 并把 `_sentRtt` 归 null，否则重连后延迟再也不会重新上报（服务器那边的 `player.rtt` 已经没了）。
+- **不升协议版本**：纯新增可选字段，旧端忽略未知字段，新端 `rtt == null` 显示「未测得」。
+- **测试**：`server/test-mp.mjs` 补两条（同房间 `player_state` 透传 / 更晚加入者从 `player_join` 回放拿到 rtt）。**踩坑**：初版把断言挂在 B 身上，而 B 在脚本第 58 行就 `ws.close()` 了——这类「复用早期客户端」的断言必错，现改为新连的 J（收实时包）+ 更晚加入的 I（收回放）。
+

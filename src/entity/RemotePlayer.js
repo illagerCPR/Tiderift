@@ -93,6 +93,7 @@ export class RemotePlayer {
     this.nameSprite.position.set(this._target.x, this._target.y + 2.3, this._target.z);
     this.hotbarSprite.sprite.position.set(this._target.x, this._target.y + 2.62, this._target.z);
     this.flying = false;
+    this.rttMs = null;        // B38 L1：该玩家自报的往返延迟（joinInfo 回放 / player_state.rtt）
     this.skinModel = 'classic'; // Build 21：几何默认按 classic 构建（skin 消息到达 slim 时重建双臂）
     this.inWater = false;
     this.onGround = false;
@@ -134,6 +135,11 @@ export class RemotePlayer {
     return sp;
   }
 
+  // B38 L1：远端玩家自报延迟（服务器只做钳制透传，不参与任何判定；null=尚未测得）
+  setRtt(v) {
+    if (typeof v === 'number' && v >= 0) this.rttMs = Math.min(9999, Math.round(v));
+  }
+
   // 高频状态（位置/朝向/姿态）：压入带时间戳的样本缓冲（不直接驱动位置，由 update 插值回放）
   applyState(s) {
     const now = performance.now() / 1000;
@@ -159,10 +165,12 @@ export class RemotePlayer {
     }
     if (typeof s.held === 'string' && s.held !== this.heldItem) this._setHeld(s.held);
     this.mining = !!s.mine; // 阶段11：远端挖掘标志
+    if (typeof s.rtt === 'number') this.setRtt(s.rtt); // B38 L1
   }
 
   applyFull(s) {
     if (s.mode) this.setMode(s.mode);
+    if (typeof s.rtt === 'number') this.setRtt(s.rtt); // B38 L1：进房回放带的延迟
     // 阶段10：完整快捷栏 + 选中槽位（joinRoom 回放 / player_full 广播）
     if (typeof s.selected === 'number') this.selectedSlot = s.selected;
     if (Array.isArray(s.hotbar)) this.hotbar = s.hotbar;

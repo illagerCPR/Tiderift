@@ -31,6 +31,7 @@ import { InventoryScreen } from '../ui/InventoryScreen.js';
 import { ChestScreen } from '../ui/ChestScreen.js';
 import { BeaconScreen } from '../ui/BeaconScreen.js';
 import { SteleScreen } from '../ui/SteleScreen.js';
+import { PlayerListScreen } from '../ui/PlayerListScreen.js';
 import { JournalScreen } from '../ui/JournalScreen.js';
 import { PhenomenaView } from './PhenomenaView.js';
 import { WaymarkScreen } from '../ui/WaymarkScreen.js';
@@ -120,6 +121,7 @@ export class Game {
     this.chestScreen = null;
     this.beaconScreen = null;
     this.steleScreen = null;
+    this.playerListScreen = null; // B38 L1：Tab 玩家列表（新建型：_disposeWorld 摘 DOM）
     this.journal = null;        // 四界游记数据（新建型：start 创建 / _disposeWorld 释放）
     this.journalScreen = null;  // 四界游记界面（新建型：_disposeWorld 摘 DOM 与监听器）
     this.phenomena = null;      // 局部潮候与稀有景象（B37 G；新建型：start 创建 / _disposeWorld 释放）
@@ -242,7 +244,19 @@ export class Game {
       (this.steleScreen && this.steleScreen.visible) ||
       (this.journalScreen && this.journalScreen.visible) ||
       (this.waymarkScreen && this.waymarkScreen.visible) ||
-      (this.raceScreen && this.raceScreen.visible));
+      (this.raceScreen && this.raceScreen.visible) ||
+      (this.playerListScreen && this.playerListScreen.visible));
+  }
+
+  // B38 L1：按住 Tab 显示玩家列表（联机、无阻断界面时）；返回 true = 该按键已被接管
+  _showPlayerList() {
+    if (!this.running || this.paused || this.spectating) return false;
+    if (!this.networkMode || !this.net || !this.playerListScreen) return false;
+    if (this.playerListScreen.visible) return true; // 自动重复 keydown：保持显示并继续吞键
+    if (this.deathScreen && this.deathScreen.visible) return false;
+    if (this.pauseMenu && this.pauseMenu.visible) return false;
+    if (this._anyInputBlockingUI()) return false;
+    return this.playerListScreen.show();
   }
 
   // 清理旧世界所有 Three.js 资源和 UI DOM，防止切换存档时残留"幽灵方块"等
@@ -250,6 +264,7 @@ export class Game {
     this._worldStartToken = (this._worldStartToken || 0) + 1;
     this._loopToken = (this._loopToken || 0) + 1;
     const scene = this.renderer.scene;
+    if (this.playerListScreen) { this.playerListScreen.dispose(); this.playerListScreen = null; }
     if (this.blueprintScreen) { this.blueprintScreen.dispose(); this.blueprintScreen = null; }
     if (this.ghostPreview) { this.ghostPreview.dispose(); this.ghostPreview = null; }
     this.blueprints = null;
@@ -652,6 +667,7 @@ export class Game {
     this.chestScreen = new ChestScreen(this);
     this.beaconScreen = new BeaconScreen(this); // Idea-2D-③：信标效果选择（新建型：_disposeWorld 移除）
     this.steleScreen = new SteleScreen(this); // 天域批次 A：风纹石碑浮层（新建型：_disposeWorld 移除）
+    this.playerListScreen = new PlayerListScreen(this); // B38 L1：Tab 玩家列表（按住显示；DOM 惰性创建）
     this.furnaceScreen = new FurnaceScreen(this);
     this.recipeViewer = new RecipeViewer(this);
     this.tradeScreen = new TradeScreen(this);
@@ -725,6 +741,10 @@ export class Game {
   }
 
   setupKeyBindings() {
+    // B38 L1：松开 Tab 收起玩家列表（按住显示语义；失焦收不到 keyup 的兜底在面板内部）
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Tab' && this.playerListScreen) this.playerListScreen.hide();
+    });
     document.addEventListener('keydown', (e) => {
       // Build 12：文本输入焦点（创造/JEI 搜索框、命令面板输入框等）或输入法合成中，
       // 不触发任何游戏快捷键，也不再 preventDefault（避免打断输入法合成）；
@@ -733,6 +753,12 @@ export class Game {
       const editable = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
       if (e.isComposing || e.keyCode === 229) return; // 输入法合成中一律不处理（ESC 先交给输入法取消合成）
       if (editable && !((e.key === 'Escape' && !(this.chatBox && this.chatBox.input)) || e.code === 'F6')) return;
+      // B38 L1：Tab 玩家列表（按住显示）；游戏内一律吞掉默认焦点跳转（单机也不让焦点跑出画布）
+      if (e.code === 'Tab') {
+        if (this.running) e.preventDefault();
+        this._showPlayerList();
+        return;
+      }
       if (e.code === 'KeyE') {
         if (this.paused || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
         if (this.chestScreen && this.chestScreen.visible) { this.chestScreen.hide(); return; }
@@ -1729,6 +1755,8 @@ export class Game {
         this.world.dimension !== 'overworld' ? this.world.dimDef.name : null, // 非主世界显示维度
         this.networkMode && this.net ? this.net.rttJitterMs : null); // 阶段11：抖动 ± 显示
     }
+    // B38 L1：Tab 玩家列表可见时重绘（延迟与在线名单会变化；节流在面板内部）
+    if (this.playerListScreen && this.playerListScreen.visible) this.playerListScreen.tick(performance.now());
 
     // 阶段10：第一人称手持物（物品变化检测 + bob/挥动；观战与旁观隐藏）
     // Build 20 ⑤：第三人称视角隐藏第一人称手，同步驱动本地玩家模型（F5 切换）

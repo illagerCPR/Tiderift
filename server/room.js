@@ -817,6 +817,8 @@ export class Room {
   joinInfo(p) {
     const info = { id: p.id, name: p.name, mode: p.mode, pos: p.pos, selected: p.selected, held: p.heldItem, dim: p.dim };
     if (Array.isArray(p.hotbar)) info.hotbar = p.hotbar;
+    // B38 L1：延迟随回放下发（新加入者立即能在 Tab 列表看到在线玩家的 ping，不必等下一包 player_state）
+    if (typeof p.rtt === 'number') info.rtt = p.rtt;
     return info;
   }
 
@@ -1969,12 +1971,19 @@ export class Room {
     // 阶段6：手持物品同步——广播当前快捷栏槽位与物品名（远端模型据此渲染手持物）
     if (msg.selected !== undefined) player.selected = safeInt(msg.selected, player.selected);
     if (typeof msg.held === 'string') player.heldItem = msg.held.slice(0, 32);
-    this.broadcastDim(MSG.PLAYER_STATE, {
+    // B38 L1：客户端自报延迟（Tab 玩家列表用）——只钳范围后透传，不参与任何判定
+    if (msg.rtt !== undefined) {
+      const rtt = safeInt(msg.rtt, -1);
+      if (rtt >= 0) player.rtt = Math.min(9999, rtt);
+    }
+    const state = {
       id: player.id, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch,
       onGround: player.onGround, flying: player.flying, inWater: player.inWater,
       selected: player.selected, held: player.heldItem, mine: player.mining ? 1 : 0,
       ts: Date.now(), // 阶段5：服务器时间戳，客户端做时间对齐的缓冲插值
-    }, player.dim, player.id);
+    };
+    if (typeof player.rtt === 'number') state.rtt = player.rtt;
+    this.broadcastDim(MSG.PLAYER_STATE, state, player.dim, player.id);
   }
 
   // 阶段10：校验客户端上报的完整快捷栏（≤9 槽，每项 null 或 {name,count}），非法整体丢弃

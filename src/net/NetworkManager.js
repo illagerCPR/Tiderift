@@ -106,6 +106,10 @@ export class NetworkManager {
     // M4 维度同步：本端在服务器侧的当前维度 + 远端玩家维度表（id -> dim）
     this.dim = 'overworld';
     this._remoteDims = new Map();
+    // B38 L1：玩家名单（id -> {id,name,mode,dim,rtt}），Tab 玩家列表的数据源。
+    // 与 _remoteDims 分开：异维度玩家没有远端实体，名单仍要能列出他们。
+    this._roster = new Map();
+    this._sentRtt = null;         // 上次随 player_state 上报的延迟（只在变化时附带该字段）
     // Idea-3C：玩家档案——15s 周期上报；进房下发的档案世界未就绪时先缓存
     this._profileTimer = 15;
     this._pendingProfile = null;
@@ -134,6 +138,8 @@ export class NetworkManager {
     this._pendingOpen = [];
     this.dim = 'overworld';      // 新连接 = 服务器侧新玩家，恒从主世界开始
     this._remoteDims = new Map();
+    this._roster = new Map();
+    this._sentRtt = null;        // 新连接 = 服务器侧新玩家，延迟要重新上报一次
     this._clearBlueprints();
     this._connectSocket(false);
   }
@@ -468,6 +474,7 @@ export class NetworkManager {
     this.clearFluidBatch();
     for (const id of this.game.remotePlayers ? [...this.game.remotePlayers.keys()] : []) this._removeRemote(id);
     this._remoteDims.clear();
+    this._roster.clear();
   }
 
   completeWorldRecovery(recoveryId, applied) {
@@ -684,6 +691,7 @@ export class NetworkManager {
     if (this.game.remotePlayers.has(info.id)) return;
     const rp = new RemotePlayer(this.game.renderer.scene, info.id, info.name, info.pos, this.game);
     this.game.remotePlayers.set(info.id, rp);
+    if (typeof info.rtt === 'number') rp.setRtt(info.rtt); // B38 L1：回放里带的延迟直接落地
     // 阶段10：joinRoom 回放的 PLAYER_JOIN 携带 selected/heldItem/hotbar（新加入者立即看到在线玩家手持物）
     if (info.health !== undefined || info.hotbar !== undefined || info.heldItem !== undefined) rp.applyFull(info);
   }
@@ -694,8 +702,30 @@ export class NetworkManager {
   }
 
   _queueOrAdd(info) {
+    this._noteRoster(info); // B38 L1：进房回放/中途加入都先落名单（异维度无实体也要有行）
     if (this._ready) this._addRemote(info);
     else this._pendingPlayers.push(info);
+  }
+
+  // B38 L1：玩家名单写入点（只认已知字段，脏包不会污染名单；本端行不入表，由 playerRoster 现算）
+  _noteRoster(info) {
+    if (!info || info.id === undefined || info.id === null || info.id === this.selfId) return;
+    const cur = this._roster.get(info.id) || { id: info.id, name: null, mode: null, dim: null, rtt: null };
+    if (typeof info.name === 'string' && info.name) cur.name = info.name;
+    if (typeof info.mode === 'string') cur.mode = info.mode;
+    if (typeof info.dim === 'string') cur.dim = info.dim;
+    if (typeof info.rtt === 'number') cur.rtt = info.rtt;
+    this._roster.set(info.id, cur);
+  }
+
+  // B38 L1：Tab 玩家列表的数据快照（含本端；自报延迟本端取 netStats，远端取服务器透传）
+  playerRoster() {
+    const list = [{ id: this.selfId, name: this.name, mode: null, dim: this.dim,
+      rtt: this.rttMs == null ? null : Math.round(this.rttMs), self: true }];
+    for (const e of this._roster.values()) {
+      list.push({ id: e.id, name: e.name || '', mode: e.mode, dim: e.dim, rtt: e.rtt, self: false });
+    }
+    return list;
   }
 
   _spawnDrop(msg) {
@@ -752,6 +782,8 @@ export class NetworkManager {
     switch (msg.t) {
       case MSG.WELCOME:
         this.selfId = msg.selfId;
+        this._roster.clear(); // B38 L1：新连接 = 新名单（重连后服务器侧玩家对象全换）
+        this._noteRoster({ id: this.selfId, name: this.name, dim: this.dim });
         for (const p of (msg.players || [])) this._queueOrAdd(p);
         this.sendSkin(); // Build 21 M2：进房即上报本地皮肤（异步读 prefs，含默认回退）
         // S11：旧服务端未启用协议版本校验（WELCOME.legacy）时提示一句，不改动连接/重连流程
@@ -919,6 +951,7 @@ export class NetworkManager {
         break;
       case MSG.PLAYER_LEAVE:
         this._remoteDims.delete(msg.id);
+        this._roster.delete(msg.id);
         this._removeRemote(msg.id);
         this._pendingPlayers = this._pendingPlayers.filter((p) => p.id !== msg.id);
         this._emit('system', { parts: [{ text: msg.name || '玩家', color: playerColorCss(msg.id) }, { text: ' 离开了游戏' }] });
@@ -1025,6 +1058,7 @@ export class NetworkManager {
         // M4：远端玩家换维——异维移除其实体、同维重建（自己的换维走 dimension_world 路径）
         if (msg.id === this.selfId) break;
         this._remoteDims.set(msg.id, msg.dim);
+        this._noteRoster(msg);
         const own = this.game.world ? this.game.world.dimension : 'overworld';
         if (msg.dim !== own) {
           this._removeRemote(msg.id);
@@ -1051,6 +1085,7 @@ export class NetworkManager {
         if (msg.id === this.selfId) break;
         const rp = this.game.remotePlayers.get(msg.id);
         if (rp) rp.applyState(msg);
+        this._noteRoster(msg); // B38 L1：延迟随状态包更新（异维度玩家没有实体，名单照样要新）
         break;
       }
       case MSG.PLAYER_FULL: {
@@ -1271,14 +1306,21 @@ export class NetworkManager {
     const p = this.game.player;
     // 阶段6：上报手持物品（当前快捷栏槽位 + 物品名），服务器随 player_state 广播，远端渲染手持物
     const sel = this.game.inventory.getSelected();
-    this._send(MSG.PLAYER_STATE, {
+    const state = {
       x: p.position.x, y: p.position.y, z: p.position.z,
       yaw: p.yaw, pitch: p.pitch,
       onGround: p.onGround, flying: p.flying, inWater: p.inWater,
       selected: this.game.inventory.hotbarSelected,
       held: sel ? sel.name : null,
       mine: this.game._miningActive ? 1 : 0, // 阶段11：挖掘中标志（远端播放挥臂）
-    });
+    };
+    // B38 L1：延迟随状态上报——只在取整后的值变化时附带，避免 20Hz 每包多十来个字节；
+    // 未测得（null）时省略，服务器沿用上一次的值。
+    if (this.rttMs != null) {
+      const rtt = Math.max(0, Math.min(9999, Math.round(this.rttMs)));
+      if (rtt !== this._sentRtt) { state.rtt = rtt; this._sentRtt = rtt; }
+    }
+    this._send(MSG.PLAYER_STATE, state);
   }
 
   sendPlayerFull() {
