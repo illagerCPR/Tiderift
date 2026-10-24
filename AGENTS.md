@@ -218,7 +218,7 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 - **发布授权（2026-10-23 用户确认）**：只要**本轮计划文件/交付计划已明确安排该 Release**（如 `docs/archives/new-horizon-plan-b34.md` 写明某轮发布 `beta-build-X`），CI 全绿后即**直接 `git tag -s` + push tag + `gh release create`，无需再向用户逐次确认**；计划未提及发布时才需要先问。
 - **更名落地（B29）**：游戏内显示名/README/徽章/package.json 已改 Tiderift；仓库已 `gh repo rename`（旧 URL GitHub 自动重定向）；**本地工作区目录名 `project-mc` 保留不改**；`res/logo-tiderift-js-edition.png` 为当前 logo（旧 logo-cubeworld 素材保留未引用）。
 
-后续候选（见 `docs/lan-multiplayer-design.md` §11 阶段 12）：Tab 玩家列表面板、远端盔甲外观同步、服务器性能面板（消息速率图表）、房间私聊/队伍分组。
+后续候选（见 `docs/lan-multiplayer-design.md` §11 阶段 12）：Tab 玩家列表面板、服务器性能面板（消息速率图表）、房间私聊/队伍分组 —— 三项已合批排入 **Build 38**，计划见 `docs/lan-stage12-plan-b38.md`；「远端玩家盔甲外观同步」**已废弃**（2026-10-23）。另：U-1 实体方块贪心合并排 **Build 39**（前置真机帧时间基线，见 `docs/TODO.md`）。
 
 **Build 34 · New Horizon Part.1（已交付）**：计划见 `docs/archives/new-horizon-plan-b34.md`，三个里程碑共用一个 Build/Release。**A 四界游记与手绘地图**（`src/core/Journal.js` + `src/ui/JournalScreen.js` + N 键 + 房间共享标记协议）、**B 旧航路修复**（`src/core/Waymarks.js` + `src/ui/WaymarkScreen.js` + 航标芯方块 + `waymark_*` 房间权威协议）均保持 Build 33 提交；**C 御风竞速与自建赛道**（`src/core/RaceTracks.js` + `src/core/RaceRun.js` + `src/ui/RaceScreen.js` + `src/ui/RaceHud.js` + `race_post` 方块 + `race_*` 房间权威账本）在自身提交内把 `BUILD` 升到 34 并发布 `beta-build-34`。防回退见 `docs/agent-notes/journal.md`、`waymarks.md` 与 `races.md`。
 
