@@ -24,7 +24,7 @@ export class PhenomenaView {
     this._scanDim = '';
     this._sightOk = false;
     this._spots = [];          // 近邻采样命中的表现锚点（水面/岩浆面坐标）
-    this._emitAt = 0;
+    this._emitAt = -EMIT_MS;   // 取负：now() 从进程启动计时，首次 update 早于 EMIT_MS 时会被节流吞掉（CI 快启动曾复现）
     this._souvenirRetryAt = 0;    // 纪念重试冷却的到期时刻（performance.now 轴）
   }
 

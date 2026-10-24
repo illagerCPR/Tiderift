@@ -187,6 +187,7 @@ ok(!/Math\.random\s*\(/.test(pure), '阶段推导不使用随机数（两端一�
 
   const a = makeGame();
   const viewA = new PhenomenaView(a.game);
+  ok(viewA._emitAt < 0, '首次发射不被节流初值吞掉（_emitAt 初值取负）');
   run(viewA, OBSERVE_SECONDS * 0.5);
   ok(a.game.journal.phenomenaCount() === 0, '未达门槛不记录');
   ok(viewA.dwell > 0, '观测累计在推进');
