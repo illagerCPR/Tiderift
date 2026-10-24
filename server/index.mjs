@@ -759,6 +759,7 @@ const worldFlushSweep = setInterval(() => { for (const r of rooms.values()) r.fl
 
 // B36 F-1：漏斗搬运 sweep——每 200ms 让各房间推进一次；实际节拍由 config.flowIntervalMs 门控
 // （flowEnabled=false 时 tickFlow 直接短路）。搬运结果以 by:0 的 CONTAINER_SET 按容器合并广播。
+// B36 F-2：熔炉烧炼推进共用同一 sweep（进度与产出服务器权威；客户端只显示）。
 const flowSweep = setInterval(() => {
   const now = Date.now();
   for (const r of rooms.values()) {
@@ -766,6 +767,11 @@ const flowSweep = setInterval(() => {
       r.tickFlow(now);
     } catch (e) {
       console.error(`[漏斗] 房间「${r.name}」tick 异常: ${(e && e.message) || e}`);
+    }
+    try {
+      r.tickFurnaces(now);
+    } catch (e) {
+      console.error(`[熔炉] 房间「${r.name}」tick 异常: ${(e && e.message) || e}`);
     }
   }
 }, 200);

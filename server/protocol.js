@@ -38,6 +38,11 @@ export const MSG = {
   CONTAINER_SET: 'container_set',
   // B36 F-1：漏斗管理中的容器拒绝客户端改写（S2C 带服务器权威内容，客户端据此回滚本地）
   CONTAINER_DENY: 'container_deny',
+  // B36 F-2：熔炉内容首次上联机账本（服务器权威烧炼进度与产出，客户端只显示）
+  // C2S {x,y,z}：请求该熔炉的权威状态（只回本人）
+  FURNACE_OPEN: 'furnace_open',
+  // C2S {x,y,z,input,fuel,output}：玩家改动内容槽；S2C {x,y,z,d,by,input,fuel,output,burnTime,burnMax,cookTime}
+  FURNACE_SET: 'furnace_set',
 
   // 掉落物（阶段 1）；阶段 10：DROP_DENY = 拾取被归属锁拒绝（死亡掉落物归属期内他人拾取）
   DROP_SPAWN: 'drop_spawn',

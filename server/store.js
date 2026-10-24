@@ -35,6 +35,10 @@ export function roomSnapshot(room) {
   for (const [dim, m] of room.dimensionBlocks) dimensionBlocks[dim] = [...m.entries()];
   const dimensionContainers = {};
   for (const [dim, m] of room.dimensionContainers) dimensionContainers[dim] = [...m.entries()];
+  // B36 F-2：熔炉账本（dim -> [[key, {input,fuel,output,burnTime,burnMax,cookTime}]）
+  // 对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集
+  const dimensionFurnaces = {};
+  for (const [dim, m] of (room.dimensionFurnaces || new Map())) dimensionFurnaces[dim] = [...m.entries()];
   return {
     name: room.name,
     seed: room.seed,
@@ -48,6 +52,7 @@ export function roomSnapshot(room) {
     nextMobId: room.nextMobId,
     dimensionBlocks,
     dimensionContainers,
+    dimensionFurnaces,
     drops: [...room.drops.entries()].map(([id, d]) => ({ id, ...d })),
     // B34-A：四界游记房间共享标记（个人标记不入账，只有明确分享过的才在这里）
     // 对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集
@@ -92,7 +97,7 @@ function archiveCorrupt(dir, file, reason) {
 export function isRoomSnapshot(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   if (typeof data.name !== 'string' || !Number.isInteger(data.seed)) return false;
-  for (const key of ['dimensionBlocks', 'dimensionContainers']) {
+  for (const key of ['dimensionBlocks', 'dimensionContainers', 'dimensionFurnaces']) {
     const bucket = data[key];
     if (bucket === undefined) continue;
     if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) return false;

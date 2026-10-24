@@ -68,6 +68,7 @@ PURE_NODE_SUITES=(
     ruin-unit                  # B35 D 可解开的遗迹（阶段 1）：机关推导/判定/状态机/结构接缝（纯 node）
     ruin-reward                # B35 D 可解开的遗迹（阶段 2）：纪念方块/铭牌/奖励蓝图/领取去重/i18n 动态键（纯 node）
     hopper-unit                # B36 F-1 漏斗搬运纯算法（纯 node：方块 id 钉值/配置白名单/朝向/一堆 tick/满空不可堆叠/touched 去重/确定性）
+    furnace-unit               # B36 F-2 熔炉进出料纯算法（纯 node：id 钉值/烧炼语义/追赶有界/漏斗进出料路由/快照恢复/权威 tick）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -108,7 +109,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

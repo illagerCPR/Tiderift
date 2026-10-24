@@ -9,6 +9,8 @@ import { safeBiomeScale } from '../src/world/biomes.js';
 import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX } from '../src/core/Ruins.js';
 // B36 F-1：漏斗搬运——方块 id 表与纯搬运算法（服务器权威 tick；客户端只播动画不本地转移）
 import { tickHopperFlow, hopperFacingOf, isHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
+// B36 F-2：熔炉账本——方块 id 表与烧炼推进纯算法（服务器权威进度；客户端只显示不推进）
+import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnaceBlockId, FURNACE_LIMIT, FURNACE_SYNC_MS } from './furnace.js';
 
 // S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
 const REPLAY_CHUNK = 512;
@@ -508,6 +510,11 @@ export class Room {
     this.dimensionHoppers = new Map();
     this._lastFlowAt = 0;   // 上次搬运 tick 时间戳（flowIntervalMs 节拍门控）
     this._flowHot = new Map(); // "dim|x,y,z" -> 最近被搬运写过的毫秒时间戳（客户端改写拒绝窗口）
+    // B36 F-2：熔炉账本（dim -> Map("x,y,z" -> {input,fuel,output,burnTime,burnMax,cookTime})）
+    // 服务器权威推进（tickFurnaces）；旧快照无该字段 → 空表，不新增协议版本
+    this.dimensionFurnaces = new Map();
+    this._lastFurnaceAt = 0;        // 上次推进时间戳（dt 依据，钳 1s 防追赶长跳）
+    this._furnaceSyncAt = new Map(); // "dim|x,y,z" -> 上次进度广播毫秒（FURNACE_SYNC_MS 节拍）
     this.drops = new Map();     // dropId -> {x,y,z,name,count,dim,spawnedAt,owner?,ownerUntil?}
     this.nextDropId = 1;
     this.nextMobId = 1;         // 怪物 id 分配（事件同步，服务器仅分配/中继不跑 AI）
@@ -611,6 +618,30 @@ export class Room {
       for (const [k, id] of m) {
         const facing = hopperFacingOf(id);
         if (facing) hm.set(k, facing);
+      }
+    }
+    // B36 F-2：熔炉账本恢复（旧快照无该字段 → 空表；坏项跳过）
+    this.dimensionFurnaces = new Map();
+    this._furnaceSyncAt = new Map();
+    this._lastFurnaceAt = 0;
+    const rawFurnaces = snap.dimensionFurnaces;
+    if (rawFurnaces !== undefined && (typeof rawFurnaces !== 'object' || Array.isArray(rawFurnaces))) {
+      warnBadSnapshot(this.name, '熔炉账本非对象');
+    } else if (rawFurnaces) {
+      for (const [dim, entries] of Object.entries(rawFurnaces)) {
+        if (!Array.isArray(entries)) { warnBadSnapshot(this.name, `维度 ${dim} 的熔炉账本非数组`); continue; }
+        const m = this.dimBucket(this.dimensionFurnaces, Room.safeDim(dim));
+        for (const [k, st] of safeEntries(entries)) {
+          const clean = this.sanitizeFurnaceState(st);
+          if (clean) m.set(k, clean);
+        }
+      }
+    }
+    // 方块账本此时已恢复完毕：熔炉已不在账本里的条目一律丢弃（防幽灵槽位）
+    for (const [dim, m] of this.dimensionFurnaces) {
+      const blocks = this.dimBucket(this.dimensionBlocks, dim);
+      for (const k of [...m.keys()]) {
+        if (!isFurnaceId(blocks.has(k) ? blocks.get(k) : -1)) m.delete(k);
       }
     }
     this.drops = new Map();
@@ -1126,6 +1157,9 @@ export class Room {
     this.dimensionContainers.clear();
     this.dimensionHoppers.clear();
     this._flowHot.clear();
+    this.dimensionFurnaces.clear();
+    this._furnaceSyncAt.clear();
+    this._lastFurnaceAt = 0;
     this.drops.clear();
     // B35 D：重建世界 = 新种子，旧遗迹键（含锚点）全部失效，账本与领取记录一并清空
     this.ruins.clear();
@@ -1148,6 +1182,8 @@ export class Room {
       case MSG.BLOCK_SET: this.onBlockSet(player, msg); break;
       case MSG.BLOCK_SET_BATCH: this.onBlockSetBatch(player, msg); break;
       case MSG.CONTAINER_SET: this.onContainerSet(player, msg); break;
+      case MSG.FURNACE_OPEN: this.onFurnaceOpen(player, msg); break;
+      case MSG.FURNACE_SET: this.onFurnaceSet(player, msg); break;
       case MSG.DROP_SPAWN: this.onDropSpawn(player, msg); break;
       case MSG.DROP_TAKEN: this.onDropTaken(player, msg); break;
       case MSG.MOB_SPAWN: this.onMobSpawn(player, msg); break;
@@ -1211,6 +1247,8 @@ export class Room {
       containers.delete(key); // T5：箱子被挖 → 容器账本一并清除（内容散落由挖掘方 drop_spawn 上报）
     }
     this.trackHopperBlock(dim, key, id); // B36 F-1：漏斗索引与方块账本同步
+    // B36 F-2：熔炉被挖毁/换成非熔炉 → 清账本并散落内容物（服务器权威，联机端不再本地散落）
+    if (!isFurnaceId(id)) this.dropFurnaceAt(dim, key);
     this.broadcastDim(MSG.BLOCK_CHANGE, { x, y, z, id, by: player.id, d: dim }, dim, player.id);
     this.saveSoon();
   }
@@ -1233,6 +1271,7 @@ export class Room {
         containers.delete(key);
       }
       this.trackHopperBlock(dim, key, id); // B36 F-1：漏斗索引与方块账本同步
+      if (!isFurnaceId(id)) this.dropFurnaceAt(dim, key); // B36 F-2：熔炉消失 → 清账本 + 散落
       changes.push([x, y, z, id]);
     }
     if (!changes.length) return;
@@ -1579,7 +1618,22 @@ export class Room {
           return items;
         },
       };
+      // B36 F-2：熔炉接线（出料口进内容槽，正上方熔炉只取产物）
+      const furnaces = this.dimBucket(this.dimensionFurnaces, dim);
+      const furnaceTouched = new Set();
+      io.getFurnace = (x, y, z) => furnaces.get(x + ',' + y + ',' + z) || null;
+      io.ensureFurnace = (x, y, z) => this.getOrCreateFurnace(dim, x + ',' + y + ',' + z);
+      io.onFurnaceChanged = (x, y, z) => furnaceTouched.add(x + ',' + y + ',' + z);
       const touched = tickHopperFlow(list, io);
+      // 熔炉按格合并广播（每格每 tick 最多一条）
+      for (const fk of furnaceTouched) {
+        const st = furnaces.get(fk);
+        if (!st) continue;
+        const fp = fk.split(',');
+        this.broadcastDim(MSG.FURNACE_SET, this.furnaceMessage(Number(fp[0]), Number(fp[1]), Number(fp[2]), dim, st, 0), dim);
+        this._furnaceSyncAt.set(dim + '|' + fk, now);
+        dirty = true;
+      }
       if (!touched.size) continue;
       dirty = true;
       for (const k of touched) {
@@ -1589,6 +1643,147 @@ export class Room {
         const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
         this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: 0, d: dim }, dim);
         this._flowHot.set(`${dim}|${k}`, now);
+      }
+    }
+    if (dirty) this.saveSoon();
+  }
+
+  // ── B36 F-2 熔炉账本（服务器权威烧炼与内容同步）──────────────────────────────
+  // 消息形状：{x,y,z,d,by, input,fuel,output, burnTime,burnMax,cookTime}
+  furnaceMessage(x, y, z, dim, st, by) {
+    return {
+      x, y, z, d: dim, by,
+      input: st.input, fuel: st.fuel, output: st.output,
+      burnTime: st.burnTime, burnMax: st.burnMax, cookTime: st.cookTime,
+    };
+  }
+
+  // 快照恢复与客户端写入共用的状态清洗（进度是服务器自己的字段，非法值一律归 0）
+  sanitizeFurnaceState(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    return {
+      input: this.sanitizeStack(raw.input),
+      fuel: this.sanitizeStack(raw.fuel),
+      output: this.sanitizeStack(raw.output),
+      burnTime: Math.max(0, safeNum(raw.burnTime, 0)),
+      burnMax: Math.max(0, safeNum(raw.burnMax, 0)),
+      cookTime: Math.max(0, safeNum(raw.cookTime, 0)),
+    };
+  }
+
+  _furnaceTotal() {
+    let n = 0;
+    for (const m of this.dimensionFurnaces.values()) n += m.size;
+    return n;
+  }
+
+  // 该坐标在当前维度是否是「方块账本里的熔炉」——熔炉账本只对真实存在的熔炉建条目
+  _furnaceBlockInfo(dim, key) {
+    const blocks = this.dimBucket(this.dimensionBlocks, dim);
+    return furnaceInfoOf(blocks.has(key) ? blocks.get(key) : -1);
+  }
+
+  // 取（或建）熔炉账本条目：位置不是熔炉 / 已达房间上限 → null（不凭空造账）
+  getOrCreateFurnace(dim, key) {
+    const furnaces = this.dimBucket(this.dimensionFurnaces, dim);
+    const cur = furnaces.get(key);
+    if (cur) return cur;
+    if (!this._furnaceBlockInfo(dim, key)) return null;
+    if (this._furnaceTotal() >= FURNACE_LIMIT) return null;
+    const st = emptyFurnaceState();
+    furnaces.set(key, st);
+    return st;
+  }
+
+  // C2S：打开熔炉界面 → 只回本人一条权威状态（不进广播面，避免每次开界面打扰别人）
+  onFurnaceOpen(player, msg) {
+    const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
+    const dim = player.dim;
+    const key = `${x},${y},${z}`;
+    const st = this.getOrCreateFurnace(dim, key);
+    if (!st) {
+      if (this._furnaceBlockInfo(dim, key) && this._furnaceTotal() >= FURNACE_LIMIT) {
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `本房间熔炉账本已满（${FURNACE_LIMIT} 台）` });
+      }
+      return;
+    }
+    this.sendTo(player, MSG.FURNACE_SET, this.furnaceMessage(x, y, z, dim, st, 0));
+  }
+
+  // C2S：玩家改动熔炉内容槽 → 服务器只接受三个内容槽，进度字段一律以服务器为准
+  onFurnaceSet(player, msg) {
+    const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
+    const dim = player.dim;
+    const key = `${x},${y},${z}`;
+    const st = this.getOrCreateFurnace(dim, key);
+    if (!st) return;
+    st.input = this.sanitizeStack(msg.input);
+    st.fuel = this.sanitizeStack(msg.fuel);
+    st.output = this.sanitizeStack(msg.output);
+    this.broadcastDim(MSG.FURNACE_SET, this.furnaceMessage(x, y, z, dim, st, player.id), dim, player.id);
+    this.saveSoon();
+  }
+
+  // 熔炉方块消失 → 账本条目删除 + 内容物散落（联机端不再本地散落，避免双份）
+  dropFurnaceAt(dim, key) {
+    if (!this.dimensionFurnaces.size) return;
+    const furnaces = this.dimBucket(this.dimensionFurnaces, dim);
+    const st = furnaces.get(key);
+    if (!st) return;
+    furnaces.delete(key);
+    this._furnaceSyncAt.delete(`${dim}|${key}`);
+    const parts = key.split(',');
+    const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    let n = 0;
+    for (const s of [st.input, st.fuel, st.output]) {
+      if (!s || !s.name) continue;
+      const id = this.nextDropId++;
+      const entry = {
+        x: x + 0.5, y: y + 0.5, z: z + 0.5, dim, spawnedAt: Date.now(),
+        name: String(s.name).slice(0, 32), count: Math.min(64, Math.max(1, safeInt(s.count, 1))),
+      };
+      const data = sanitizeItemData(s.data);
+      if (data) entry.data = data;
+      this.drops.set(id, entry);
+      this.broadcastDim(MSG.DROP_SPAWN, this.dropMessage(id, entry), dim);
+      n++;
+    }
+    if (n) this.saveSoon();
+  }
+
+  // 烧炼推进（index.mjs 每 200ms 调用）。进度与产出全部归服务器：
+  // 内容物变化即时广播，其余按 FURNACE_SYNC_MS 节拍同步进度；点燃态与方块家族随时对齐。
+  tickFurnaces(now = Date.now()) {
+    if (!this.dimensionFurnaces.size) { this._lastFurnaceAt = now; return; }
+    const dt = this._lastFurnaceAt ? Math.min(1, Math.max(0, (now - this._lastFurnaceAt) / 1000)) : 0;
+    this._lastFurnaceAt = now;
+    if (dt <= 0) return;
+    let dirty = false;
+    for (const [dim, furnaces] of this.dimensionFurnaces) {
+      if (!furnaces.size) continue;
+      const blocks = this.dimBucket(this.dimensionBlocks, dim);
+      for (const [key, st] of furnaces) {
+        const info = furnaceInfoOf(blocks.has(key) ? blocks.get(key) : -1);
+        // 方块已不在这一格（被挖/被换）→ 条目作废（内容散落由方块改动路径处理过）
+        if (!info) { furnaces.delete(key); this._furnaceSyncAt.delete(`${dim}|${key}`); dirty = true; continue; }
+        const r = tickFurnaceState(st, dt);
+        if (r.slotsChanged) dirty = true;
+        const parts = key.split(',');
+        const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+        // 点燃态与方块家族对齐（重启后自愈：账本说在烧而方块是熄灭态也会被纠正）
+        const lit = st.burnTime > 0;
+        if (info.lit !== lit) {
+          blocks.set(key, furnaceBlockId(info.facing, lit));
+          this.broadcastDim(MSG.BLOCK_CHANGE, { x, y, z, id: blocks.get(key), by: 0, d: dim }, dim);
+          dirty = true;
+        }
+        const syncKey = `${dim}|${key}`;
+        const lastSync = this._furnaceSyncAt.get(syncKey) || 0;
+        if (r.slotsChanged || ((lit || st.cookTime > 0) && now - lastSync >= FURNACE_SYNC_MS)) {
+          this._furnaceSyncAt.set(syncKey, now);
+          this.broadcastDim(MSG.FURNACE_SET, this.furnaceMessage(x, y, z, dim, st, 0), dim);
+        }
       }
     }
     if (dirty) this.saveSoon();

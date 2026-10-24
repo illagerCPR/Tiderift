@@ -1690,7 +1690,7 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
     f2.burn === FT - (SMELT_TIME - 1) && f2.block === litN && f3.burn <= 0 && f3.block === Reg.getId('furnace'),
     'f2=' + JSON.stringify(f2) + ' f3=' + JSON.stringify(f3));
 
-  // ── O12 点燃态切换的 host/单机权威：客户端燃烧但不写方块 ──
+  // ── O12 B36 F-2：熔炉进度归服务器——联机时客户端一律不推进、不写方块 ──
   const fp2 = { x: bx + 6, y: 201, z: bz - 3 };
   const fid2 = Shapes.facingId('furnace', 'e');               // 朝东家族（点燃态 id 必须保留朝向）
   const litE = Shapes.furnaceLitId('e', true);
@@ -1700,13 +1700,18 @@ assert('H2 帧耗时：单帧峰值 < 400ms（含区块网格构建突发）', m
   st2.fuel = { name: 'coal', count: 1, data: null };
   og.networkMode = true; og.net = { isHost: false };
   og.updateFurnaces(1);
-  const c1 = { burn: st2.burnTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
+  const c1 = { burn: st2.burnTime, cook: st2.cookTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
+  og.net = { isHost: true };
+  og.updateFurnaces(1);
+  const c2 = { burn: st2.burnTime, cook: st2.cookTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
   og.net = savedNet; og.networkMode = savedNetMode;
   og.updateFurnaces(0.5);
-  const c2 = { burn: st2.burnTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
-  assert('O12 点燃态切换的权威门控：客户端（networkMode 且 net.isHost=false）正常燃烧但不写方块（仍是未点燃态）；恢复单机后同一炉子切成保留朝向的 furnace_lit_e',
-    c1.burn === FT && c1.block === fid2 && c2.burn > 0 && c2.block === litE && litE !== fid2,
-    'c1=' + JSON.stringify(c1) + ' c2=' + JSON.stringify(c2) + ' fid2=' + fid2 + ' litE=' + litE);
+  const c3 = { burn: st2.burnTime, block: og.world.getBlock(fp2.x, fp2.y, fp2.z) };
+  assert('O12 熔炉进度归服务器：联机时客户端（host 与 guest 一视同仁）既不推进进度也不写方块，恢复单机后同一炉子推进并切成保留朝向的 furnace_lit_e',
+    c1.burn === 0 && c1.cook === 0 && c1.block === fid2 &&
+      c2.burn === 0 && c2.cook === 0 && c2.block === fid2 &&
+      c3.burn > 0 && c3.block === litE && litE !== fid2,
+    'c1=' + JSON.stringify(c1) + ' c2=' + JSON.stringify(c2) + ' c3=' + JSON.stringify(c3) + ' fid2=' + fid2 + ' litE=' + litE);
 
   // ── O13 updateFurnaces 早退：无 world（主菜单期）/ 空状态表都不抛 ──
   const menuO = await createGame();

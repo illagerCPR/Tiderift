@@ -15,7 +15,7 @@
 // 现取，不留构造期快照（start() 会换 World 实例，快照会指向已销毁对象）。
 import * as THREE from 'three';
 import { BlockRegistry } from '../core/BlockRegistry.js';
-import { SMELT_TIME, getSmeltingResult, getFuelTime } from '../core/Smelting.js';
+import { tickFurnaceState } from '../core/FurnaceTick.js';
 import { doorId, trapdoorId, bedId, furnaceLitId } from '../core/blockShape.js';
 import { audio } from '../audio/AudioEngine.js';
 import { tickHopperFlow, HOPPER_INTERVAL_MS } from '../core/HopperFlow.js';
@@ -161,6 +161,12 @@ export class Placement {
     if (g.networkMode && g.net) g.net.sendContainerSet(pos.x, pos.y, pos.z, items);
   }
 
+  // B36 F-2：熔炉内容改动上报出口（FurnaceScreen 每次改动调用）；联机整炉上报，单机 noop
+  onFurnaceChanged(pos, st) {
+    const g = this.game;
+    if (g.networkMode && g.net) g.net.sendFurnaceSet(pos.x, pos.y, pos.z, st);
+  }
+
   // B36 F-1：单机本地漏斗搬运。联机时搬运权威在服务器 tick（server/flow.js），
   // 客户端一律早退——否则本地转移与服务器 CONTAINER_SET 回放互相覆盖（两条同步路径必须共存）。
   updateHopperFlow(dt) {
@@ -185,54 +191,30 @@ export class Placement {
       const def = BlockRegistry.getById(world.getBlock(x, y, z));
       return !!(def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.name === 'shulker_box'));
     };
+    // B36 F-2：熔炉也是一种出料口/进料口（出料口进内容槽、正上方熔炉只取产物）
+    const isFurnaceAt = (x, y, z) => {
+      const def = BlockRegistry.getById(world.getBlock(x, y, z));
+      return !!(def && def.baseBlock === 'furnace');
+    };
     tickHopperFlow(hoppers, {
       getContainer: (x, y, z) => world.getContainer(x, y, z),
       ensureContainer: (x, y, z) => (isContainerAt(x, y, z) ? world.getOrOpenContainer(x, y, z) : null),
+      getFurnace: (x, y, z) => world.getFurnace(x, y, z),
+      ensureFurnace: (x, y, z) => (isFurnaceAt(x, y, z) ? world.getOrOpenFurnace(x, y, z) : null),
     });
   }
 
   // 熔炉烧炼推进：遍历当前维度全部已开炉状态（惰性创建，只有打开过/放料过的炉子在表里）
-  // 语义对齐原版：燃料燃尽暂停（进度保温缓慢回退）、输出槽同类未满才续烧、燃料点燃即扣 1 个
+  // B36 F-2：联机时进度与产出归服务器（server/room.js 的 tickFurnaces），客户端只显示——
+  // 本地再推进会让两端产物数不一致，所以这里整段早退（同 F-1 漏斗的单机/联机分界）。
   updateFurnaces(dt) {
     const g = this.game;
     if (!g.world || !g.world.furnaces) return;
-    // B28 点燃态方块切换仅 host/单机权威（客户端不写方块，靠 block_set 广播收敛——同流体模拟门控）
-    const isClient = !!(g.networkMode && g.net && !g.net.isHost);
+    if (g.networkMode) return;
     for (const [key, st] of g.world.furnaces) {
-      const recipe = st.input ? getSmeltingResult(st.input.name) : null;
-      const canSmelt = !!(recipe && (!st.output ||
-        (st.output.name === recipe.output && st.output.count + recipe.count <= 64)));
-      if (st.burnTime > 0) st.burnTime -= dt;
-      // 点火：火焰熄了但还能烧且有燃料
-      if (st.burnTime <= 0 && canSmelt && st.fuel) {
-        const ft = getFuelTime(st.fuel.name);
-        if (ft > 0) {
-          st.burnMax = ft;
-          st.burnTime = ft;
-          st.fuel.count--;
-          if (st.fuel.count <= 0) st.fuel = null;
-        }
-      }
-      if (st.burnTime > 0 && canSmelt) {
-        st.cookTime += dt;
-        // 有界循环：大步长 dt（卡顿/追赶）也能连续产出，不积压 cookTime
-        let guard = 0;
-        while (st.cookTime >= SMELT_TIME && guard++ < 64) {
-          const r = st.input ? getSmeltingResult(st.input.name) : null;
-          if (!r || (st.output && (st.output.name !== r.output || st.output.count + r.count > 64))) break;
-          st.cookTime -= SMELT_TIME;
-          if (st.output) st.output.count += r.count;
-          else st.output = { name: r.output, count: r.count, data: null };
-          st.input.count--;
-          if (st.input.count <= 0) st.input = null;
-        }
-        if (!st.input) st.cookTime = 0; // 断料清进度（原版语义）
-      } else if (st.cookTime > 0) {
-        // 熄火/断料：进度缓慢回退而不是瞬间清零
-        st.cookTime = Math.max(0, st.cookTime - dt * 2);
-      }
+      tickFurnaceState(st, dt);
       // B28：燃烧起止边沿切换点燃态方块（保留朝向；light:13 由光照引擎增量更新）
-      if (!isClient) g._syncFurnaceLit(key, st);
+      g._syncFurnaceLit(key, st);
     }
   }
 
@@ -262,6 +244,8 @@ export class Placement {
       g.furnaceScreen.hide();
     }
     if (!st) return;
+    // B36 F-2：联机时内容散落由服务器按权威账本生成（这里再散一次就是双份）
+    if (g.networkMode) return;
     for (const s of [st.input, st.fuel, st.output]) {
       if (!s) continue;
       if (g.networkMode && g.net) {

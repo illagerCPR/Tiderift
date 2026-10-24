@@ -1976,6 +1976,9 @@ export class Game {
   // updateFurnaces（逻辑在 Placement，见 src/player/Placement.js）
   updateFurnaces(dt) { return this.placement.updateFurnaces(dt); }
 
+  // onFurnaceChanged（逻辑在 Placement，见 src/player/Placement.js）
+  onFurnaceChanged(pos, st) { return this.placement.onFurnaceChanged(pos, st); }
+
   // updateHopperFlow（逻辑在 Placement，见 src/player/Placement.js）
   updateHopperFlow(dt) { return this.placement.updateHopperFlow(dt); }
 

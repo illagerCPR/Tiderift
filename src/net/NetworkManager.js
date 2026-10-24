@@ -722,6 +722,25 @@ export class NetworkManager {
     }
   }
 
+  // B36 F-2：服务器权威的熔炉状态——就地改写本地状态对象（FurnaceScreen.st 持有同一引用，
+  // 换成新对象会让打开中的界面失联），进度字段一并覆盖（客户端不自己推进）。
+  _applyFurnace(msg) {
+    const w = this.game.world;
+    if (!w || !Number.isFinite(msg.x) || !Number.isFinite(msg.y) || !Number.isFinite(msg.z)) return;
+    if (msg.d && msg.d !== w.dimension) return;
+    const st = w.getOrOpenFurnace(msg.x, msg.y, msg.z);
+    st.input = msg.input ? { name: msg.input.name, count: msg.input.count, data: msg.input.data ?? null } : null;
+    st.fuel = msg.fuel ? { name: msg.fuel.name, count: msg.fuel.count, data: msg.fuel.data ?? null } : null;
+    st.output = msg.output ? { name: msg.output.name, count: msg.output.count, data: msg.output.data ?? null } : null;
+    st.burnTime = Number.isFinite(msg.burnTime) ? msg.burnTime : 0;
+    st.burnMax = Number.isFinite(msg.burnMax) ? msg.burnMax : 0;
+    st.cookTime = Number.isFinite(msg.cookTime) ? msg.cookTime : 0;
+    const fs = this.game.furnaceScreen;
+    if (fs && fs.visible && fs.pos && fs.pos.x === msg.x && fs.pos.y === msg.y && fs.pos.z === msg.z) {
+      fs._changed = false; // 权威状态已覆盖本地（自己刚发的改动也已落账）
+    }
+  }
+
   _spawnMob(msg) {
     if (!this.game.mobManager) return;
     this.game.mobManager.createMobFromNet(msg.id, msg.type, msg.x, msg.y, msg.z, msg.tradeSeed);
@@ -997,6 +1016,11 @@ export class NetworkManager {
         this._applyContainer(msg);
         break;
       }
+      case MSG.FURNACE_SET: {
+        // B36 F-2：熔炉内容/进度由服务器权威下发（含自己刚发的改动回执与点燃态刷新）
+        this._applyFurnace(msg);
+        break;
+      }
       case MSG.PLAYER_DIMENSION: {
         // M4：远端玩家换维——异维移除其实体、同维重建（自己的换维走 dimension_world 路径）
         if (msg.id === this.selfId) break;
@@ -1214,6 +1238,15 @@ export class NetworkManager {
     const packed = items.map((s) => (s ? { name: s.name, count: s.count, data: s.data ?? null } : null));
     this._send(MSG.CONTAINER_SET, { x, y, z, items: packed });
   }
+
+  // B36 F-2：熔炉内容上报（只报三个内容槽——进度字段服务器自有，客户端发什么都不采信）
+  sendFurnaceSet(x, y, z, st) {
+    const pack = (s) => (s ? { name: s.name, count: s.count, data: s.data ?? null } : null);
+    this._send(MSG.FURNACE_SET, { x, y, z, input: pack(st.input), fuel: pack(st.fuel), output: pack(st.output) });
+  }
+
+  // B36 F-2：打开熔炉界面时拉取一次权威状态（只回本人）
+  sendFurnaceOpen(x, y, z) { this._send(MSG.FURNACE_OPEN, { x, y, z }); }
 
   // 每帧调用：节流上报本地玩家状态 + RTT 直测
   update(dt) {

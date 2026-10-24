@@ -272,7 +272,9 @@ const def = (n) => BlockRegistry.getById(id(n));
   ok(!gm.includes('const hit = placed === SKULL'), '凋灵召唤：旧 placed === SKULL 判层已废除');
   ok(gm.includes("d.baseBlock === 'wither_skeleton_skull'"), '凋灵召唤：按 baseBlock 认头颅');
   ok(pm.includes('g._syncFurnaceLit(key, st)'), '熔炉：燃烧边沿同步点燃态方块');
-  ok(pm.includes('if (!isClient) g._syncFurnaceLit'), '熔炉：点燃态切换 host/单机权威');
+  // B36 F-2：进度与产出归服务器——客户端 updateFurnaces 整段早退（旧的 isClient 门控已废除）
+  ok(pm.includes('if (g.networkMode) return;'), '熔炉：联机时进度归服务器（客户端不推进不产出）');
+  ok(!pm.includes('const isClient = !!(g.networkMode'), '熔炉：旧的 isClient 半程门控已废除');
   ok(pm.includes('furnaceLitId(def.facing'), '熔炉：点燃态 id 保留朝向');
   ok(gm.includes('(def && def.baseBlock) || BlockRegistry.getNameById'), '中键取物：家族态映射回基础物品');
   ok(/if \(def\.minTier > 0\) \{\s*\n\s*const held = this\._heldToolItem\(\);\s*\n\s*if \(!held \|\| held\.tool !== def\.tool \|\| \(held\.tier \|\| 0\) < def\.minTier\) return \[\];/.test(gm),

@@ -8,7 +8,8 @@ export { tickHopperFlow };
 // 漏斗家族：方块 id -> 出料口朝向（对应 BlockDefs 末尾的 hopper / hopper_s / hopper_e / hopper_w）
 export const HOPPER_FACING_BY_ID = new Map([[217, 'n'], [218, 's'], [219, 'e'], [220, 'w']]);
 
-// 可被漏斗搬运的容器方块 id：箱子家族 + 潜影盒 + 漏斗家族（熔炉内容在 F-2 才上账本，此处不接）
+// 可被漏斗搬运的容器方块 id：箱子家族 + 潜影盒 + 漏斗家族
+// （熔炉走独立账本 server/furnace.js，不在这张 27 槽容器表里——B36 F-2）
 export const CONTAINER_BLOCK_IDS = new Set([170, 197, 198, 199, 171, 217, 218, 219, 220]);
 
 // 每房间漏斗上限（超出拒绝放置并提示）

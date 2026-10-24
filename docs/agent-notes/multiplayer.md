@@ -111,3 +111,19 @@
 - **配置范围**：`flowIntervalMs` 合法区间 [200, 5000]（sweep 粒度就是 200ms，配更小无意义）；非法/越界值保持原值不回落。
 - **已知限制**：① 物品飞出的粒子动画未做（方块模型与内容界面已复用箱子）；② 玩家无法手动整理漏斗内容（服务器恒管），要清空需拆掉漏斗——拆掉时 `breakChest` 会把内容散落，不会凭空蒸发；③ 分类器/矿车按计划不做；④ 熔炉内容仍未进联机账本（F-2 范围）。
 - **测试**：`tests/hopper-unit.mjs`（57 断言：id 钉值/配置白名单/朝向/先出后进/满空/不可堆叠/一堆 tick/touched 去重/确定性）与 `server/test-flow.mjs`（16 断言：服务器真搬货 + `by:0` + 客户端改写被拒与回滚 + 第 65 个漏斗被拒与提示）已入 `run-all-tests.sh`。
+
+### B36 F-2 熔炉进出料与生产链批次备忘（防回退）
+
+- **改前旧行为（记录用）**：熔炉状态只活在客户端 `World.furnaces`（维度分桶 Map，随存档落盘），进度由 `Game.updateFurnaces` 每帧推进，谁开着谁算；联机时**只有点燃态方块**经 `BLOCK_CHANGE` 同步，内容物与进度完全不在账本里——两人各开一次同一个熔炉就会各自产出，产物翻倍。
+- **账本**：`Room.dimensionFurnaces`（dim → `Map("x,y,z" -> {input,fuel,output,burnTime,burnMax,cookTime})`），字段名与客户端状态对象逐字一致（双端共用 `src/core/FurnaceTick.js`）。随 `roomSnapshot` 落盘为 `dimensionFurnaces: {dim: [[key, st]]}`；旧快照无该字段 → 空表回落，**不新增协议版本**。
+- **进度归服务器**：`server/index.mjs` 的 `flowSweep`（200ms）在 `tickFlow` 之后调 `Room.tickFurnaces(now)`；dt = 距上次 tick 的秒数并**钳到 1s**（防进程挂起后大步长追赶）。`Placement.updateFurnaces` 在 `networkMode` 下**首行早退**——客户端既不推进也不产出，只显示服务器下发的进度；改这条等于把「两端各自产出」的重复计账放回来。
+- **协议**：新增两条纯新增消息（`PROTOCOL_VERSION` 不动）：`FURNACE_OPEN {x,y,z}`（C2S，只回本人一条权威状态，用于开界面）与 `FURNACE_SET`（C2S `{x,y,z,input,fuel,output}`；S2C `{x,y,z,d,by,input,fuel,output,burnTime,burnMax,cookTime}`）。**C2S 只接受三个内容槽**——进度字段一律以服务器为准，客户端发什么都不采信。
+- **广播节拍**：内容物变化（`slotsChanged`）即时广播；点燃态与方块家族随时对齐（`furnaceInfoOf` 与 `burnTime>0` 不符就写回点燃/熄灭态方块并发 `BLOCK_CHANGE {by:0}`，服务器重启后自愈）；其余进度按 `FURNACE_SYNC_MS=500` 节拍同步**只有正在烧的炉子**（`burnTime>0 || cookTime>0`），静置的空炉零消息。
+- **两条同步路径的第三形态**：`onFurnaceSet` 是 last-write-wins（与箱子同口径），**没有** F-1 那种 `_isFlowManaged` 拒绝——玩家必须能给被漏斗喂料的炉子塞燃料。代价是「服务器刚把产物搬走、玩家本地还拿着旧视图去取」的毫秒级竞态仍在（与既有箱子竞态同类），靠 500ms 同步节拍缩小窗口，已记为已知限制。
+- **漏斗接线（本批重点）**：`src/core/HopperFlow.js` 的 io 新增 `getFurnace/ensureFurnace/onFurnaceChanged`（可选，缺省=不接熔炉）。出料口正对熔炉 → 进内容槽，**燃料槽优先**（同时是燃料与原料的物品如原木先进燃料槽，燃料槽满才退到输入槽）；漏斗正上方是熔炉 → **只取输出槽**（输入/燃料绝不外流）。每 tick 仍是每漏斗最多一堆。
+- **布局（与计划措辞的差异）**：`hopper` 家族只有 n/s/e/w 四个水平朝向，**没有向下的漏斗**，所以计划里的「上方漏斗进料」在本作落成「漏斗出料口正对熔炉侧面进料 + 漏斗站在熔炉正下方取产物」。完整链条＝箱子（高于进料漏斗）→ 漏斗（朝熔炉）→ 熔炉 → 漏斗（在熔炉正下方、朝仓库）→ 仓库箱。
+- **清理**：`onBlockSet`/`onBlockSetBatch` 只要新 id 不是熔炉家族就 `dropFurnaceAt`——删条目 + 三槽内容物按服务器权威散落成掉落；`Placement.breakFurnace` 在联机时**不再本地散落**（否则双份）。`tickFurnaces` 另有兜底：方块已不在账本里就删条目（防幽灵槽位），`restore` 后也按方块账本剪一遍。
+- **边界**：每房间熔炉账本上限 `FURNACE_LIMIT=256`（跨维度合计；只在「打开熔炉」或「漏斗首次进料」时建条目，超限不再新建并给系统提示）。条目只对**方块账本里真实存在的熔炉**创建——凭空造账会覆盖结构 loot 的教训见 F-1。
+- **方块 id 表**：`server/furnace.js` 的 `FURNACE_ID_INFO`（71/200/201/202 熄灭 + 203/204/205/206 点燃，各带朝向）是客户端注册顺序的镜像，由 `tests/furnace-unit.mjs` 逐 id 与 `BlockRegistry`/`furnaceLitId` 对拍。
+- **已知限制**：① 分类器与矿车按计划不做；② 玩家本地视图与服务端的 last-write-wins 竞态（见上）；③ 物品飞出的粒子动画仍未做；④ 单机存档里的整炉内容不会随存档迁到联机账本（服务器只认自己的账本），进联机后需要重新放料。
+- **测试**：`tests/furnace-unit.mjs`（112 断言：id 钉值/烧炼语义/大步长追赶有界/漏斗进出料路由/快照恢复/权威 tick 产出与点燃态切换/挖毁散落）与 `server/test-furnace.mjs`（18 断言：open 权威回执/改动按 by 广播/服务器产出恰好一份/点燃态方块/漏斗取产物送仓库/挖毁清理与散落）已入 `run-all-tests.sh`。

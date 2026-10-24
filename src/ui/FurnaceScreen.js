@@ -55,9 +55,13 @@ export class FurnaceScreen {
     if (!this.game.world) return;
     this.pos = { x, y, z };
     this.st = this.game.world.getOrOpenFurnace(x, y, z);
+    this._changed = false;
+    this._lastFlushAt = 0;
     this.visible = true;
     this.el.style.display = 'flex';
     this.render();
+    // B36 F-2：联机时进度与内容归服务器——打开即拉一次权威状态（单机直接读 World）
+    if (this.game.networkMode && this.game.net) this.game.net.sendFurnaceOpen(x, y, z);
     if (this.game.controls) {
       this.game.controls.enabled = false;
       this.game.controls.mouseLeft = false;
@@ -68,6 +72,7 @@ export class FurnaceScreen {
 
   hide() {
     this.returnCursorItem();
+    this.flushChanges(true);
     this.visible = false;
     this.el.style.display = 'none';
     this.cursor.clearHover();
@@ -273,6 +278,7 @@ export class FurnaceScreen {
     this.updateCursorEl();
     this.bindSlots();
     if (type === 'inv') this.game.hotbar.update();
+    else this._changed = true;
   }
 
   rightClickSlot(type, idx) {
@@ -296,6 +302,18 @@ export class FurnaceScreen {
     this.updateCursorEl();
     this.bindSlots();
     if (type === 'inv') this.game.hotbar.update();
+    else this._changed = true;
+  }
+
+  // B36 F-2：把本地改动推给服务器（联机）；节流 150ms，避免拖拽时每帧一条。
+  // 单机调用无害（onFurnaceChanged 内部 noop），状态本来就是同一份。
+  flushChanges(force = false) {
+    if (!this._changed || !this.pos || !this.st) return;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (!force && now - this._lastFlushAt < 150) return;
+    this._lastFlushAt = now;
+    this._changed = false;
+    this.game.onFurnaceChanged(this.pos, this.st);
   }
 
   // 输出槽：只取不放（左键取全部合并进光标，右键取一个）
@@ -314,6 +332,7 @@ export class FurnaceScreen {
       }
       out.count -= take;
       if (out.count <= 0) this.st.output = null;
+      this._changed = true;
       this.updateCursorEl();
       this.bindSlots();
     };
@@ -326,6 +345,7 @@ export class FurnaceScreen {
   // 每帧刷新（Game.update 在界面可见时调用）：进度条 + 槽位内容
   tick() {
     if (!this.visible || !this.st) return;
+    this.flushChanges();
     const flame = this.st.burnMax > 0 ? Math.max(0, Math.min(1, this.st.burnTime / this.st.burnMax)) : 0;
     const arrow = Math.max(0, Math.min(1, this.st.cookTime / SMELT_TIME));
     const fp = Math.round(flame * 100);
