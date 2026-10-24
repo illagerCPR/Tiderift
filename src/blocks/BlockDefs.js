@@ -2522,6 +2522,37 @@ for (const facing of ['s', 'e', 'w']) {
   }, { ...HOPPER_SVG });
 }
 
+
+// ── B37 G 潮候铭牌（四界现象集齐的一次性纪念）：**追加在文件末尾**，ID 继续顺延 ──
+// 四道线分别对应岸线荧光（青）/ 灰烬潮（橙）/ 无声之潮（白）/ 风光带（绿）。
+function tidePlaqueBase(seed, lines) {
+  const px = makeTex();
+  const base = [40, 56, 64];
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      px[y * 16 + x] = rgb(base, 0.9 + hash2(x, y, seed) * 0.18);
+    }
+  }
+  fillRect(px, 0, 0, 15, 0, rgb([78, 100, 108], 1.05));
+  fillRect(px, 0, 15, 15, 15, rgb([24, 34, 40], 1));
+  fillRect(px, 0, 0, 0, 15, rgb([62, 82, 90], 1));
+  fillRect(px, 15, 0, 15, 15, rgb([24, 34, 40], 1));
+  for (const [y, c] of lines) fillRect(px, 3, y, 12, y, rgb(c, 1));
+  return px;
+}
+
+const TIDE_LINES = [[3, [86, 230, 208]], [6, [255, 150, 70]], [9, [190, 196, 255]], [12, [140, 255, 160]]];
+
+reg('tide_plaque', {
+  displayName: '潮候铭牌', hardness: 1.5, tool: 'pickaxe',
+  textures: { top: 'tide_plaque_top', side: 'tide_plaque_side', bottom: 'tide_plaque_bottom' },
+  lore: ['四界潮候全部观测在案后才会落到手里的铭牌。', '青、橙、白、绿四道线，各记着一次过境。'],
+}, {
+  tide_plaque_top: pixelSvg(tidePlaqueBase(251, TIDE_LINES)),
+  tide_plaque_side: pixelSvg(tidePlaqueBase(252, TIDE_LINES)),
+  tide_plaque_bottom: noiseTex([34, 46, 52], 253, { dark: 0.85, light: 1.12 }),
+});
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

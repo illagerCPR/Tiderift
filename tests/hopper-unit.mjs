@@ -24,11 +24,14 @@ for (const id of CONTAINER_BLOCK_IDS) {
   ok(isContainer, `容器 id ${id} 仍是容器方块（${def ? def.name : 'MISSING'}）`);
 }
 ok(FLOW_HOPPER_LIMIT === 64, '每房间漏斗上限 64');
-// ID 追加纪律：漏斗家族必须是当前末尾（B36 之后的新方块只能排在 hopper_w 之后）
+// ID 追加纪律：钉**漏斗家族自己的 ID**（217~220），不做「是否当前末尾」这种脆断言——
+// B37 G 的 tide_plaque 合法追加在 hopper_w 之后，旧写法当场误报。新方块只能排在 hopper_w 之后，
+// 而 hopper 家族 ID 必须永久不变（存档/联机账本按数字 ID 落盘）。
 {
-  const all = BlockRegistry.all();
-  ok(all[all.length - 1].name === 'hopper_w', '漏斗家族是当前最后注册的方块', all[all.length - 1].name);
+  ok(BlockRegistry.getId('hopper') === 217, '漏斗本名 ID 不变（217）', String(BlockRegistry.getId('hopper')));
+  ok(BlockRegistry.getId('hopper_w') === 220, '漏斗家族末位 ID 不变（220）', String(BlockRegistry.getId('hopper_w')));
   ok(BlockRegistry.getId('ruin_plaque') === 216, '前序末尾（遗迹铭牌）ID 未被插队改变', String(BlockRegistry.getId('ruin_plaque')));
+  ok(BlockRegistry.getId('tide_plaque') > 220, 'B37 新方块追加在漏斗家族之后', String(BlockRegistry.getId('tide_plaque')));
 }
 const hopperDef = BlockRegistry.getByName('hopper');
 ok(!!hopperDef && hopperDef.facingAway === true, '漏斗是 facingAway 家族（出料口背对玩家）');

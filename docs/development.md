@@ -93,7 +93,6 @@ Tiderift/
 │   ├── development.md                    # 本文档
 │   ├── lan-multiplayer-design.md         # 局域网联机设计文档（协议表 + 分阶段路线）
 │   ├── worldview.md                      # 世界观总纲「一潮三分」
-│   ├── new-horizon-plan-b35-37.md        # Build 35–37 New Horizon Part.2–4 实施计划（在办）
 │   ├── TODO.md                           # 项目创意 / 提案暂存（未交付）
 │   ├── bug.md                            # 已知问题记录
 │   ├── agent-browser-eval.md             # agent-browser 引入实测评估报告
@@ -103,6 +102,7 @@ Tiderift/
 │   │   ├── improvement-audit-b32.md      # Build 32 第二次项目审查报告
 │   │   ├── improvement-plan-b32.md       # Build 32 审查修复计划
 │   │   ├── new-horizon-plan-b34.md       # Build 34 New Horizon Part.1 实施计划
+│   │   ├── new-horizon-plan-b35-37.md    # Build 35–37 New Horizon Part.2–4 实施计划
 │   │   ├── aether-storyline.md           # 天域 · 天海纪元故事线与开发计划（设计稿）
 │   │   ├── whale-barrow-design.md        # 鲸骨冢篇与体验打磨设计方案
 │   │   ├── endgame-proposal.md           # 终局提案设想（评审稿）
@@ -117,6 +117,7 @@ Tiderift/
 │       ├── multiplayer.md                # 联机协议 / 插值 / 面板 / 玩家档案 / 房间开关
 │       ├── blueprints.md                 # 建筑蓝图的数据、捕获、预览、同步与生命周期约定
 │       ├── ruins.md                      # 可动手解开的遗迹：机关机制、判定口径、房间账本与奖励链路
+│       ├── phenomena.md                  # 局部潮候与稀有景象：四维窗口、预兆、观测记录与一次性纪念
 │       └── ui-misc.md                    # 菜单 / 粒子 / UI / 音频 / 更名引用面
 ├── .github/workflows/ci.yml  # CI：全量 node --check + build + 全套件
 ├── start.cmd             # 开发/联机服务器启停脚本（Windows）

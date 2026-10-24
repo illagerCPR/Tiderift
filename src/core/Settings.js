@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   brightness: 6,       // 0..100 → uMinLight 0.02..0.25（6 ≈ 现调校值 0.035）
   clouds: true,
   particles: 'all',    // all | decreased | minimal
+  phenomena: true,     // 局部潮候与稀有景象（Build 37 G）：关掉即无粒子与预兆提示，观测记录不受影响
   smoothLighting: true,
   viewBobbing: true,
   sensitivity: 100,    // 30..200 (%)
@@ -46,6 +47,7 @@ export function loadSettings() {
         if (saved.brightness !== undefined) s.brightness = clamp(Math.round(saved.brightness), 0, 100);
         if (saved.clouds !== undefined) s.clouds = !!saved.clouds;
         if (PARTICLE_SCALE[saved.particles]) s.particles = saved.particles;
+        if (saved.phenomena !== undefined) s.phenomena = !!saved.phenomena;
         if (saved.smoothLighting !== undefined) s.smoothLighting = !!saved.smoothLighting;
         if (saved.viewBobbing !== undefined) s.viewBobbing = !!saved.viewBobbing;
         if (saved.sensitivity !== undefined) s.sensitivity = clamp(Math.round(saved.sensitivity), 30, 200);

@@ -32,6 +32,7 @@ import { ChestScreen } from '../ui/ChestScreen.js';
 import { BeaconScreen } from '../ui/BeaconScreen.js';
 import { SteleScreen } from '../ui/SteleScreen.js';
 import { JournalScreen } from '../ui/JournalScreen.js';
+import { PhenomenaView } from './PhenomenaView.js';
 import { WaymarkScreen } from '../ui/WaymarkScreen.js';
 import { RaceScreen } from '../ui/RaceScreen.js';
 import { RaceHud } from '../ui/RaceHud.js';
@@ -121,6 +122,7 @@ export class Game {
     this.steleScreen = null;
     this.journal = null;        // 四界游记数据（新建型：start 创建 / _disposeWorld 释放）
     this.journalScreen = null;  // 四界游记界面（新建型：_disposeWorld 摘 DOM 与监听器）
+    this.phenomena = null;      // 局部潮候与稀有景象（B37 G；新建型：start 创建 / _disposeWorld 释放）
     this.blueprints = null;
     this.blueprintScreen = null;
     this.ghostPreview = null;
@@ -310,6 +312,7 @@ export class Game {
     if (this.steleScreen) { this.steleScreen.dispose(); this.steleScreen = null; }
     // 四界游记（新建型：DOM/监听器随界面回收，数据随世界清空——换维由 _composeSwitchLoadData 透传）
     if (this.journalScreen) { this.journalScreen.dispose(); this.journalScreen = null; }
+    if (this.phenomena) { this.phenomena.dispose(); this.phenomena = null; }
     this.journal = null;
     this._journalObserveAt = 0;
     this._journalDiscoveryAt = 0;
@@ -614,6 +617,8 @@ export class Game {
     this._journalObserveAt = 0;
     this._journalDiscoveryAt = 0;
     this.journalScreen = new JournalScreen(this); // 新建型：_disposeWorld 摘 DOM/监听器
+    // 局部潮候（Build 37 G）：纯表现层，阶段由服务器权威 time 推导，不写方块/水位/光照
+    this.phenomena = new PhenomenaView(this);
     this.ghostPreview = new GhostPreview(this.renderer.scene);
     this.blueprintScreen = new BlueprintScreen(this);
     // 天域旧航路航标（Build 34 B）：进度是存档/房间共享状态，界面直接读 this.waymarks，故先建数据再建界面。
@@ -1713,6 +1718,8 @@ export class Game {
     this._updateJournal();
     // 可动手解开的遗迹：目标机关集按节流重建 + 判定轮询（节流在 Ruins 内部，0.25s 才读一次世界）
     this._updateRuins();
+    // 局部潮候：阶段推导（纯函数）+ 预兆提示 + 粒子表现 + 观测累计
+    if (this.phenomena) this.phenomena.update(dt);
 
     // HUD
     this.hud.update(this.player);

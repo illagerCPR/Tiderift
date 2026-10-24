@@ -4,6 +4,7 @@ import { Biomes } from '../world/biomes.js';
 import { STELE_CHAPTERS } from '../world/steles.js';
 import { onLocaleChange, t } from '../i18n/index.js';
 import { ruinKey } from '../core/Ruins.js';
+import { PHENOMENA, PHENOMENON_ORDER } from '../core/Phenomena.js';
 import { getDisplayName } from './itemName.js';
 
 const BIOME_COLORS = {
@@ -138,6 +139,21 @@ export class JournalScreen {
       }
       return { label, x: d.x, z: d.z, detail };
     });
+    // B37 G：潮候观测。已记录/未记录按维度列；当前维度带实时阶段提示（静默倒计时 / 预兆 / 涌现），
+    // 这样「现象开始前 60 秒的预兆」在游记里也看得到，不至于站在野外毫无预告。
+    const phenomena = this.game.phenomena;
+    const phenomenaRows = PHENOMENON_ORDER.map((dim) => {
+      const def = PHENOMENA[dim];
+      if (!def) return null;
+      const dimName = DIMENSIONS[dim] ? t(DIMENSIONS[dim].name) : dim;
+      const state = journal.hasPhenomenon(dim) ? t('已记录') : t('未记录');
+      const row = { label: `${dimName} · ${t(def.label)} · ${state}` };
+      if (this.dim === dim && phenomena && typeof phenomena.hintText === 'function' && phenomena.state && phenomena.state.kind) {
+        row.detail = phenomena.hintText();
+      }
+      return row;
+    }).filter(Boolean);
+    this.sidebar.appendChild(this._section('潮候观测', phenomenaRows));
     this.sidebar.appendChild(this._section('已发现遗迹', discoveries));
     this.sidebar.appendChild(this._section('已读碑文', [...journal.readSteles].map((id) => ({ label: t(STELE_CHAPTERS[id]?.title || id) }))));
 

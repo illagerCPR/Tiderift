@@ -1,11 +1,13 @@
 // Journal.js -- 四界游记数据与探索记录
 import { DIMENSIONS } from './dimensions.js';
+import { PHENOMENON_ORDER, phenomenonFor } from './Phenomena.js';
 
 const CELL_LIMIT = 12000;
 const DISCOVERY_LIMIT = 512;
 const MARKER_LIMIT = 64;
 const SHARED_MARKER_LIMIT = 256;
 const BIOME_CODE = /^[a-z0-9_-]{1,32}$/;
+const ANCHOR_CODE = /^-?[0-9]{1,9},-?[0-9]{1,9}$/;
 
 function validCoord(v) {
   return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 30000000;
@@ -52,6 +54,8 @@ export class Journal {
     this.readSteles = new Set();
     this.markers = [];
     this.sharedMarkers = [];
+    this.phenomena = [];        // 潮候观测记录（Build 37 G）：[{ dim, kind, anchor, at }]
+    this.phenomenaSouvenir = false; // 四象集齐纪念是否已发放（一次性，随存档保留）
     this.lastPosition = {};
     this._lastCell = null;
     this.deserialize(raw);
@@ -103,6 +107,23 @@ export class Journal {
         if (marker) this.markers.push(marker);
       }
     }
+    // 潮候记录（Build 37 G）：旧档无此字段 → 空表回落，不迁移不报错。
+    // 合法条目必须「维度 + 现象种类」与定义表相符，重复项直接丢弃（同维度同现象只记一次）。
+    if (Array.isArray(raw.phenomena)) {
+      const seen = new Set();
+      for (const item of raw.phenomena.slice(-PHENOMENON_ORDER.length * 2)) {
+        if (!item || typeof item !== 'object' || !validDim(item.dim)) continue;
+        const def = phenomenonFor(item.dim);
+        if (!def || def.kind !== item.kind || seen.has(item.dim)) continue;
+        seen.add(item.dim);
+        this.phenomena.push({
+          dim: item.dim, kind: def.kind,
+          anchor: ANCHOR_CODE.test(String(item.anchor)) ? String(item.anchor) : '0,0',
+          at: Number.isFinite(item.at) ? item.at : 0,
+        });
+      }
+    }
+    this.phenomenaSouvenir = raw.phenomenaSouvenir === true;
     if (raw.lastPosition && typeof raw.lastPosition === 'object') {
       for (const dim of Object.keys(this.explored)) {
         const p = raw.lastPosition[dim];
@@ -126,6 +147,8 @@ export class Journal {
       discoveries: this.discoveries.slice(-DISCOVERY_LIMIT).map(({ dim, type, x, z, label }) => ({ dim, type, x, z, label })),
       readSteles: [...this.readSteles].slice(-DISCOVERY_LIMIT),
       markers: this.markers.slice(-MARKER_LIMIT).map((m) => ({ ...m })),
+      phenomena: this.phenomena.map((p) => ({ ...p })),
+      phenomenaSouvenir: this.phenomenaSouvenir,
       lastPosition: { ...this.lastPosition },
     };
   }
@@ -206,6 +229,40 @@ export class Journal {
 
   removeSharedMarker(id) {
     this.sharedMarkers = this.sharedMarkers.filter((m) => m.id !== id);
+  }
+
+  // ── 局部潮候（Build 37 G）──────────────────────────────────────────────
+  // 只认定义表里的「维度 + 现象种类」，同维度同现象只记一次（重复观测返回 false，不刷新记录）。
+  recordPhenomenon(dim, kind, anchorKey) {
+    const def = phenomenonFor(dim);
+    if (!def || def.kind !== kind) return false;
+    if (this.phenomena.some((p) => p.dim === dim)) return false;
+    this.phenomena.push({
+      dim, kind: def.kind,
+      anchor: ANCHOR_CODE.test(String(anchorKey)) ? String(anchorKey) : '0,0',
+      at: Date.now(),
+    });
+    return true;
+  }
+
+  hasPhenomenon(dim) {
+    return this.phenomena.some((p) => p.dim === dim);
+  }
+
+  phenomenaCount() {
+    return this.phenomena.length;
+  }
+
+  // 四种集齐（按定义表判定，维度没实现时不参与要求）
+  phenomenaComplete() {
+    return PHENOMENON_ORDER.every((dim) => !DIMENSIONS[dim] || !DIMENSIONS[dim].implemented || this.hasPhenomenon(dim));
+  }
+
+  // 一次性纪念：只有集齐且未发放过才返回 true（调用方据此发物品）。
+  claimPhenomenaSouvenir() {
+    if (this.phenomenaSouvenir || !this.phenomenaComplete()) return false;
+    this.phenomenaSouvenir = true;
+    return true;
   }
 }
 

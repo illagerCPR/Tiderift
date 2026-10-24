@@ -263,6 +263,33 @@ class AudioEngine {
     this._noise({ dur: 0.16, filter: 'highpass', freq: 1100, gain: 0.1, rate: 1.2 });
   }
 
+  // —— 局部潮候（Build 37 G）：预兆 / 涌现 / 记录三段提示音 ——
+  // 只用短促的计划式节点：预兆是低频持续音起手，涌现是上扬双音，记录是一记清响。
+  _phenomenonBase(dim) {
+    return { overworld: 196, nether: 146.8, end: 174.6, aether: 261.6 }[dim] || 196;
+  }
+
+  phenomenonOmen(dim) {
+    if (!this.ctx) return;
+    const base = this._phenomenonBase(dim);
+    this._tone({ dur: 2.4, from: base, to: base * 1.5, type: 'sine', gain: 0.09, attack: 0.45 });
+    this._noise({ dur: 2.2, filter: 'lowpass', freq: 420, gain: 0.045, attack: 0.7 });
+  }
+
+  phenomenonSurge(dim) {
+    if (!this.ctx) return;
+    const base = this._phenomenonBase(dim);
+    this._tone({ dur: 0.9, from: base * 1.5, to: base * 2.25, type: 'triangle', gain: 0.10, attack: 0.15 });
+    this._tone({ when: 0.12, dur: 1.1, from: base * 2, to: base * 3, type: 'sine', gain: 0.07, attack: 0.2 });
+  }
+
+  phenomenonRecord(dim) {
+    if (!this.ctx) return;
+    const base = this._phenomenonBase(dim) * 4;
+    this._tone({ dur: 0.35, from: base, to: base * 1.5, type: 'sine', gain: 0.12 });
+    this._tone({ when: 0.14, dur: 0.5, from: base * 1.5, to: base * 2, type: 'sine', gain: 0.1 });
+  }
+
   // —— 环境音 / BGM（A-②）：wind swells + 和弦垫，全部计划式调度（无常驻节点，
   //    暂停时 Game.update 停止调用即自然静默），走 music 分轨 ——
 

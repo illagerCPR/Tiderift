@@ -111,6 +111,11 @@ export class VideoSettings {
       s.particles = PARTICLE_ORDER[(PARTICLE_ORDER.indexOf(s.particles) + 1) % PARTICLE_ORDER.length];
       this._apply();
     });
+    // 潮候现象（Build 37 G）：关掉后不再生成现象粒子与预兆提示（观测记录照常按时间生效）
+    mkRow('phenomena', gDisplay).addEventListener('click', () => {
+      this.game.settings.phenomena = this.game.settings.phenomena === false;
+      this._apply();
+    });
     // 平滑光照（切换需重建全部区块网格）
     mkRow('smoothLighting', gDisplay).addEventListener('click', () => {
       this.game.settings.smoothLighting = !this.game.settings.smoothLighting;
@@ -227,6 +232,7 @@ export class VideoSettings {
     this.rows.brightness.textContent = t('亮度: {p}%（最低亮度 {v}）', { p: s.brightness, v: brightnessToMinLight(s.brightness).toFixed(2) });
     this.rows.clouds.textContent = t('云: {v}', { v: onOff(s.clouds) });
     this.rows.particles.textContent = t('粒子: {v}', { v: t(PARTICLE_LABELS[s.particles] || '全部') });
+    this.rows.phenomena.textContent = t('潮候现象: {v}', { v: onOff(s.phenomena !== false) });
     this.rows.smoothLighting.textContent = t('平滑光照: {v}', { v: onOff(s.smoothLighting) });
     this.rows.viewBobbing.textContent = t('视角摇晃: {v}', { v: onOff(s.viewBobbing) });
     this.rows.sensitivity.textContent = t('鼠标灵敏度: {p}%', { p: s.sensitivity });

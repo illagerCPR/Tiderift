@@ -69,6 +69,7 @@ PURE_NODE_SUITES=(
     ruin-reward                # B35 D 可解开的遗迹（阶段 2）：纪念方块/铭牌/奖励蓝图/领取去重/i18n 动态键（纯 node）
     hopper-unit                # B36 F-1 漏斗搬运纯算法（纯 node：方块 id 钉值/配置白名单/朝向/一堆 tick/满空不可堆叠/touched 去重/确定性）
     furnace-unit               # B36 F-2 熔炉进出料纯算法（纯 node：id 钉值/烧炼语义/追赶有界/漏斗进出料路由/快照恢复/权威 tick）
+    phenomena-unit             # B37 G 局部潮候与稀有景象（纯 node：四维窗口/预兆 60 秒/观测累计/游记桶与一次性纪念/铭牌方块/红线守卫）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
