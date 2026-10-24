@@ -683,4 +683,9 @@ export const ko = {
   "未测得": "측정 안 됨",
   "(你)": "(본인)",
   "在线 {n} 人": "온라인 {n}명",
+
+  // ── B38 L3 私聊 / 队伍 ──
+  "[队伍] ": "[팀] ",
+  "[私聊] ": "[귓속말] ",
+  "用法：/team join <队名> | /team leave | /team list": "사용법: /team join <이름> | /team leave | /team list",
 };

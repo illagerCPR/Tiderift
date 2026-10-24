@@ -248,6 +248,35 @@ export class Game {
       (this.playerListScreen && this.playerListScreen.visible));
   }
 
+  // B38 L3：聊天命令解析——/msg 私聊、/t 队伍、/team 组队；其余（含 /room /seed 等服务器命令）原样走房间频道
+  _sendChatText(text) {
+    if (!this.net) return;
+    const raw = String(text || '').trim();
+    if (!raw) return;
+    const dm = raw.match(/^\/msg\s+(\S+)\s+([\s\S]+)$/i);
+    if (dm) { this.net.sendChat(dm[2], 'dm', dm[1]); return; }
+    const team = raw.match(/^\/t\s+([\s\S]+)$/i);
+    if (team) { this.net.sendChat(team[1], 'team'); return; }
+    const cmd = raw.match(/^\/team\s+(join|leave|list)(?:\s+(\S+))?$/i);
+    if (cmd) {
+      const sub = cmd[1].toLowerCase();
+      if (sub === 'join') {
+        if (!cmd[2]) { this.chatBox && this.chatBox.add(t('用法：/team join <队名> | /team leave | /team list'), '#fa8'); return; }
+        this.net.sendTeamJoin(cmd[2]);
+      } else if (sub === 'leave') {
+        this.net.sendTeamLeave();
+      } else {
+        this.net.sendTeamList();
+      }
+      return;
+    }
+    if (/^\/team\b/i.test(raw)) {
+      this.chatBox && this.chatBox.add(t('用法：/team join <队名> | /team leave | /team list'), '#fa8');
+      return;
+    }
+    this.net.sendChat(raw);
+  }
+
   // B38 L1：按住 Tab 显示玩家列表（联机、无阻断界面时）；返回 true = 该按键已被接管
   _showPlayerList() {
     if (!this.running || this.paused || this.spectating) return false;
@@ -701,10 +730,12 @@ export class Game {
       // 红石源状态（lever/button）：低频广播让各端 poweredBlocks 对齐
       if (this.redstone) this.redstone.onStateChange = (x, y, z, on) => this.net.sendRedstoneState(x, y, z, on);
       this.net.on('time', (t) => { if (this.sky) this.sky.time = t; });
-      this.net.on('chat', ({ from, fromId, text }) => {
+      this.net.on('chat', ({ from, fromId, text, ch }) => {
         if (!this.chatBox) return;
         if (fromId === 0) { this.chatBox.add(text, '#aaa'); return; } // 服务器系统回复
-        this.chatBox.addSegments([{ text: `<${from}> `, color: playerColorCss(fromId) }, { text, color: '#fff' }]);
+        // B38 L3：队伍/私聊加频道前缀，房间频道保持原样（<昵称> 文本）
+        const tag = ch === 'team' ? t('[队伍] ') : ch === 'dm' ? t('[私聊] ') : '';
+        this.chatBox.addSegments([{ text: `${tag}<${from}> `, color: playerColorCss(fromId) }, { text, color: '#fff' }]);
       });
       this.net.on('system', (m) => {
         if (!this.chatBox) return;
@@ -712,7 +743,7 @@ export class Game {
         else this.chatBox.add(typeof m === 'string' ? m : (m && m.text) || String(m), '#aaa');
       });
       this.net.on('attacked', ({ damage }) => { this.player.hurt(damage, 'player', true); });
-      this.chatBox = new ChatBox(this, (text) => this.net.sendChat(text));
+      this.chatBox = new ChatBox(this, (text) => this._sendChatText(text));
       this.chatBox.add(t('已进入局域网世界 · 房间「{r}」 · 按 T 聊天（/room 换房 /rebuild 重建世界 host）', { r: this.net.room || 'default' }), '#ff8');
     }
 

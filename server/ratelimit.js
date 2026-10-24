@@ -37,6 +37,8 @@ export class RateLimiter {
 // 消息类型 -> 限速档位（未列出的消息不限速；PING/PONG/HELLO/房间握手天然豁免）
 export function tierOf(msgType, MSG) {
   if (msgType === MSG.CHAT) return 'chat';           // 含 '/' 命令（同走 chat 档）
+  // B38 L3：组队操作每次都会向全房广播 TEAMS，与聊天共用同一档位
+  if (msgType === MSG.TEAM_JOIN || msgType === MSG.TEAM_LEAVE || msgType === MSG.TEAM_LIST) return 'chat';
   if (msgType === MSG.BLOCK_SET) return 'block';
   if (msgType === MSG.BLOCK_SET_BATCH) return 'block'; // B26：批量按 1 条计（不按格数，防流动模拟误伤限速）
   if (msgType === MSG.PLAYER_STATE) return 'state';

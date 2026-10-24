@@ -683,4 +683,9 @@ export const es = {
   "未测得": "sin datos",
   "(你)": "(tú)",
   "在线 {n} 人": "{n} en línea",
+
+  // ── B38 L3 私聊 / 队伍 ──
+  "[队伍] ": "[Equipo] ",
+  "[私聊] ": "[Privado] ",
+  "用法：/team join <队名> | /team leave | /team list": "Uso: /team join <nombre> | /team leave | /team list",
 };

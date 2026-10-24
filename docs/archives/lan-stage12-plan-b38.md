@@ -1,6 +1,6 @@
 # Tiderift Beta Build 38 · 局域网打磨三项 实施计划
 
-> 状态：**在办**。规划日期 2026-10-23；L1（§4.5）、L2（§5.5）已交付，L3 待做。
+> 状态：**已交付（Build 38）**。规划日期 2026-10-23；L1 §4.5、L2 §5.5、L3 §6.5 三节均有交付记录。
 > 交付形态：计划文件本身不含代码；实现按里程碑推进并各自留交付记录。
 > 上游候选来源：`docs/lan-multiplayer-design.md` §11「阶段 12 及以后」。
 
@@ -118,6 +118,16 @@
 
 - 三会话：房间聊天三人可见；`/msg` 只有目标收到；组队后 `/t` 只有队友收到；退队后不再收到。
 - 私聊目标离线时发送者收到系统提示、不静默失败。
+### 6.5 交付记录（2026-10-23）
+
+- 状态：**已交付**（防回退备忘见 `docs/agent-notes/multiplayer.md` 的 B38 L3 节）。
+- 协议：`CHAT` 增**可选** `ch`（`room|team|dm`，缺省 room）与 `to`（dm 目标昵称）；新增 `TEAM_JOIN {team}` / `TEAM_LEAVE` / `TEAM_LIST`（C2S）与 `TEAMS`（S2C 全量结构）。**纯新增，不升 `PROTOCOL_VERSION`**。
+- 服务端：`Room.teams: Map<队名, {leaderId, members:Set<id>}>` + `player.team`，**会话级内存**（不落盘、不进快照、重连清空）；`TEAM_LIMIT=8`；队长退队/退房 = 解散；三条新消息与聊天共用 `chat` 限速档（30/min）。`onChat` 按 `ch` 分流：`room` 仍全房广播，`team` 只发队友（含自身回显），`dm` 只发目标 + 发送者回显，目标不在线回系统提示。
+- 客户端：`sendChat(text, ch, to)` + `sendTeamJoin/Leave/List`；`NetworkManager.teams` 随 `TEAMS` 全量覆盖；`Game._sendChatText()` 解析 `/msg <昵称> <文本>`、`/t <文本>`、`/team join|leave|list`，其余（含 `/room` `/seed` 等服务端命令）原样走房间频道；聊天框给队伍/私聊加 `[队伍]` `[私聊]` 前缀。
+- Tab 列表：队伍徽标 `★ 队名`（队长）/ `◆ 队名`（队员），队伍结构变化时若面板可见立即重绘。
+- 回归：`server/test-stage12.mjs` 追加 14 条断言（未组队提示与不外泄、TEAMS 广播、2 人队伍、队伍/私聊分流、离线私聊提示、退队后收不到、队长退队解散、满 8 人后第 9 人被拒）；`npm test` 全绿。
+- 浏览器实测（两会话）：`/team join T1` 后两端 `TEAMS` 一致、Tab 面板显示 `★ T1` / `◆ T1`；`/t` 与 `/msg` 各端前缀正确且只送达应送达者；退队后不再收到队伍消息并收到「你不在任何队伍中」提示。
+- 已知边界（本批不做）：不接受陌生人私聊的开关、队伍邀请制、队伍持久化，均留后续。
 - 重连/换房后队伍清空（不残留）。
 - `test-stage12.mjs` 覆盖分流与 30/min 限速。
 

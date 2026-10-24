@@ -110,6 +110,8 @@ export class NetworkManager {
     // 与 _remoteDims 分开：异维度玩家没有远端实体，名单仍要能列出他们。
     this._roster = new Map();
     this._sentRtt = null;         // 上次随 player_state 上报的延迟（只在变化时附带该字段）
+    // B38 L3：队伍结构（服务器 TEAMS 全量下发；会话级，重连即清）
+    this.teams = [];
     // Idea-3C：玩家档案——15s 周期上报；进房下发的档案世界未就绪时先缓存
     this._profileTimer = 15;
     this._pendingProfile = null;
@@ -140,6 +142,7 @@ export class NetworkManager {
     this._remoteDims = new Map();
     this._roster = new Map();
     this._sentRtt = null;        // 新连接 = 服务器侧新玩家，延迟要重新上报一次
+    this.teams = [];             // B38 L3：队伍是会话级状态，新连接一律清空
     this._clearBlueprints();
     this._connectSocket(false);
   }
@@ -718,12 +721,27 @@ export class NetworkManager {
     this._roster.set(info.id, cur);
   }
 
+  // B38 L3：某玩家所在队伍（无则 null）——队伍是服务器全量下发的，列表渲染时现算即可
+  teamOf(id) {
+    for (const t of this.teams) {
+      const m = Array.isArray(t.members) ? t.members.find((x) => x.id === id) : null;
+      if (m) return { name: t.name, leader: !!m.leader };
+    }
+    return null;
+  }
+
   // B38 L1：Tab 玩家列表的数据快照（含本端；自报延迟本端取 netStats，远端取服务器透传）
   playerRoster() {
+    const selfTeam = this.teamOf(this.selfId);
     const list = [{ id: this.selfId, name: this.name, mode: null, dim: this.dim,
-      rtt: this.rttMs == null ? null : Math.round(this.rttMs), self: true }];
+      rtt: this.rttMs == null ? null : Math.round(this.rttMs), self: true,
+      team: selfTeam ? selfTeam.name : null, teamLeader: !!(selfTeam && selfTeam.leader) }];
     for (const e of this._roster.values()) {
-      list.push({ id: e.id, name: e.name || '', mode: e.mode, dim: e.dim, rtt: e.rtt, self: false });
+      const team = this.teamOf(e.id);
+      list.push({
+        id: e.id, name: e.name || '', mode: e.mode, dim: e.dim, rtt: e.rtt, self: false,
+        team: team ? team.name : null, teamLeader: !!(team && team.leader),
+      });
     }
     return list;
   }
@@ -1116,6 +1134,11 @@ export class NetworkManager {
       case MSG.CHAT:
         this._emit('chat', msg);
         break;
+      case MSG.TEAMS:
+        // B38 L3：队伍结构全量覆盖（进房/变更后服务器推送；会话级，不落盘）
+        this.teams = Array.isArray(msg.teams) ? msg.teams : [];
+        if (this.game.playerListScreen && this.game.playerListScreen.visible) this.game.playerListScreen.render();
+        break;
       case MSG.PING:
         this._send(MSG.PONG, { seq: msg.seq });   // 回应服务器心跳，防踢出（不带 ts，与 RTT 直测区分）
         break;
@@ -1374,7 +1397,17 @@ export class NetworkManager {
   sendRespawn(x, y, z) { this._send(MSG.RESPAWN, { x, y, z }); }
   sendGamemode(mode) { this._send(MSG.GAMEMODE, { mode }); }
   sendSetTime(t) { this._send(MSG.SET_TIME, { time: t }); }
-  sendChat(text) { this._send(MSG.CHAT, { text }); }
+  // B38 L3：ch = 'room'（缺省）| 'team' | 'dm'；dm 需带目标昵称 to
+  sendChat(text, ch = 'room', to = null) {
+    const payload = { text };
+    if (ch && ch !== 'room') payload.ch = ch;
+    if (to) payload.to = to;
+    this._send(MSG.CHAT, payload);
+  }
+
+  sendTeamJoin(team) { this._send(MSG.TEAM_JOIN, { team }); }
+  sendTeamLeave() { this._send(MSG.TEAM_LEAVE, {}); }
+  sendTeamList() { this._send(MSG.TEAM_LIST, {}); }
 
   // B34-A：四界游记共享标记——个人标记只在玩家明确点「分享」时才上报；
   // 服务端清洗、生成权威 id 与归属后再广播（本端不本地预置，等回执保持一致）。

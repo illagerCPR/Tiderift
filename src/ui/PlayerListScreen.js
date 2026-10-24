@@ -124,6 +124,7 @@ export class PlayerListScreen {
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">
           ${esc(p.name || t('玩家'))}${p.self ? ` <span style="color:#9aa3b2;">${esc(t('(你)'))}</span>` : ''}
         </span>
+        <span style="width:104px;flex:0 0 auto;color:#ffd88f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.team ? `${p.teamLeader ? '\u2605' : '\u25c6'} ${esc(p.team)}` : ''}</span>
         <span style="width:96px;flex:0 0 auto;color:#c8b8ff;">${esc(dimName)}</span>
         <span style="width:64px;flex:0 0 auto;text-align:right;color:#a8e0a8;">${esc(ping)}</span>
       </div>

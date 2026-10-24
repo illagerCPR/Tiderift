@@ -149,3 +149,16 @@
 - **面板**：`server/admin.html` 原生 canvas（无图表库），蓝线=消息/秒、橙线=字节/秒，**两条各按自身峰值归一**（量级差两个数量级，共用 Y 轴会让消息线贴在底边）；刷新时先拉 `/api/stats` 再 `renderRooms()`，`drawSparks()` 在 `renderRooms` 末尾被调（卡片是整段重绘的，画布每次都是新节点）。
 - **测试**：`server/test-stage12.mjs`（22 断言：纯模块环形/脏值/回收 + 端到端计数与采样 + viewer 可读 + 空房消失），已入 `run-all-tests.sh` 的 server 清单。
 
+
+### B38 L3 · 房间私聊与队伍分组
+
+- **频道就是 `CHAT` 的可选字段**（`ch`/`to`），纯新增、不升 `PROTOCOL_VERSION`。兼容点只有一句：`msg.ch === 'team' || msg.ch === 'dm' ? msg.ch : 'room'`——旧端不带 `ch` 一律当房间频道，别改写成严格白名单的 else 分支（脏值会掉进未知频道）。
+- **队伍是会话级内存**：`Room.teams: Map<队名, {leaderId, members:Set<id>}>` + `player.team`；不落盘、不进 `roomSnapshot`。`addPlayer` 里的 `p.team = null` 是唯一初始化点——重连 = 服务器侧新玩家对象 = 队伍自然清空。
+- **队名即组队标识**：`TEAM_JOIN {team}` 加入同名队伍，不存在则以自己为队长新建（本批没有邀请制）。队长退出/退房 = 解散：把其余成员的 `p.team` 一并清空并发系统提示。`removePlayer` 里**必须在 `players.delete` 之前** `leaveTeam`，否则解散通知找不到成员。
+- **上限 `TEAM_LIMIT=8`**：判 `members.size >= LIMIT` 要在 `members.add` 之前；自建分支 size 恒为 0，所以"满员"只可能发生在已有队伍上。拒绝时给系统提示，不静默。
+- **分流口径**：`team` 只发队友**并含发送者回显**（否则自己看不到自己说的话，约等于消息丢了）；`dm` 发目标 + 发送者回显，目标不在线回系统提示（沿用 `sendTo(..., MSG.CHAT, { from: '系统', fromId: 0, ... })`）；`room` 保持原 `broadcast`。
+- **限速**：`TEAM_JOIN/TEAM_LEAVE/TEAM_LIST` 在 `server/ratelimit.js` 的 `tierOf` 挂到 `chat` 档——每次组队操作都会向全房广播 `TEAMS`，不挂档会被刷。
+- **客户端唯一命令解析点**：`Game._sendChatText()`（ChatBox 的 `onSend` 指向它）。**未识别的输入必须原样透传**——`/room` `/seed` `/rebuild` 等是服务端命令，客户端吞掉就等于砍掉既有功能。
+- **面板数据不做冗余副本**：`NetworkManager.teamOf(id)` 从全量 `teams` 现算；`TEAMS` 到达且面板可见时立即 `render()`，否则等 250ms 节流重绘。
+- **测试**：`server/test-stage12.mjs` 的 `[5]` 段（14 条）覆盖未组队提示与不外泄、`TEAMS` 广播、双人队伍、队伍/私聊分流、离线私聊提示、退队后收不到、队长退队解散、满 8 人后第 9 人被拒。
+

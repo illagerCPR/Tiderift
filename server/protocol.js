@@ -131,7 +131,11 @@ export const MSG = {
   TIME: 'time',
 
   // 聊天与心跳
-  CHAT: 'chat',
+  CHAT: 'chat',                 // B38 L3：增可选 ch（'room'|'team'|'dm'，缺省 room）与 to（dm 目标昵称）
+  TEAM_JOIN: 'team_join',       // C2S {team}：加入队伍（同名队伍不存在即自建，自己为队长）
+  TEAM_LEAVE: 'team_leave',     // C2S：退出当前队伍（队长退出 = 解散）
+  TEAM_LIST: 'team_list',       // C2S：请求全量队伍结构（回 TEAMS）
+  TEAMS: 'teams',               // S2C {teams:[{leader, members:[{id,name}]}]}（进房与每次变更后全房下发）
   PING: 'ping',
   PONG: 'pong',
 

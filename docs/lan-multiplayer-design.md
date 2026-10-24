@@ -610,12 +610,12 @@ server/
 
 ### 阶段 12 及以后（候选项）
 
-> **状态：已排期（2026-10-23）**——原「搁置（2026-09-12）」解除。剩余三项合批排入 **Build 38**，实施计划见 `docs/lan-stage12-plan-b38.md`。
+> **状态：已交付（Build 38，2026-10-23）**——原「搁置（2026-09-12）」→ 已排期 → 三项全部落地，计划与交付记录见 `docs/archives/lan-stage12-plan-b38.md`，防回退备忘见 `docs/agent-notes/multiplayer.md` 与 `ui-misc.md` 的 B38 各节。
 
-- [ ] **玩家列表面板（Tab 键）**：房间内玩家/维度/ping 一览。**规划核查修正**：维度数据已齐（`Room.joinInfo()` 带 `dim`，`server/room.js:818`；客户端 `NetworkManager._remoteDims`），但**其他玩家的 ping 没有数据源**——`rttMs` 只是本端到服务器的 RTT（`NetworkManager.js:100`），需先补 `player_state.rtt` 上报通道。
+- [x] **玩家列表面板（Tab 键）**：房间内玩家/维度/ping 一览。**规划核查修正**：维度数据已齐（`Room.joinInfo()` 带 `dim`，`server/room.js:818`；客户端 `NetworkManager._remoteDims`），但**其他玩家的 ping 没有数据源**——`rttMs` 只是本端到服务器的 RTT（`NetworkManager.js:100`），需先补 `player_state.rtt` 上报通道。**已交付**：`player_state.rtt`（变化才带）+ `joinInfo.rtt` + `NetworkManager._roster`/`playerRoster()` + `src/ui/PlayerListScreen.js`（按住 Tab；同维度/其他维度分区、本端置顶、维度名、ping、队伍标记）。
 - ~~远端玩家盔甲外观同步（盔甲槽已有数据通道，缺外观渲染）~~ —— **已废弃（2026-10-23，用户决定）**，不再排期。
-- [ ] **服务器性能面板**：每房间消息速率 / 字节量统计（管理面板图表化）。**规划核查修正**：服务端现有统计只有 `dropped` 限速丢包计数（`server/room.js:914`），需在 `server/index.mjs:856`（入向）与 `send()`（出向）新增累计器。
-- [ ] **房间内私聊 / 队伍分组**：协议层零起步（`Room.onChat` 无频道概念，`server/room.js:2128`）。
+- [x] **服务器性能面板**：每房间消息速率 / 字节量统计（管理面板图表化）。**规划核查修正**：服务端现有统计只有 `dropped` 限速丢包计数（`server/room.js:914`），需在 `server/index.mjs:856`（入向）与 `send()`（出向）新增累计器——**实现时再修正一次**：出向钩子实际在 `Room.sendTo`（房间流量唯一漏斗），`index.mjs` 的 `send()` 只管握手/面板消息。**已交付**：`server/stats.js`（每秒一点、每房 60 点环形、空房回收）+ `GET /api/stats` + `admin.html` 房间卡原生 canvas 双折线。
+- [x] **房间内私聊 / 队伍分组**：协议层零起步（`Room.onChat` 无频道概念，`server/room.js:2128`）。**已交付**：`CHAT` 增可选 `ch`/`to` + `TEAM_JOIN/TEAM_LEAVE/TEAM_LIST/TEAMS`（纯新增，不升 `PROTOCOL_VERSION`）；`Room.teams` 会话级内存、上限 8 人、队长离队即解散；客户端 `/msg` `/t` `/team join|leave|list`；Tab 列表显示队伍标记（★队长/◆队员）。
 
 ---
 

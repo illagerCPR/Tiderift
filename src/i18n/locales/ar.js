@@ -683,4 +683,9 @@ export const ar = {
   "未测得": "غير متاح",
   "(你)": "(أنت)",
   "在线 {n} 人": "{n} متصل",
+
+  // ── B38 L3 私聊 / 队伍 ──
+  "[队伍] ": "[فريق] ",
+  "[私聊] ": "[خاص] ",
+  "用法：/team join <队名> | /team leave | /team list": "الاستخدام: /team join <اسم> | /team leave | /team list",
 };

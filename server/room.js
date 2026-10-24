@@ -14,6 +14,8 @@ import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnac
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
 import { roomStats } from './stats.js';
 
+// B38 L3：队伍人数上限（加入时校验；op/配置不入库，保持会话级简单语义）
+const TEAM_LIMIT = 8;
 // S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
 const REPLAY_CHUNK = 512;
 // S9：单连接发送缓冲背压阈值（超过则让出事件循环等排空，不丢账本项）
@@ -504,6 +506,8 @@ export class Room {
     this.config = config;
     this._worldDirty = false; // S8：世界账本脏标记（高频路径只标脏，由 flushWorld / 后台扫描落盘）
     this.players = new Map();   // id -> player
+    // B38 L3：队伍（队名 -> {leaderId, members:Set<id>}）；会话级内存，不落盘、不进快照，重连即清
+    this.teams = new Map();
     this._blockReplayTasks = new Map(); // playerId -> 当前方块回放任务
     // M4 维度分桶账本：dim -> Map("x,y,z" -> id)；同坐标跨维度互不干扰
     this.dimensionBlocks = new Map();
@@ -796,6 +800,7 @@ export class Room {
       return false;
     }
     p.mode = 'survival';
+    p.team = null; // B38 L3：队伍是会话级内存状态，进房一律从「无队伍」开始
     p.health = 20; p.food = 20; p.saturation = 5;
     p.pos = { x: 0.5, y: 66, z: 0.5, yaw: 0, pitch: 0 };
     p.onGround = false; p.flying = false; p.inWater = false;
@@ -867,11 +872,15 @@ export class Room {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
+    // B38 L3：退房先离队（队长离开=解散），队伍结构变化要广播给其余在线玩家
+    const hadTeam = !!p.team;
+    if (hadTeam) this.leaveTeam(p);
     this._cancelBlockReplay(p);
     p._recovery = null;
     this.players.delete(id);
     this.playerSkins.delete(id); // Build 21 M2：皮肤为内存态（重连后客户端重发）
     this.broadcast(MSG.PLAYER_LEAVE, { id, name: p.name });
+    if (hadTeam) this.broadcast(MSG.TEAMS, this.teamsPayload());
     // Idea-3C：退房立即刷档案（丢包窗口最小化；断线重连同昵称直接恢复）
     this.saveProfiles();
     // S8：最后一人退房 = 房间清空，脏世界账本立即落盘（不让脏标记随空房悬置）
@@ -987,6 +996,8 @@ export class Room {
     this.sendTo(player, MSG.BLUEPRINTS, this.blueprintsPayload());
     // B35 D：进房/重连下发遗迹账本全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
     this.sendTo(player, MSG.RUIN_STATE, this.ruinsPayload());
+    // B38 L3：进房下发队伍结构（会话级内存，重连后服务器侧队伍已清，这里下发的是最新真相）
+    this.sendTo(player, MSG.TEAMS, this.teamsPayload());
     if (recovery) {
       this.sendDimensionSnapshot(player, recovery.dim, null, recovery.recoveryId);
     } else {
@@ -1214,6 +1225,9 @@ export class Room {
       case MSG.WORLD_READY: this.onWorldReady(player, msg); break;
       case MSG.SET_TIME: this.onSetTime(player, msg); break;
       case MSG.CHAT: this.onChat(player, msg); break;
+      case MSG.TEAM_JOIN: this.onTeamJoin(player, msg); break;
+      case MSG.TEAM_LEAVE: this.onTeamLeave(player); break;
+      case MSG.TEAM_LIST: this.sendTo(player, MSG.TEAMS, this.teamsPayload()); break;
       case MSG.JOURNAL_MARKER: this.onJournalMarker(player, msg); break;
       case MSG.JOURNAL_MARKER_DELETE: this.onJournalMarkerDelete(player, msg); break;
       case MSG.WAYMARK_SUBMIT: this.onWaymarkSubmit(player, msg); break;
@@ -2140,10 +2154,121 @@ export class Room {
     console.log(`[时间] host=${this.hostId} 设定 time=${this.time}`);
   }
 
+  // B38 L3：频道分流——room 全房广播（原行为）、team 只发队友（含发送者回显）、dm 只发目标 + 发送者回显
   onChat(player, msg) {
     const text = String(msg.text || '').slice(0, 120);
     if (!text) return;
+    const ch = msg.ch === 'team' || msg.ch === 'dm' ? msg.ch : 'room';
+    if (ch === 'team') {
+      const team = player.team ? this.teams.get(player.team) : null;
+      if (!team) {
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: '你不在任何队伍中（/team join <队名>）' });
+        return;
+      }
+      console.log(`[队伍] ${player.name}(${player.team}): ${text}`);
+      const payload = { from: player.name, fromId: player.id, text, ch: 'team' };
+      for (const id of team.members) {
+        const p = this.players.get(id);
+        if (p) this.sendTo(p, MSG.CHAT, payload);
+      }
+      return;
+    }
+    if (ch === 'dm') {
+      const to = String(msg.to || '').trim().slice(0, 16);
+      const target = to ? [...this.players.values()].find((p) => p.name === to) : null;
+      if (!target) {
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `玩家「${to || '?'}」不在线，私聊未送达` });
+        return;
+      }
+      if (target.id === player.id) {
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: '不能私聊自己' });
+        return;
+      }
+      console.log(`[私聊] ${player.name} → ${target.name}: ${text}`);
+      const payload = { from: player.name, fromId: player.id, text, ch: 'dm', to };
+      this.sendTo(player, MSG.CHAT, payload);
+      this.sendTo(target, MSG.CHAT, payload);
+      return;
+    }
     console.log(`[聊天] ${player.name}: ${text}`);
     this.broadcast(MSG.CHAT, { from: player.name, fromId: player.id, text });
+  }
+
+  // ===== B38 L3：队伍（会话级内存）=====
+  // 队名就是组队标识：加入不存在的队名 = 以自己为队长新建。队长退出即解散（其余成员一并清空）。
+  teamsPayload() {
+    const teams = [];
+    for (const [name, team] of this.teams) {
+      const members = [];
+      for (const id of team.members) {
+        const p = this.players.get(id);
+        if (p) members.push({ id, name: p.name, leader: id === team.leaderId });
+      }
+      teams.push({ name, members });
+    }
+    return { teams };
+  }
+
+  leaveTeam(player) {
+    const key = player.team;
+    player.team = null;
+    const team = key ? this.teams.get(key) : null;
+    if (!team) return;
+    team.members.delete(player.id);
+    if (team.leaderId === player.id) {
+      for (const id of [...team.members]) {
+        const p = this.players.get(id);
+        if (!p) continue;
+        p.team = null;
+        this.sendTo(p, MSG.CHAT, { from: '系统', fromId: 0, text: `队伍「${key}」已解散（队长离开）` });
+      }
+      this.teams.delete(key);
+      return;
+    }
+    if (team.members.size === 0) this.teams.delete(key);
+  }
+
+  onTeamJoin(player, msg) {
+    const key = String(msg.team || '').trim().slice(0, 16);
+    if (!key) {
+      this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: '队名不能为空（/team join <队名>）' });
+      return;
+    }
+    if (player.team === key) {
+      this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `你已在队伍「${key}」中` });
+      return;
+    }
+    if (player.team) this.leaveTeam(player); // 换队：先退旧队（旧队可能因此解散）
+    let team = this.teams.get(key);
+    const created = !team;
+    if (!team) {
+      team = { leaderId: player.id, members: new Set() };
+      this.teams.set(key, team);
+    }
+    if (team.members.size >= TEAM_LIMIT) {
+      if (created) this.teams.delete(key); // 自建的空队已在上面的 size 判断外，这里只为保险
+      this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `队伍「${key}」已满（上限 ${TEAM_LIMIT} 人）` });
+      return;
+    }
+    team.members.add(player.id);
+    player.team = key;
+    this.sendTo(player, MSG.CHAT, {
+      from: '系统', fromId: 0,
+      text: created ? `已创建并加入队伍「${key}」（你是队长，用 /t 发言）` : `已加入队伍「${key}」（用 /t 发言）`,
+    });
+    this.broadcast(MSG.TEAMS, this.teamsPayload());
+    console.log(`[队伍] ${player.name} 加入「${key}」${created ? '（新建）' : ''}，共 ${team.members.size} 人`);
+  }
+
+  onTeamLeave(player) {
+    if (!player.team) {
+      this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: '你不在任何队伍中' });
+      return;
+    }
+    const key = player.team;
+    this.leaveTeam(player);
+    this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `已退出队伍「${key}」` });
+    this.broadcast(MSG.TEAMS, this.teamsPayload());
+    console.log(`[队伍] ${player.name} 退出「${key}」`);
   }
 }

@@ -126,10 +126,103 @@ await api('/tokens/revoke', 'POST', { token: tV.json.token }, tOp.json.token);
 const rv = await api('/tokens/revoke', 'POST', { token: tOp.json.token }, tOp.json.token);
 assert('测试账号撤销后鉴权自动关闭', rv.status === 200 && rv.json.remaining === 0, JSON.stringify(rv.json));
 
+// --- [5] B38 L3：私聊 / 队伍分流 ---
+console.log('[5] 私聊与队伍分流');
+const C = await connect('StatC');
+send(C, 'join_room', { room: ROOM });
+await sleep(350);
+A.inbox.length = 0; B.inbox.length = 0; C.inbox.length = 0;
+
+send(A, 'chat', { text: '有人吗', ch: 'team' });
+await sleep(250);
+assert('未组队发队伍消息得到系统提示', A.inbox.some((m) => m.t === 'chat' && m.fromId === 0 && /不在任何队伍/.test(m.text || '')),
+  JSON.stringify(A.inbox.filter((m) => m.t === 'chat')));
+assert('未组队的队伍消息不外泄', !B.inbox.some((m) => m.t === 'chat' && m.text === '有人吗'));
+
+A.inbox.length = 0; B.inbox.length = 0; C.inbox.length = 0;
+send(A, 'team_join', { team: 'T1' });
+await sleep(250);
+const aTeams = A.inbox.filter((m) => m.t === 'teams').pop();
+assert('组队后收到 TEAMS 全量结构', !!aTeams && aTeams.teams.some((t) => t.name === 'T1' && t.members.length === 1),
+  JSON.stringify(aTeams));
+assert('TEAMS 广播给房间其他玩家', B.inbox.some((m) => m.t === 'teams'));
+
+B.inbox.length = 0;
+send(B, 'team_join', { team: 'T1' });
+await sleep(250);
+const teams2 = B.inbox.filter((m) => m.t === 'teams').pop();
+assert('第二人加入后队伍有 2 名成员', !!teams2 && teams2.teams.find((t) => t.name === 'T1').members.length === 2,
+  JSON.stringify(teams2));
+
+A.inbox.length = 0; B.inbox.length = 0; C.inbox.length = 0;
+send(A, 'chat', { text: '队伍频道', ch: 'team' });
+await sleep(250);
+assert('队友收到队伍消息（含发送者回显）',
+  A.inbox.some((m) => m.t === 'chat' && m.text === '队伍频道' && m.ch === 'team') &&
+  B.inbox.some((m) => m.t === 'chat' && m.text === '队伍频道' && m.ch === 'team'));
+assert('非队友收不到队伍消息', !C.inbox.some((m) => m.t === 'chat' && m.text === '队伍频道'));
+
+B.inbox.length = 0; C.inbox.length = 0;
+send(A, 'chat', { text: '悄悄话', ch: 'dm', to: 'StatC' });
+await sleep(250);
+assert('私聊目标收到', C.inbox.some((m) => m.t === 'chat' && m.text === '悄悄话' && m.ch === 'dm'));
+assert('同房非目标收不到私聊', !B.inbox.some((m) => m.t === 'chat' && m.text === '悄悄话'));
+assert('私聊发送者收到回显', A.inbox.some((m) => m.t === 'chat' && m.text === '悄悄话'));
+
+A.inbox.length = 0;
+send(A, 'chat', { text: 'q', ch: 'dm', to: 'Nobody' });
+await sleep(250);
+assert('私聊离线玩家得到系统提示（不静默失败）',
+  A.inbox.some((m) => m.t === 'chat' && m.fromId === 0 && /不在线/.test(m.text || '')));
+
+B.inbox.length = 0; A.inbox.length = 0;
+send(B, 'team_leave', {});
+await sleep(250);
+const teams3 = B.inbox.filter((m) => m.t === 'teams').pop();
+assert('退队后 TEAMS 只剩队长', !!teams3 && teams3.teams.find((t) => t.name === 'T1').members.length === 1,
+  JSON.stringify(teams3));
+A.inbox.length = 0; B.inbox.length = 0;
+send(A, 'chat', { text: '还在吗', ch: 'team' });
+await sleep(250);
+assert('退队的人不再收到队伍消息', !B.inbox.some((m) => m.t === 'chat' && m.text === '还在吗'));
+
+A.inbox.length = 0;
+send(A, 'team_leave', {});
+await sleep(250);
+const teams4 = A.inbox.filter((m) => m.t === 'teams').pop();
+assert('队长退队 = 队伍解散', !!teams4 && !teams4.teams.some((t) => t.name === 'T1'), JSON.stringify(teams4));
+
+// 队伍人数上限 8：塞满后第 9 人被拒（不静默）
+const teamers = [];
+for (let i = 0; i < 5; i++) {
+  const cl = await connect('Team' + i);
+  send(cl, 'join_room', { room: ROOM });
+  teamers.push(cl);
+}
+await sleep(450);
+send(A, 'team_join', { team: 'T8' });
+await sleep(200);
+for (const cl of [B, C, ...teamers]) {
+  send(cl, 'team_join', { team: 'T8' });
+  await sleep(120);
+}
+const extra = await connect('Team9');
+send(extra, 'join_room', { room: ROOM });
+await sleep(400);
+extra.inbox.length = 0;
+send(extra, 'team_join', { team: 'T8' });
+await sleep(300);
+assert('队伍满 8 人后第 9 人被拒并收到提示',
+  extra.inbox.some((m) => m.t === 'chat' && m.fromId === 0 && /已满/.test(m.text || '')),
+  JSON.stringify(extra.inbox.filter((m) => m.t === 'chat')));
+
 // --- [4] 房空即回收 ---
 console.log('[4] 空房回收');
 A.ws.close();
 B.ws.close();
+C.ws.close();
+for (const cl of teamers) cl.ws.close();
+extra.ws.close();
 await sleep(2600);
 const s4 = await api('/stats');
 assert('房空后该房间从 /api/stats 消失', !statsRoom(s4.json, ROOM),

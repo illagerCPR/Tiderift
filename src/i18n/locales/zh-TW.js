@@ -683,4 +683,9 @@ export const zhTW = {
   "未测得": "未測得",
   "(你)": "(你)",
   "在线 {n} 人": "線上 {n} 人",
+
+  // ── B38 L3 私聊 / 队伍 ──
+  "[队伍] ": "[隊伍] ",
+  "[私聊] ": "[私聊] ",
+  "用法：/team join <队名> | /team leave | /team list": "用法：/team join <隊名> | /team leave | /team list",
 };
