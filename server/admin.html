@@ -40,6 +40,13 @@
   body.viewer .card button { display: none; }
   body.viewer .card textarea, body.viewer .card input, body.viewer .card select { opacity: 0.6; }
   .tag-viewer { background: #3f5a7a; color: #bfe0ff; }
+  /* B38 L2：房间消息速率折线（纯 canvas 手绘，不引入图表库） */
+  .spark-wrap { margin-top: 10px; }
+  .spark { width: 100%; height: 84px; display: block; background: #14171d;
+           border: 1px solid #3a3f4a; border-radius: 3px; }
+  .spark-legend { font-size: 12px; color: #9aa3b2; margin-top: 4px; }
+  .spark-legend b { color: #5fb8f0; font-weight: normal; }
+  .spark-legend i { color: #f0b060; font-style: normal; }
 </style>
 </head>
 <body>
@@ -187,6 +194,7 @@
 
 <script>
   let status = null;
+  let statsData = null; // B38 L2：/api/stats 快照（老服务器无该接口时为 null，面板照常工作）
   let logs = [];
   const TOKEN_KEY = 'pmc-admin-token';
   let authDenied = false; // 服务器 401 后不再自动轮询刷新，等用户登录
@@ -352,6 +360,10 @@
             <td><button class="btn-danger btn-sm" onclick="kick(${p.id})">踢出</button></td>
           </tr>`).join('')}
       </table>` : '<div class="empty">房间内暂无玩家在线</div>'}
+      <div class="spark-wrap">
+        <canvas class="spark" id="spark-${idx}"></canvas>
+        <div class="spark-legend" id="spark-legend-${idx}"></div>
+      </div>
       <div style="margin-top:6px;font-size:13px;color:#aab3c2;">
         房间开关：
         <label style="margin-left:6px;cursor:pointer;">
@@ -370,6 +382,78 @@
         <button class="btn-danger btn-sm" onclick="deleteRoom('${attrRoom(room.name)}')">删除房间（重置世界）</button>
       </div>
     `).join('');
+    drawSparks();
+  }
+
+  // B38 L2：房间消息速率折线——蓝线=消息/秒（收发合计），橙线=字节/秒（收发合计）。
+  // 两条各按自己的峰值归一：量级差两个数量级以上，共用一根 Y 轴会让消息线贴在底边。
+  function drawSparks() {
+    if (!status || !status.rooms) return;
+    const list = (statsData && Array.isArray(statsData.rooms)) ? statsData.rooms : [];
+    status.rooms.forEach((room, idx) => {
+      const canvas = document.getElementById('spark-' + idx);
+      const legend = document.getElementById('spark-legend-' + idx);
+      if (!canvas) return;
+      const entry = list.find((s) => s.name === room.name) || null;
+      drawSpark(canvas, entry);
+      if (legend) {
+        legend.innerHTML = entry ? fmtSparkLegend(entry)
+          : '<span class="empty">无采样（房间内需有在线玩家，每秒一个点）</span>';
+      }
+    });
+  }
+
+  function fmtSparkLegend(entry) {
+    const pts = Array.isArray(entry.points) ? entry.points : [];
+    const last = pts.length ? pts[pts.length - 1] : null;
+    const tot = entry.totals || {};
+    const now = last
+      ? `当前 <b>${last.inMsgs + last.outMsgs} 消息/秒</b>（入 ${last.inMsgs} / 出 ${last.outMsgs}） · <i>${((last.inBytes + last.outBytes) / 1024).toFixed(1)} KB/秒</i>`
+      : '当前无采样';
+    const all = `累计 <b>${(tot.inMsgs || 0) + (tot.outMsgs || 0)}</b> 条 / <i>${(((tot.inBytes || 0) + (tot.outBytes || 0)) / 1024).toFixed(1)} KB</i>`;
+    return `${now} · ${all} · 采样 ${pts.length}/${entry.pointLimit || 60} 点`;
+  }
+
+  function drawSpark(canvas, entry) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(120, canvas.clientWidth || 480);
+    const H = Math.max(40, canvas.clientHeight || 84);
+    if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#252a34';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      const y = Math.round((H * i) / 3) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    const pts = (entry && Array.isArray(entry.points)) ? entry.points : [];
+    if (!pts.length) {
+      ctx.fillStyle = '#7a8394';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('暂无采样（每秒一个点）', 8, Math.round(H / 2) + 4);
+      return;
+    }
+    const msgs = pts.map((p) => (p.inMsgs || 0) + (p.outMsgs || 0));
+    const bytes = pts.map((p) => (p.inBytes || 0) + (p.outBytes || 0));
+    const xAt = (i) => (pts.length === 1 ? 1 : (i / (pts.length - 1)) * (W - 2) + 1);
+    const stroke = (arr, color) => {
+      const max = Math.max(1, ...arr);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      arr.forEach((v, i) => {
+        const y = H - (v / max) * (H - 4) - 2;
+        if (i === 0) ctx.moveTo(xAt(i), y); else ctx.lineTo(xAt(i), y);
+      });
+      ctx.stroke();
+    };
+    stroke(bytes, '#f0b060');
+    stroke(msgs, '#5fb8f0');
   }
 
   // Idea-4A：房间开关保存（服务器落盘 config + 向该房间在线玩家广播 room_settings 热生效）
@@ -425,6 +509,8 @@
         if (document.activeElement !== wlEl) wlEl.value = fmtRoomLines(wl.roomWhitelist);
         if (document.activeElement !== opsEl) opsEl.value = fmtRoomLines(wl.roomOps);
       } catch (e2) { /* 401 已由 api() 处理 */ }
+      // B38 L2：房间消息速率（独立容错——老服务器没有该接口时面板照常工作）
+      try { statsData = await api('/api/stats'); } catch (e2) { statsData = null; }
       renderRooms();
       renderAccounts(); // 阶段10：管理账号列表
       // 阶段6 操作日志（独立容错：日志接口异常不影响状态刷新）

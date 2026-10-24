@@ -13,6 +13,7 @@ import { Room } from './room.js';
 import { MSG, PROTOCOL_VERSION } from './protocol.js';
 import * as store from './store.js';
 import * as config from './config.js';
+import { roomStats } from './stats.js';
 import { tierOf, createConnectionLimiters, RateLimiter } from './ratelimit.js';
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -48,6 +49,12 @@ function getRoom(name) {
     rooms.set(key, room);
   }
   return room;
+}
+
+// B38 L2：房间是否「活着」（有人在线）——统计空房回收与 /api/stats 过滤共用这一条判据
+function roomIsActive(name) {
+  const r = rooms.get(name);
+  return !!r && r.players.size > 0;
 }
 
 // 阶段11：房间白名单（config.roomWhitelist，名单为空/不存在 = 不启用，所有人可进）
@@ -141,6 +148,7 @@ function leaveCurrentRoom(player, targetKey) {
 // 服务器管理面板（阶段 4）：HTTP 路由 + JSON API
 // 管理页 /   -> server/admin.html
 // /api/status  -> 服务器/房间/玩家/配置状态
+// /api/stats   -> 各房间消息速率（1 秒一点、60 点环形；会话级内存，不落盘）
 // /api/broadcast {text} -> 向所有房间广播系统消息
 // /api/kick {playerId} -> 踢出玩家（发 kicked，客户端停止自动重连）
 // /api/config (GET/POST) -> 读取/更新服务器配置（落盘）
@@ -425,6 +433,17 @@ async function handleHttpRequest(req, res) {
           rooms: [...rooms.values()].map((r) => r.info()),
           config: maskedConfig(),
         });
+        return;
+      }
+      // B38 L2：房间消息速率（viewer 可读；非 GET 已被上方 viewer 分支 403）
+      if (p === '/api/stats' && req.method === 'GET') {
+        const snap = roomStats.snapshot(roomIsActive);
+        // 在线人数是即时量：直接读房间，不跟着 1 秒采样节拍走（否则刚进房会显示 0）
+        for (const entry of snap.rooms) {
+          const r = rooms.get(entry.name);
+          entry.players = r ? r.players.size : 0;
+        }
+        sendJson(res, 200, snap);
         return;
       }
       if (p === '/api/config' && req.method === 'GET') {
@@ -757,6 +776,10 @@ const backupSweep = setInterval(runAutoBackupOnce, 60000);
 // 由本扫描统一落盘；退房清空与关服另有立即刷路径（flushWorld 幂等，不脏时无操作）。
 const worldFlushSweep = setInterval(() => { for (const r of rooms.values()) r.flushWorld(); }, 1000);
 
+// B38 L2：消息速率采样——每秒把各房间这一秒的收发条数/字节量压成一个点，房间保留最近 STATS_POINTS 个；
+// 空房整条回收（对应房间从 /api/stats 与面板里消失）。存量只在内存，不进 roomSnapshot、不落盘。
+const statsSweep = setInterval(() => { roomStats.tick(Date.now(), roomIsActive); }, 1000);
+
 // B36 F-1：漏斗搬运 sweep——每 200ms 让各房间推进一次；实际节拍由 config.flowIntervalMs 门控
 // （flowEnabled=false 时 tickFlow 直接短路）。搬运结果以 by:0 的 CONTAINER_SET 按容器合并广播。
 // B36 F-2：熔炉烧炼推进共用同一 sweep（进度与产出服务器权威；客户端只显示）。
@@ -809,6 +832,7 @@ function shutdown() {
   clearInterval(backupSweep);
   clearInterval(rateReportSweep);
   clearInterval(worldFlushSweep);
+  clearInterval(statsSweep);
   clearInterval(flowSweep);
   process.exit(0);
 }
@@ -854,6 +878,8 @@ wss.on('connection', (ws, req) => {
   }, HEARTBEAT_POLL_MS);
 
   ws.on('message', (raw) => {
+    // B38 L2：入向流量先记再解析——畸形包同样占用带宽，不该从统计里漏掉
+    if (player && player.room) roomStats.add(player.room.name, { inMsgs: 1, inBytes: (raw && raw.length) || 0 });
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
     if (!msg || typeof msg.t !== 'string') return;

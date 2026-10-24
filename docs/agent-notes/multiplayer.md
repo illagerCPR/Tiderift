@@ -137,3 +137,15 @@
 - **不升协议版本**：纯新增可选字段，旧端忽略未知字段，新端 `rtt == null` 显示「未测得」。
 - **测试**：`server/test-mp.mjs` 补两条（同房间 `player_state` 透传 / 更晚加入者从 `player_join` 回放拿到 rtt）。**踩坑**：初版把断言挂在 B 身上，而 B 在脚本第 58 行就 `ws.close()` 了——这类「复用早期客户端」的断言必错，现改为新连的 J（收实时包）+ 更晚加入的 I（收回放）。
 
+
+### B38 L2 · 服务器消息速率统计（/api/stats + 管理面板折线）
+
+- **出向必须挂在 `Room.sendTo`**：房间流量的唯一漏斗（`broadcast` / `broadcastDim` 最终都走它）。挂在 `index.mjs` 的 `send()` 上会漏掉**所有**房间广播——那个函数只管握手/管理面板自己的发送。
+- **入向先记再解析**：`ws.on('message')` 里在 `JSON.parse` 之前按 `raw.length` 记字节，畸形包同样占带宽，不该从统计里漏掉。
+- **每秒一个点**：`roomStats.tick(Date.now(), roomIsActive)` 由 1s 定时器驱动，把这一秒的差值压成一个点、清桶、剪到 `STATS_POINTS=60`（定长环形，防无限增长）。总量 `totals` 不受裁剪影响。
+- **空房即回收**：`roomIsActive(name)`（房间在内存 **且** `players.size > 0`）同时用于采样回收与 `/api/stats` 过滤——两处判据必须共用同一个函数，否则会出现「图有点但房间不在列表」。
+- **在线人数是即时量**：路由里现读 `rooms.get(name).players.size`，**不要**存进采样（1 秒一次，刚进房的玩家会读到 0——首版就是这么写错的）。
+- **边界**：只在内存，不进 `roomSnapshot`、不落盘，关服即丢；`GET /api/stats` 对 viewer 放行，非 GET 仍由统一规则 403。
+- **面板**：`server/admin.html` 原生 canvas（无图表库），蓝线=消息/秒、橙线=字节/秒，**两条各按自身峰值归一**（量级差两个数量级，共用 Y 轴会让消息线贴在底边）；刷新时先拉 `/api/stats` 再 `renderRooms()`，`drawSparks()` 在 `renderRooms` 末尾被调（卡片是整段重绘的，画布每次都是新节点）。
+- **测试**：`server/test-stage12.mjs`（22 断言：纯模块环形/脏值/回收 + 端到端计数与采样 + viewer 可读 + 空房消失），已入 `run-all-tests.sh` 的 server 清单。
+

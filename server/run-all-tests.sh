@@ -110,7 +110,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

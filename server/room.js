@@ -11,6 +11,8 @@ import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX
 import { tickHopperFlow, hopperFacingOf, isHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
 // B36 F-2：熔炉账本——方块 id 表与烧炼推进纯算法（服务器权威进度；客户端只显示不推进）
 import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnaceBlockId, FURNACE_LIMIT, FURNACE_SYNC_MS } from './furnace.js';
+// B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
+import { roomStats } from './stats.js';
 
 // S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
 const REPLAY_CHUNK = 512;
@@ -823,7 +825,11 @@ export class Room {
   }
 
   sendTo(p, type, data) {
-    if (p && p.ws && p.ws.readyState === 1) p.ws.send(JSON.stringify({ t: type, ...data }));
+    if (!p || !p.ws || p.ws.readyState !== 1) return;
+    const payload = JSON.stringify({ t: type, ...data });
+    p.ws.send(payload);
+    // B38 L2：出向统计挂在这唯一漏斗上（broadcast / broadcastDim 最终都经 sendTo）
+    roomStats.add(this.name, { outMsgs: 1, outBytes: Buffer.byteLength(payload) });
   }
 
   _cancelBlockReplay(player) {
