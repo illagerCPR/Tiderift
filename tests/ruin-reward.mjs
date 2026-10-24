@@ -50,8 +50,9 @@ const PACKS = { 'zh-TW': zhTW, en, fr, de, ja, ko, ar, ru, es, pt };
   // ID 追加纪律：纪念方块只能排在既存末尾（race_post 之后），不得插进中部
   const racePost = BlockRegistry.getId('race_post');
   ok(names.every((n) => BlockRegistry.getId(n) > racePost), '纪念方块全部追加在 race_post 之后（ID 零漂移）');
-  const all = BlockRegistry.all();
-  ok(all[all.length - 1].name === RUIN_REWARD_PLAQUE, '铭牌是当前最后一个注册的方块', all[all.length - 1].name);
+  // 后续 Build 仍会往末尾追加方块（如 B36 漏斗），所以这里钉住「铭牌 ID 未被插队顶替」，
+  // 而不是钉「铭牌就是最后一个」——追加不是漂移，中部插入才是。
+  ok(BlockRegistry.getNameById(216) === RUIN_REWARD_PLAQUE, '铭牌 ID 216 未被后续追加/插队改变', BlockRegistry.getNameById(216));
 }
 
 // ── 二、奖励蓝图：合法性、上限、可解码 ─────────────────────────────────

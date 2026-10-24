@@ -2442,6 +2442,86 @@ reg('ruin_plaque', {
   ruin_plaque_bottom: keepsakeBottomTex(213, [58, 64, 70]),
 });
 
+
+// ── Build 36 F-1 漏斗（**文件末尾追加**，方块 ID 零漂移）────────────────────────────
+// 服务器权威搬运（服务器 tick 决定内容，客户端只播动画）：正上方容器进料、
+// 朝 facing（正对那一面 = 出料口）方向出料，自身 27 槽即缓冲。
+// 朝向家族沿用 B28 facingBase（本名 = 朝北）；facingAway 让放置时出料口背对玩家。
+
+function hopperTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+      if (d < 3) px[y * 16 + x] = rgb([30, 32, 36], 0.92 + hash2(x, y, seed) * 0.12);
+      else if (d < 5) px[y * 16 + x] = rgb([104, 108, 116], 0.9 + hash2(x, y, seed + 1) * 0.16);
+      else px[y * 16 + x] = rgb([76, 80, 88], 0.86 + hash2(x, y, seed + 2) * 0.18);
+    }
+  }
+  return pixelSvg(px);
+}
+
+function hopperSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.9 + hash2(x, y, seed) * 0.14;
+      if (y < 3) f *= 1.12;
+      if (y > 13) f *= 0.78;
+      px[y * 16 + x] = rgb([82, 86, 94], f);
+    }
+  }
+  for (const [x, y] of [[3, 5], [12, 5], [3, 10], [12, 10]]) setPx(px, x, y, rgb([152, 156, 164]));
+  return pixelSvg(px);
+}
+
+function hopperBottomTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([62, 66, 72], 0.84 + hash2(x, y, seed) * 0.16);
+  }
+  fillRect(px, 5, 5, 10, 10, rgb([44, 47, 52], 0.96));
+  return pixelSvg(px);
+}
+
+// 出料口面：钢铁板 + 下半逐层收窄的暗色吐口（正对该面即为出料方向）
+function hopperFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.9 + hash2(x, y, seed) * 0.14;
+      if (y < 3) f *= 1.12;
+      px[y * 16 + x] = rgb([82, 86, 94], f);
+    }
+  }
+  for (let i = 0; i < 5; i++) {
+    const half = 5 - i;
+    fillRect(px, 7 - half, 8 + i, 8 + half, 8 + i, rgb([34, 36, 40], 0.9 + hash2(i, 1, seed) * 0.12));
+  }
+  return pixelSvg(px);
+}
+
+const HOPPER_TEX = { top: 'hopper_top', side: 'hopper_side', bottom: 'hopper_bottom', front: 'hopper_front' };
+const HOPPER_SVG = {
+  hopper_top: hopperTopTex(231),
+  hopper_side: hopperSideTex(232),
+  hopper_bottom: hopperBottomTex(233),
+  hopper_front: hopperFrontTex(234),
+};
+
+reg('hopper', {
+  displayName: '漏斗', hardness: 3, tool: 'pickaxe', minTier: 1,
+  textures: HOPPER_TEX, facing: 'n', baseBlock: 'hopper', facingBase: 'hopper', facingAway: true,
+  lore: ['一只朝前吐东西的铁斗：上面进货，出料口只认自己对着的那一面。'],
+}, { ...HOPPER_SVG });
+
+for (const facing of ['s', 'e', 'w']) {
+  reg(`hopper_${facing}`, {
+    displayName: '漏斗', hardness: 3, tool: 'pickaxe', minTier: 1,
+    textures: HOPPER_TEX, facing, baseBlock: 'hopper', facingBase: 'hopper', facingAway: true,
+  }, { ...HOPPER_SVG });
+}
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

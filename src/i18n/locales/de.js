@@ -123,6 +123,7 @@ export const de = {
   '创造模式 - 点击取物品': 'Kreativmodus - klicken, um Gegenstände zu nehmen',
   '盔甲': 'Rüstung',
   '箱子': 'Truhe',
+  '漏斗': 'Trichter',
   '熔炉': 'Ofen',
   '燃料：可烧 {n} 个物品': 'Brennstoff: {n} Gegenstände übrig',
   '村民交易': 'Dorfbewohner-Handel',
@@ -572,6 +573,7 @@ export const de = {
   "未知原因": "Unbekannter Grund",
   "御风标桩": "Windmarkierung",
   "御风者系在岛沿的旗桩。": "Ein Fahnenpfahl, den Windreiter am Inselrand setzen.",
+  "一只朝前吐东西的铁斗：上面进货，出料口只认自己对着的那一面。": "Ein Eisentrichter, der nach vorn ausspuckt: oben hinein, und die Auslassöffnung kennt nur die Seite, zu der er zeigt.",
   "连成一线，便是可以起风的赛道。": "In einer Linie verbunden werden sie zur Strecke, auf der Wind aufkommen kann.",
 
   // ── 建筑蓝图 ──

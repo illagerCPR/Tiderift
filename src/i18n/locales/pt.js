@@ -123,6 +123,7 @@ export const pt = {
   '创造模式 - 点击取物品': 'Modo criativo - clique para pegar itens',
   '盔甲': 'Armadura',
   '箱子': 'Baú',
+  '漏斗': 'Funil',
   '熔炉': 'Fornalha',
   '燃料：可烧 {n} 个物品': 'Combustível: resta(m) {n} item(ns)',
   '村民交易': 'Comércio com aldeões',
@@ -572,6 +573,7 @@ export const pt = {
   "未知原因": "Motivo desconhecido",
   "御风标桩": "Baliza de vento",
   "御风者系在岛沿的旗桩。": "Um mastro que os cavaleiros do vento amarram à beira da ilha.",
+  "一只朝前吐东西的铁斗：上面进货，出料口只认自己对着的那一面。": "Um funil de ferro que cospe para a frente: entra por cima, e a boca de saída só conhece a face para onde aponta.",
   "连成一线，便是可以起风的赛道。": "Ligadas em linha, tornam-se uma pista onde o vento pode erguer-se.",
 
   // ── 建筑蓝图 ──

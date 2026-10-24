@@ -7,6 +7,8 @@ import { DIMENSIONS, DEFAULT_DIMENSION } from '../src/core/dimensions.js';
 import { safeBiomeScale } from '../src/world/biomes.js';
 // B35 D：遗迹键/维度作用域与客户端共用同一份纯模块（服务器不重复实现一套键规则）
 import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX } from '../src/core/Ruins.js';
+// B36 F-1：漏斗搬运——方块 id 表与纯搬运算法（服务器权威 tick；客户端只播动画不本地转移）
+import { tickHopperFlow, hopperFacingOf, isHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
 
 // S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
 const REPLAY_CHUNK = 512;
@@ -502,6 +504,10 @@ export class Room {
     // M4 维度分桶账本：dim -> Map("x,y,z" -> id)；同坐标跨维度互不干扰
     this.dimensionBlocks = new Map();
     this.dimensionContainers = new Map(); // dim -> Map("x,y,z" -> 27 槽数组)
+    // B36 F-1：漏斗索引（dim -> Map("x,y,z" -> 出料口朝向)）纯派生自方块账本，不新增快照字段
+    this.dimensionHoppers = new Map();
+    this._lastFlowAt = 0;   // 上次搬运 tick 时间戳（flowIntervalMs 节拍门控）
+    this._flowHot = new Map(); // "dim|x,y,z" -> 最近被搬运写过的毫秒时间戳（客户端改写拒绝窗口）
     this.drops = new Map();     // dropId -> {x,y,z,name,count,dim,spawnedAt,owner?,ownerUntil?}
     this.nextDropId = 1;
     this.nextMobId = 1;         // 怪物 id 分配（事件同步，服务器仅分配/中继不跑 AI）
@@ -594,6 +600,17 @@ export class Room {
       const m = this.dimBucket(this.dimensionContainers, DEFAULT_DIMENSION);
       for (const [k, items] of safeEntries(snap.containers)) {
         if (Array.isArray(items) && items.length === 27) m.set(k, items.map((s) => this.sanitizeStack(s)));
+      }
+    }
+    // B36 F-1：漏斗索引纯派生自方块账本（旧快照无此字段也能正确重建）
+    this.dimensionHoppers = new Map();
+    this._flowHot = new Map();
+    this._lastFlowAt = 0;
+    for (const [dim, m] of this.dimensionBlocks) {
+      const hm = this.dimBucket(this.dimensionHoppers, dim);
+      for (const [k, id] of m) {
+        const facing = hopperFacingOf(id);
+        if (facing) hm.set(k, facing);
       }
     }
     this.drops = new Map();
@@ -1107,6 +1124,8 @@ export class Room {
     this.seed = Math.floor(Math.random() * 2147483647);
     this.dimensionBlocks.clear();
     this.dimensionContainers.clear();
+    this.dimensionHoppers.clear();
+    this._flowHot.clear();
     this.drops.clear();
     // B35 D：重建世界 = 新种子，旧遗迹键（含锚点）全部失效，账本与领取记录一并清空
     this.ruins.clear();
@@ -1175,11 +1194,23 @@ export class Room {
     const dim = player.dim; // M4：归入发起者当前维度的账本，广播只发同维度玩家
     const blocks = this.dimBucket(this.dimensionBlocks, dim);
     const containers = this.dimBucket(this.dimensionContainers, dim);
-    // 0 是确定性地形上的显式空气修改，不能与“该坐标没有账本项”混为一谈。
-    blocks.set(`${x},${y},${z}`, id);
-    if (id === 0) {
-      containers.delete(`${x},${y},${z}`); // T5：箱子被挖 → 容器账本一并清除（内容散落由挖掘方 drop_spawn 上报）
+    const key = `${x},${y},${z}`;
+    // B36 F-1：每房间漏斗上限——超出不入账，把发起者本地放置回滚并提示
+    // （放置目标必为空气/可替换格，回滚到账本既有值或 0 与本地现状一致）
+    if (isHopperId(id)) {
+      const hoppers = this.dimBucket(this.dimensionHoppers, dim);
+      if (!hoppers.has(key) && this._hopperTotal() >= FLOW_HOPPER_LIMIT) {
+        this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: blocks.has(key) ? blocks.get(key) : 0, by: 0, d: dim });
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `本房间漏斗已达上限（${FLOW_HOPPER_LIMIT} 个）` });
+        return;
+      }
     }
+    // 0 是确定性地形上的显式空气修改，不能与“该坐标没有账本项”混为一谈。
+    blocks.set(key, id);
+    if (id === 0) {
+      containers.delete(key); // T5：箱子被挖 → 容器账本一并清除（内容散落由挖掘方 drop_spawn 上报）
+    }
+    this.trackHopperBlock(dim, key, id); // B36 F-1：漏斗索引与方块账本同步
     this.broadcastDim(MSG.BLOCK_CHANGE, { x, y, z, id, by: player.id, d: dim }, dim, player.id);
     this.saveSoon();
   }
@@ -1195,11 +1226,13 @@ export class Room {
       if (!Array.isArray(it) || it.length !== 4) continue;
       const x = safeInt(it[0]), y = safeInt(it[1]), z = safeInt(it[2]), id = safeInt(it[3]);
       if (id < 0 || id > 65535) continue;
+      const key = `${x},${y},${z}`;
       // 与单条路径同义：显式保留空气值，容器内容另行清理。
-      blocks.set(`${x},${y},${z}`, id);
+      blocks.set(key, id);
       if (id === 0) {
-        containers.delete(`${x},${y},${z}`);
+        containers.delete(key);
       }
+      this.trackHopperBlock(dim, key, id); // B36 F-1：漏斗索引与方块账本同步
       changes.push([x, y, z, id]);
     }
     if (!changes.length) return;
@@ -1468,9 +1501,97 @@ export class Room {
     if (!Array.isArray(msg.items) || msg.items.length !== 27) return;
     const items = msg.items.map((s) => this.sanitizeStack(s));
     const dim = player.dim;
-    this.dimBucket(this.dimensionContainers, dim).set(`${x},${y},${z}`, items);
+    const key = `${x},${y},${z}`;
+    const containers = this.dimBucket(this.dimensionContainers, dim);
+    // B36 F-1：两条同步路径共存的关键分界——漏斗管理中的容器由服务器权威（服务器改 → 广播）；
+    // 客户端改写一律拒绝，并回发权威内容让对方回滚（照 drop_deny 的做法）。
+    if (this._isFlowManaged(dim, key)) {
+      this.sendTo(player, MSG.CONTAINER_DENY, {
+        x, y, z, d: dim, by: 0,
+        items: containers.get(key) || new Array(27).fill(null),
+      });
+      return;
+    }
+    containers.set(key, items);
     this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: player.id, d: dim }, dim, player.id);
     this.saveSoon();
+  }
+
+  // ── B36 F-1 漏斗搬运（服务器权威节拍）────────────────────────────────────────
+  // 漏斗索引随方块账本维护：写入/挖掉/批量同步/世界重建/快照恢复五条入口全部收敛到 trackHopperBlock。
+  trackHopperBlock(dim, key, id) {
+    const bucket = this.dimBucket(this.dimensionHoppers, dim);
+    const facing = hopperFacingOf(id);
+    if (facing) bucket.set(key, facing);
+    else bucket.delete(key);
+  }
+
+  _hopperTotal() {
+    let n = 0;
+    for (const m of this.dimensionHoppers.values()) n += m.size;
+    return n;
+  }
+
+  // 该容器是否归服务器搬运所有：漏斗自身恒为服务器内容；
+  // 其余容器在「最近被搬运写过」的窗口内也算（避免客户端用旧视图覆盖刚搬过去的物品）。
+  _isFlowManaged(dim, key) {
+    if (this.dimBucket(this.dimensionHoppers, dim).has(key)) return true;
+    const ts = this._flowHot.get(`${dim}|${key}`);
+    return !!ts && (Date.now() - ts) <= FLOW_HOT_MS;
+  }
+
+  // 搬运 tick（index.mjs 每 200ms 调用；实际节拍由 config.flowIntervalMs 门控，flowEnabled=false 整段短路）。
+  // 每 tick 每漏斗最多搬一堆；自动产生的 CONTAINER_SET 每容器一条（by: 0 + d 维度）。
+  tickFlow(now = Date.now()) {
+    const cfg = this.config || {};
+    if (cfg.flowEnabled === false) return;
+    const interval = Math.max(200, safeInt(cfg.flowIntervalMs, 200));
+    if (now - this._lastFlowAt < interval) return;
+    this._lastFlowAt = now;
+    for (const [k, ts] of this._flowHot) {
+      if (now - ts > FLOW_HOT_MS) this._flowHot.delete(k);
+    }
+    let dirty = false;
+    for (const [dim, map] of this.dimensionHoppers) {
+      if (!map.size) continue;
+      const blocks = this.dimBucket(this.dimensionBlocks, dim);
+      const containers = this.dimBucket(this.dimensionContainers, dim);
+      const list = [];
+      for (const [key, facing] of map) {
+        const parts = key.split(',');
+        const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+        list.push({ x, y, z, facing });
+      }
+      if (!list.length) continue;
+      // 固定顺序 → 同 tick 结果确定（两条漏斗共用一个目标容器时也不抖）
+      list.sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.z - b.z));
+      const io = {
+        getContainer: (x, y, z) => containers.get(`${x},${y},${z}`) || null,
+        ensureContainer: (x, y, z) => {
+          const k = `${x},${y},${z}`;
+          const cur = containers.get(k);
+          if (cur) return cur;
+          // 只对「玩家放下过的容器方块」建账：未在方块账本里的位置（结构箱子/普通地形）不凭空造容器
+          if (!isContainerId(blocks.has(k) ? blocks.get(k) : -1)) return null;
+          const items = new Array(27).fill(null);
+          containers.set(k, items);
+          return items;
+        },
+      };
+      const touched = tickHopperFlow(list, io);
+      if (!touched.size) continue;
+      dirty = true;
+      for (const k of touched) {
+        const items = containers.get(k);
+        if (!items) continue;
+        const parts = k.split(',');
+        const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+        this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: 0, d: dim }, dim);
+        this._flowHot.set(`${dim}|${k}`, now);
+      }
+    }
+    if (dirty) this.saveSoon();
   }
 
   // 掉落物：客户端请求生成 -> 服务器分配唯一 id 并广播（含发起者，各端据此创建同一实体；M4：同维度广播）

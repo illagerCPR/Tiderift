@@ -123,6 +123,7 @@ export const en = {
   '创造模式 - 点击取物品': 'Creative Mode - click to take items',
   '盔甲': 'Armor',
   '箱子': 'Chest',
+  '漏斗': 'Hopper',
   '熔炉': 'Furnace',
   '燃料：可烧 {n} 个物品': 'Fuel: {n} item(s) left',
   '村民交易': 'Villager Trades',
@@ -572,6 +573,7 @@ export const en = {
   "未知原因": "Unknown reason",
   "御风标桩": "Wind Post",
   "御风者系在岛沿的旗桩。": "A banner post that windriders tie along the island's edge.",
+  "一只朝前吐东西的铁斗：上面进货，出料口只认自己对着的那一面。": "An iron funnel that spits forward: items go in from above, and the spout only knows the side it is pointed at.",
   "连成一线，便是可以起风的赛道。": "Linked in a line, they become a track where the wind can rise.",
 
   // ── 建筑蓝图 ──

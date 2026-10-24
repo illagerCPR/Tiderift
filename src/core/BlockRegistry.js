@@ -60,6 +60,8 @@ function register(def) {
     lore: def.lore || null, // 世界观批次 N1：方块悬浮 lore（InventoryScreen._bindHover 消费）
     stele: def.stele ?? false, // 世界观批次 W3：石碑家族标记（Game 右键读碑按此判定，修 wind_stele 硬编码遗漏 ember/moss）
     ambientParticles: def.ambientParticles ?? false,
+    // B36 F-1：可放置朝向家族的朝向语义反转（漏斗出料口背对玩家）；缺省 = 正面朝玩家
+    facingAway: def.facingAway ?? false,
     color: def.color || null
   };
   blocks.set(id, block);

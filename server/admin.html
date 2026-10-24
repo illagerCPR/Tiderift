@@ -79,6 +79,14 @@
         <input id="cfg-backupKeep" type="number" min="1" step="1">
       </div>
       <div class="cfg-item">
+        <label>漏斗搬运 (flowEnabled) <span style="color:#7a8394">（关闭=漏斗只存不搬）</span></label>
+        <input id="cfg-flowEnabled" type="checkbox">
+      </div>
+      <div class="cfg-item">
+        <label>搬运节拍毫秒 (flowIntervalMs) <span style="color:#7a8394">（200~5000）</span></label>
+        <input id="cfg-flowIntervalMs" type="number" min="200" step="50">
+      </div>
+      <div class="cfg-item">
         <label>管理口令 (adminToken) <span style="color:#7a8394">（留空=关闭鉴权）</span></label>
         <input id="cfg-adminToken" type="password" placeholder="留空则关闭鉴权">
       </div>
@@ -390,6 +398,9 @@
       // Idea-4B：自动备份配置回显
       document.getElementById('cfg-backupMins').value = status.config.backupIntervalMinutes ?? 0;
       document.getElementById('cfg-backupKeep').value = status.config.backupKeep ?? 10;
+      // B36 F-1：漏斗搬运配置回显
+      document.getElementById('cfg-flowEnabled').checked = status.config.flowEnabled !== false;
+      document.getElementById('cfg-flowIntervalMs').value = status.config.flowIntervalMs ?? 200;
       // adminToken 返回掩码 '****'：设为输入框值；用户不改则不提交（见 saveConfig）
       const tkEl = document.getElementById('cfg-adminToken');
       tkEl.value = status.config.adminToken === '****' ? '****' : '';
@@ -486,6 +497,9 @@
       // Idea-4B：自动备份（间隔 0=关闭）
       backupIntervalMinutes: Number(document.getElementById('cfg-backupMins').value) || 0,
       backupKeep: Number(document.getElementById('cfg-backupKeep').value) || 10,
+      // B36 F-1：漏斗搬运（布尔 + 毫秒，服务端 sanitize 二次校验）
+      flowEnabled: !!document.getElementById('cfg-flowEnabled').checked,
+      flowIntervalMs: Number(document.getElementById('cfg-flowIntervalMs').value) || 200,
     };
     // adminToken：值为 '****'（未改动，保持原样）时不提交；否则提交（新口令或清空关闭）
     const tk = document.getElementById('cfg-adminToken').value.trim();

@@ -158,6 +158,9 @@ addShaped('note_block', 1, [['oak_planks','oak_planks','oak_planks'],['oak_plank
 // 御风赛道标桩（Build 34 C）：铁框 + 红石 + 罗盘，一次出 2 个（一条最短赛道要 3 个点）
 addShaped('race_post', 2, ['iron_ingot','redstone','iron_ingot', null,'compass', null, 'iron_ingot','redstone','iron_ingot']);
 
+// 漏斗（Build 36 F-1）：五个铁锭围一只箱子（原版形制，出 1 个）
+addShaped('hopper', 1, ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'chest', 'iron_ingot', null, 'iron_ingot', null]);
+
 // 还原配方
 addShaped('oak_log', 1, ['oak_planks','oak_planks','oak_planks','oak_planks']);
 

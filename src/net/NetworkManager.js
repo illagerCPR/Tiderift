@@ -990,6 +990,13 @@ export class NetworkManager {
         else this._pendingContainers.push(msg);
         break;
       }
+      case MSG.CONTAINER_DENY: {
+        // B36 F-1：漏斗管理中的容器拒绝客户端改写——用服务器权威内容回滚本地（照 drop_deny 的语义）
+        if (!this.game.world || !Array.isArray(msg.items) || msg.items.length !== 27) break;
+        if (msg.d && msg.d !== this.game.world.dimension) break;
+        this._applyContainer(msg);
+        break;
+      }
       case MSG.PLAYER_DIMENSION: {
         // M4：远端玩家换维——异维移除其实体、同维重建（自己的换维走 dimension_world 路径）
         if (msg.id === this.selfId) break;

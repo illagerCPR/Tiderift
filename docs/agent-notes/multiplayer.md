@@ -97,3 +97,17 @@
 - **心跳活读（S12）**：连接侧改为自管理 `setTimeout` 链 + 200ms 轮询步长，每轮现读 `serverConfig.heartbeatMs`（到点才发 ping；未回 pong 则下一轮到点 terminate）。**勿改回 `setInterval(..., serverConfig.heartbeatMs)`**——周期会被固化在连接建立时，面板改配置只对新连接生效。
 - **客户端入口防御（S13）**：`src/net/netMessage.js` 的 `parseServerMessage()` 是 `ws.onmessage` 单点收口（解析失败 / 非对象 / 数组 / `t` 非字符串 → null），`_handle` 入口同款再防一次；**不要绕过它直接 JSON.parse**（`parse('null')` 不进 catch，`m.t` 访问即抛）。
 - **本轮验收**：`server/test-hardening-net.mjs`（51 断言）、`tests/room-persist-replay.mjs`（28）、`tests/net-message-guard.mjs`（18）已注册进 `run-all-tests.sh`；调度方另有 22 项黑盒探针（版本协商 / 写盘次数 200→3 / SIGTERM 强刷 / 600 格回放分块 / 删房清理 / 心跳热生效 / 皮肤限频与日志聚合）与浏览器端到端冒烟（真实客户端连接 → 建房 → 本地世界启动，控制台 0 TypeError）。
+
+### B36 F-1 漏斗与容器搬运批次备忘（防回退）
+
+- **改前旧行为（记录用）**：容器只有一条同步路径——客户端改 → `CONTAINER_SET`（`by: player.id`）→ 服务器 `Room.onContainerSet` 直接入账并 `broadcastDim`；服务器只在加入房间（`by: 0`）与换维快照里下发容器；单机容器只有玩家开箱/拖动物品才会变。**没有任何服务器定时改动容器的路径**，这是 F 引入的新架构面。
+- **权威面**：搬运决策 = `src/core/HopperFlow.js` 纯函数 `tickHopperFlow(hoppers, io)`，两端**共用同一实现**（服务器 `server/flow.js` 再导出给 room.js）。联机：`server/index.mjs` 的 `flowSweep`（200ms 遍历房间）→ `Room.tickFlow(now)`（按 `config.flowIntervalMs` 门控、`flowEnabled===false` 整段短路）→ 内容变化以 `CONTAINER_SET {by: 0, d}` **按容器合并**广播（Set 天然去重，每 tick 每容器最多一条）。单机：`Placement.updateHopperFlow(dt)` 走同一纯函数，**联机时该方法首行早退**——客户端绝不本地转移，否则与服务器回放互相覆盖。
+- **搬运语义**：每个漏斗每 tick **最多搬一堆**（先出后进：先把自己缓冲推进出料口相邻容器，推不动才从正上方容器进货）；漏斗自身 27 槽就是缓冲；`facing` = 出料口方向（`hopper`=n / `hopper_s` / `hopper_e` / `hopper_w`），非法 facing 退化为向下。堆叠合并只认同名且双方 `data == null` 的栈（潜影盒永不并入同名堆），合并上限 64。
+- **两条同步路径的分界（本批核心）**：`Room.onContainerSet` 先问 `_isFlowManaged(dim, key)`——① 该格是漏斗（服务器内容，恒管）；② 该容器在最近 `FLOW_HOT_MS=1000` 内被搬运写过（`_flowHot` 热窗口）。命中即**拒绝客户端改写**并回 `CONTAINER_DENY {x,y,z,items,d,by:0}`（照 `drop_deny` 的做法），客户端 `NetworkManager` 的 `CONTAINER_DENY` 分支复用 `_applyContainer` 回滚本地并把打开的箱子界面刷新成权威内容。**改这条判定前先想清楚"客户端用旧视图覆盖刚搬过去的物品"这一竞态**。
+- **漏斗索引两端同构、零新增存档字段**：客户端 `World.setBlock` 末尾调 `World.trackHopper`（每次写方块更新本维度 `world.hoppers` Map）；服务器 `Room.trackHopperBlock` 在 `onBlockSet`/`onBlockSetBatch`（含 id=0 挖掉）维护 `dimensionHoppers`，并在 `restoreSnapshot` 时**从方块账本重建**、`resetWorld` 时清空。因为纯派生，旧存档/旧快照天然兼容——**不要把它写进 roomSnapshot**。
+- **方块 id 表**：`server/flow.js` 的 `HOPPER_FACING_BY_ID`（217~220）与 `CONTAINER_BLOCK_IDS`（箱子家族/潜影盒/漏斗家族）是客户端注册顺序的镜像，由 `tests/hopper-unit.mjs` 逐 id 钉住（读同一份 BlockRegistry）。**在 BlockDefs 中部插方块 = 同时打破这张表与旧存档**。
+- **容器创建纪律**：服务器只在「该格在方块账本里且 id 属于容器家族」时才凭空建 27 槽空容器——未开过的结构箱子不在方块账本里，因此**不会被漏斗凭空覆盖 loot**；客户端单机侧同理按 `getBlock` 的 def 判定（未加载区块返回 0 → 不建）。
+- **限流与边界**：每房间漏斗上限 `FLOW_HOPPER_LIMIT=64`（跨维度合计；`onBlockSet` 超限不入账，给发起者回 `BLOCK_CHANGE {by:0, id: 账本现值或 0}` 回滚 + 系统聊天提示）。**回滚到 0 依赖"放置目标必是空气/可替换格"**，将来若有"替换已有方块"的放置路径要同步改这里。`flowEnabled`/`flowIntervalMs` 必须同时改 `server/config.js` 的 DEFAULTS + RANGES + `loadConfig`/`applyConfig` 两处数值键白名单 + 布尔专用分支，以及 `server/admin.html` 的表单回显/提交两处——漏任何一处都只剩代码兜底。
+- **配置范围**：`flowIntervalMs` 合法区间 [200, 5000]（sweep 粒度就是 200ms，配更小无意义）；非法/越界值保持原值不回落。
+- **已知限制**：① 物品飞出的粒子动画未做（方块模型与内容界面已复用箱子）；② 玩家无法手动整理漏斗内容（服务器恒管），要清空需拆掉漏斗——拆掉时 `breakChest` 会把内容散落，不会凭空蒸发；③ 分类器/矿车按计划不做；④ 熔炉内容仍未进联机账本（F-2 范围）。
+- **测试**：`tests/hopper-unit.mjs`（57 断言：id 钉值/配置白名单/朝向/先出后进/满空/不可堆叠/一堆 tick/touched 去重/确定性）与 `server/test-flow.mjs`（16 断言：服务器真搬货 + `by:0` + 客户端改写被拒与回滚 + 第 65 个漏斗被拒与提示）已入 `run-all-tests.sh`。

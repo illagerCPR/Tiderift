@@ -24,6 +24,8 @@ const DEFAULTS = {
   roomSettings: {},      // Idea-4A：房间开关 {<房间名>: {pvp,mobs}}；缺省/缺字段 = 开（true）
   backupIntervalMinutes: 0, // Idea-4B：自动备份间隔分钟（0=关闭）
   backupKeep: 10,        // Idea-4B：每房间保留备份份数
+  flowEnabled: true,     // B36 F-1：漏斗搬运总开关（关闭后漏斗只是个能装的容器）
+  flowIntervalMs: 200,   // B36 F-1：搬运 tick 间隔毫秒（sweep 每 200ms 跑一次，此值不得低于它）
   rateLimits: {          // Idea-4C：消息速率限制（每分钟次数，0=不限制）
     chat: 30,            //   聊天/命令（人工节奏）
     block: 900,          //   block_set（挖放峰值 ~15/s）
@@ -44,6 +46,7 @@ const RANGES = {
   adminTokenExpires: [0, 4102444800], // Unix 秒，0=永不过期 ~ 2100 年
   backupIntervalMinutes: [0, 14400],  // Idea-4B：0=关闭 ~ 10 天
   backupKeep: [1, 50],              // Idea-4B：1 ~ 50 份
+  flowIntervalMs: [200, 5000],      // B36 F-1：搬运节拍 200ms ~ 5s（sweep 粒度即 200ms）
 };
 
 // Idea-4C：速率限制每分钟次数的合法范围（0=不限制）
@@ -139,7 +142,7 @@ export function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      for (const key of ['dropTtlMs', 'heartbeatMs', 'maxPlayersPerRoom', 'adminTokenExpires', 'backupIntervalMinutes', 'backupKeep']) {
+      for (const key of ['dropTtlMs', 'heartbeatMs', 'maxPlayersPerRoom', 'adminTokenExpires', 'backupIntervalMinutes', 'backupKeep', 'flowIntervalMs']) {
         const range = RANGES[key];
         const n = Number(data[key]);
         if (Number.isFinite(n) && n >= range[0] && n <= range[1]) cfg[key] = Math.round(n);
@@ -160,6 +163,8 @@ export function loadConfig() {
       if (settings) cfg.roomSettings = settings;
       const rl = sanitizeRateLimits(data.rateLimits);
       if (rl) cfg.rateLimits = rl;
+      // B36 F-1：布尔开关只认 boolean（字符串 "false" 之类的脏值忽略）
+      if (typeof data.flowEnabled === 'boolean') cfg.flowEnabled = data.flowEnabled;
     }
   } catch (e) {
     console.error(`[配置] 读取 ${CONFIG_PATH} 失败: ${e.message}`);
@@ -171,7 +176,7 @@ export function loadConfig() {
 // adminAccounts 为主接口；旧字段 adminToken/adminTokenExpires 作为 default 账号的兼容读写
 export function applyConfig(current, patch) {
   const next = { ...current, adminAccounts: [...(current.adminAccounts || [])] };
-  for (const key of ['dropTtlMs', 'heartbeatMs', 'maxPlayersPerRoom', 'adminTokenExpires', 'backupIntervalMinutes', 'backupKeep']) {
+  for (const key of ['dropTtlMs', 'heartbeatMs', 'maxPlayersPerRoom', 'adminTokenExpires', 'backupIntervalMinutes', 'backupKeep', 'flowIntervalMs']) {
     if (!(key in patch)) continue;
     const range = RANGES[key];
     const n = Number(patch[key]);
@@ -203,6 +208,10 @@ export function applyConfig(current, patch) {
   if ('rateLimits' in patch) {
     const rl = sanitizeRateLimits(patch.rateLimits, next.rateLimits);
     if (rl) next.rateLimits = rl;
+  }
+  // B36 F-1：漏斗搬运开关（布尔专用；面板/API 改完热生效，房间 tick 活读 config）
+  if ('flowEnabled' in patch) {
+    if (typeof patch.flowEnabled === 'boolean') next.flowEnabled = patch.flowEnabled;
   }
   // 兼容语义：adminToken 变更同步到 default 账号（空=移除 default 账号；其余账号不受影响）
   if ('adminToken' in patch) {

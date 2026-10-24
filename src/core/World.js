@@ -24,9 +24,11 @@ export class World {
     this.dimensionBlocks = new Map();     // dimId -> ModifiedBlocks("x,y,z" -> 方块 id，带区块索引)
     this.dimensionContainers = new Map(); // dimId -> Map("x,y,z" -> 27 槽数组)
     this.dimensionFurnaces = new Map();   // dimId -> Map("x,y,z" -> 熔炉状态 {input,fuel,output,burnTime,burnMax,cookTime})
+    this.dimensionHoppers = new Map();    // dimId -> Map("x,y,z" -> 出料口朝向)；B36 F-1 搬运目标集（纯派生自方块账本）
     this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
+    this.hoppers = this.dimBucket(this.dimensionHoppers);
     // T5 容器：打开时惰性生成（结构箱子按 (seed,表名,坐标) 确定性 loot），
     // 玩家改动即落 Map（存档持久化；联机经 container_set 广播收敛）
     this.onLocalBlockChange = null;  // 本地发起方块修改回调 (x,y,z,id)，由 NetworkManager 注册（联机上报）
@@ -74,6 +76,17 @@ export class World {
     this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
+    // B36 F-1：漏斗索引纯派生自方块账本——不新增存档字段，旧存档/旧快照天然兼容
+    this.dimensionHoppers.clear();
+    for (const [dim, m] of this.dimensionBlocks) {
+      const hm = new Map();
+      for (const [k, id] of m) {
+        const def = BlockRegistry.getById(id);
+        if (def && def.baseBlock === 'hopper') hm.set(k, def.facing);
+      }
+      this.dimensionHoppers.set(dim, hm);
+    }
+    this.hoppers = this.dimBucket(this.dimensionHoppers);
   }
 
   key(cx, cz) { return `${cx},${cz}`; }
@@ -215,6 +228,7 @@ export class World {
     c.set(lx, gy, lz, id);
     c.dirty = true;
     if (recordMod) this.modifiedBlocks.set(`${gx},${gy},${gz}`, id);
+    this.trackHopper(gx, gy, gz, id); // B36 F-1：漏斗索引随写方块增删（全写入口收口于此）
     if (this.onLocalBlockChange) this.onLocalBlockChange(gx, gy, gz, id);
     // 作物登记表维护（种/长/收/破坏/远端同步全路径收口于此）
     if (this.onCropBlockChange) this.onCropBlockChange(gx, gy, gz, oldId, id);
@@ -281,6 +295,15 @@ export class World {
 
   removeContainer(x, y, z) {
     this.containers.delete(World.containerKey(x, y, z));
+  }
+
+  // ── 漏斗索引（B36 F-1）──
+  // 维护「本维度有哪些漏斗、各自朝哪」；服务器侧用房间方块账本建等价索引，两端同构。
+  trackHopper(x, y, z, id) {
+    const def = BlockRegistry.getById(id);
+    const k = `${x},${y},${z}`;
+    if (def && def.baseBlock === 'hopper') this.hoppers.set(k, def.facing);
+    else if (this.hoppers.size) this.hoppers.delete(k);
   }
 
   // ── 熔炉状态（单机持久化；打开时惰性创建，进度随 Game.update 推进）──

@@ -123,6 +123,7 @@ export const fr = {
   '创造模式 - 点击取物品': 'Mode Créatif - cliquez pour prendre des objets',
   '盔甲': 'Armure',
   '箱子': 'Coffre',
+  '漏斗': 'Entonnoir',
   '熔炉': 'Fourneau',
   '燃料：可烧 {n} 个物品': 'Carburant : {n} objet(s) restant(s)',
   '村民交易': 'Échanges avec les villageois',
@@ -572,6 +573,7 @@ export const fr = {
   "未知原因": "Raison inconnue",
   "御风标桩": "Balise de vent",
   "御风者系在岛沿的旗桩。": "Une hampe que les chevaucheurs de vent attachent au bord des îles.",
+  "一只朝前吐东西的铁斗：上面进货，出料口只认自己对着的那一面。": "Un entonnoir de fer qui crache vers l'avant : on le remplit par le haut, et sa buse ne connaît que la face qu'il regarde.",
   "连成一线，便是可以起风的赛道。": "Reliées en ligne, elles forment une piste où le vent peut se lever.",
 
   // ── 建筑蓝图 ──

@@ -757,6 +757,19 @@ const backupSweep = setInterval(runAutoBackupOnce, 60000);
 // 由本扫描统一落盘；退房清空与关服另有立即刷路径（flushWorld 幂等，不脏时无操作）。
 const worldFlushSweep = setInterval(() => { for (const r of rooms.values()) r.flushWorld(); }, 1000);
 
+// B36 F-1：漏斗搬运 sweep——每 200ms 让各房间推进一次；实际节拍由 config.flowIntervalMs 门控
+// （flowEnabled=false 时 tickFlow 直接短路）。搬运结果以 by:0 的 CONTAINER_SET 按容器合并广播。
+const flowSweep = setInterval(() => {
+  const now = Date.now();
+  for (const r of rooms.values()) {
+    try {
+      r.tickFlow(now);
+    } catch (e) {
+      console.error(`[漏斗] 房间「${r.name}」tick 异常: ${(e && e.message) || e}`);
+    }
+  }
+}, 200);
+
 // Idea-4C：限速丢包聚合日志（10s 一批增量，防刷爆 200 条环形缓冲）
 const _rateReported = new WeakMap(); // player -> 已上报的 dropped 全档快照
 const rateReportSweep = setInterval(() => {
@@ -790,6 +803,7 @@ function shutdown() {
   clearInterval(backupSweep);
   clearInterval(rateReportSweep);
   clearInterval(worldFlushSweep);
+  clearInterval(flowSweep);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

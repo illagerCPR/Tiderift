@@ -8,7 +8,7 @@
 
 ## 未交付提案
 
-### Idea-WV1-New-Horizon · 新视野 — A/B/C/D/E 已交付，F–G 已规划（Build 36–37）
+### Idea-WV1-New-Horizon · 新视野 — A/B/C/D/E 已交付，F-1 已交付，F-2/G 待做（Build 36–37）
 
 - **记录日期**：2026-10-19。
 - **状态**：A/B/C 已规划为 **Beta Build 34 · New Horizon Part.1**，实施方案见 `docs/archives/new-horizon-plan-b34.md`。**A 四界游记与手绘地图已交付**（2026-10-22，保持 Build 33 不升版本；实现与防回退见 `docs/agent-notes/journal.md`）；**B 旧航路修复已交付**（2026-10-22，保持 Build 33 不升版本；三阶段修复 + 航标芯 + 下一座航路导航，防回退见 `docs/agent-notes/waymarks.md`）；**C 御风竞速与自建赛道已交付**（2026-10-23，随 Build 34 升版发布；标桩建赛道 + 顺序检查点 + 个人/房间最佳 + 取消规则，防回退见 `docs/agent-notes/races.md`）。A/B/C 全部完成。**E 建筑蓝图与材料清单已交付**（2026-10-23，保持 Build 34，防回退见 `docs/agent-notes/blueprints.md`）；**D 可动手解开的遗迹已交付**（2026-10-23，随 Build 35 升版发布；三种机关房 + 房间权威账本 + 纪念奖励与蓝图，防回退见 `docs/agent-notes/ruins.md`）。D–G 的排期：**E + D → Build 35、F → Build 36、G → Build 37**（2026-10-23 定，拆分理由与逐里程碑方案见 `docs/new-horizon-plan-b35-37.md`）。

@@ -50,8 +50,10 @@ export class ChestScreen {
   }
 
   // 打开：从 World 惰性取容器内容（结构箱子按 (seed,表名,坐标) 确定性生成）
-  show(x, y, z) {
+  // B36 F-1：titleKey 让漏斗复用本界面而不冒充「箱子」
+  show(x, y, z, titleKey = '箱子') {
     if (!this.game.world) return;
+    this.titleKey = titleKey;
     this.pos = { x, y, z };
     this.items = this.game.world.getOrOpenContainer(x, y, z);
     this._changed = false;
@@ -102,7 +104,7 @@ export class ChestScreen {
     this.panel.style.width = 'max-content';
 
     const title = document.createElement('div');
-    title.textContent = t('箱子');
+    title.textContent = t(this.titleKey || '箱子');
     title.style.cssText = 'font-size: 14px; margin-bottom: 8px; color: #333;';
     this.panel.appendChild(title);
 

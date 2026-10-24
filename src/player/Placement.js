@@ -18,6 +18,8 @@ import { BlockRegistry } from '../core/BlockRegistry.js';
 import { SMELT_TIME, getSmeltingResult, getFuelTime } from '../core/Smelting.js';
 import { doorId, trapdoorId, bedId, furnaceLitId } from '../core/blockShape.js';
 import { audio } from '../audio/AudioEngine.js';
+import { tickHopperFlow, HOPPER_INTERVAL_MS } from '../core/HopperFlow.js';
+import { parsePosKey } from '../core/posKey.js';
 import { BLOCK_CENTER } from './constants.js';
 
 // 形制多格方向表（n/s/w/e → [dx, dz]）：原 Game.SHAPED_DIRS，全仓仅本域两个方法读取，随迁出
@@ -157,6 +159,36 @@ export class Placement {
   onContainerChanged(pos, items) {
     const g = this.game;
     if (g.networkMode && g.net) g.net.sendContainerSet(pos.x, pos.y, pos.z, items);
+  }
+
+  // B36 F-1：单机本地漏斗搬运。联机时搬运权威在服务器 tick（server/flow.js），
+  // 客户端一律早退——否则本地转移与服务器 CONTAINER_SET 回放互相覆盖（两条同步路径必须共存）。
+  updateHopperFlow(dt) {
+    const g = this.game;
+    if (!g.world || g.networkMode) return;
+    this._flowTimer = Math.max(0, (this._flowTimer || 0) - dt);
+    if (this._flowTimer > 0) return;
+    this._flowTimer = HOPPER_INTERVAL_MS / 1000;
+    const world = g.world;
+    if (!world.hoppers || !world.hoppers.size) return;
+    const hoppers = [];
+    for (const [key, facing] of world.hoppers) {
+      const p = parsePosKey(key);
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
+      hoppers.push({ x: p.x, y: p.y, z: p.z, facing });
+    }
+    if (!hoppers.length) return;
+    // 固定顺序 → 同 tick 内搬运结果确定（两条漏斗共用一个目标时也不抖）
+    hoppers.sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.z - b.z));
+    // 只对真正的容器方块建账：未加载区块 getBlock 返回 0 → 不创建（不会在虚空里生容器）
+    const isContainerAt = (x, y, z) => {
+      const def = BlockRegistry.getById(world.getBlock(x, y, z));
+      return !!(def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.name === 'shulker_box'));
+    };
+    tickHopperFlow(hoppers, {
+      getContainer: (x, y, z) => world.getContainer(x, y, z),
+      ensureContainer: (x, y, z) => (isContainerAt(x, y, z) ? world.getOrOpenContainer(x, y, z) : null),
+    });
   }
 
   // 熔炉烧炼推进：遍历当前维度全部已开炉状态（惰性创建，只有打开过/放料过的炉子在表里）

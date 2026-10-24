@@ -1665,6 +1665,8 @@ export class Game {
     }
     // 熔炉烧炼推进（所有已开炉状态；界面可见时同步刷新进度显示）
     this.updateFurnaces(dt);
+    // B36 F-1：单机漏斗搬运（联机时早退，权威在服务器 tick）
+    this.updateHopperFlow(dt);
     if (this.furnaceScreen && this.furnaceScreen.visible) this.furnaceScreen.tick();
     // JEI 伴随面板：跟随容器界面（背包/箱子/合成台/熔炉/交易）显隐
     if (this.recipeViewer) this.recipeViewer.updateFrame();
@@ -1973,6 +1975,9 @@ export class Game {
 
   // updateFurnaces（逻辑在 Placement，见 src/player/Placement.js）
   updateFurnaces(dt) { return this.placement.updateFurnaces(dt); }
+
+  // updateHopperFlow（逻辑在 Placement，见 src/player/Placement.js）
+  updateHopperFlow(dt) { return this.placement.updateHopperFlow(dt); }
 
   // syncFurnaceLit（逻辑在 Placement，见 src/player/Placement.js）
   _syncFurnaceLit(key, st) { return this.placement.syncFurnaceLit(key, st); }

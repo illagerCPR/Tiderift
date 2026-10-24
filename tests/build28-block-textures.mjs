@@ -260,7 +260,9 @@ const def = (n) => BlockRegistry.getById(id(n));
   const icm = srcOf('../src/player/InteractionController.js'); // 轮 8 步 8：鼠标交互域已迁出 Game（右键/放置/破坏分支）
   ok(icm.includes('blockDef.facingBase'), '放置：定向面方块按玩家方位换态');
   ok(icm.includes('g._facingTowardPlayer(placeX, placeZ)'), '放置：正面朝玩家');
-  ok(icm.includes("if (def.baseBlock === 'chest') g._breakChest"), '破坏：箱子家族判定（四朝向）');
+  // 家族判定用「按 baseBlock 认家族 + 清容器账本的调用存在」两条断言，避免家族一扩容就打破字面量钉值
+  ok(icm.includes("def.baseBlock === 'chest'"), '破坏：箱子家族判定（按 baseBlock，非 name）');
+  ok(icm.includes('g._breakChest(hit.block'), '破坏：箱子/漏斗家族清容器账本');
   ok(icm.includes("if (def.baseBlock === 'furnace') g._breakFurnace"), '破坏：熔炉家族判定');
   ok(!gm.includes("if (def.name === 'chest') this._breakChest"), '破坏：旧 name === chest 判定已废除');
   ok(icm.includes("furnaceDef.baseBlock === 'furnace'"), '右键：熔炉家族判定');
