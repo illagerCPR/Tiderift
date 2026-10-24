@@ -45,6 +45,7 @@ export const VoxelLightUniforms = {  uDayLight: { value: 1.0 },                 
   uWind: { value: 0 },                                     // 云风偏移（Sky.wind，与云层纹理 offset 同源）
   uCloudTex: { value: null },                              // 云纹理（Sky 构造时注入）
   uCloudsY: { value: 140 },                                // 云层高度（高于此不吃云影，山巅/天域岛顶）
+  uAtlasSpan: { value: new THREE.Vector2(1, 1) },           // B39：图集单 tile 跨度（片元 UV 平铺用，ChunkMeshBuilder 构造期写入）
   uCloudShadow: { value: 0 },                              // 云影开关 0/1（设置 ∧ 维度云显隐，Game 每帧写）
   uWaterFx: { value: 0 },                                  // 水面反射开关 0/1
   // ---- L4-A 平面真反射（完整档子开关，PlanarReflection 每帧写） ----
@@ -100,6 +101,7 @@ function injectCommonUniforms(shader) {  shader.uniforms.uDayLight = VoxelLightU
   shader.uniforms.uSunTint = VoxelLightUniforms.uSunTint;
   shader.uniforms.uMinLight = VoxelLightUniforms.uMinLight;
   shader.uniforms.uTorchTint = VoxelLightUniforms.uTorchTint;
+  shader.uniforms.uAtlasSpan = VoxelLightUniforms.uAtlasSpan;
   shader.uniforms.uTime = VoxelLightUniforms.uTime;
   shader.uniforms.uSunDir = VoxelLightUniforms.uSunDir;
   shader.uniforms.uSunColor = VoxelLightUniforms.uSunColor;
@@ -147,6 +149,19 @@ const VOXEL_LIGHT_SOLID_GLSL = [
   '}'
 ].join('\n');
 
+// B39 U-1：图集 UV 平铺采样——实体方块贪心合并后一张四边形跨多格，片元按 aUvTile.zw 平铺。
+// vMapUv 仍是图集子区域坐标（未合并面 rep=(1,1)，此式退化为原采样）；
+// aUvTile = (u0, v0, repU, repV)，uAtlasSpan = 单 tile 在图集中的跨度（图集为等距网格，所有 tile 等大）。
+// 0.999999 压缩：避免 fract(1.0)=0 让四边形远边采到对侧纹素。
+const ATLAS_TILED_MAP_GLSL = [
+  '#ifdef USE_MAP',
+  '  vec2 tileLocal = ( vMapUv - vUvTile.xy ) / uAtlasSpan;',
+  '  tileLocal = fract( tileLocal * vUvTile.zw * 0.999999 );',
+  '  vec4 sampledDiffuseColor = texture2D( map, vUvTile.xy + tileLocal * uAtlasSpan );',
+  '  diffuseColor *= sampledDiffuseColor;',
+  '#endif'
+].join('\n');
+
 // solid 材质：体素光 + 云影 + 太阳阴影（L4-B）
 // 阴影 vertex 侧：shadowmap_pars_vertex/shadowmap_vertex 是 three 原生 chunk（自带
 // USE_SHADOWMAP 防护）；Basic 无 beginnormal/defaultnormal，手工补 objectNormal/
@@ -155,10 +170,11 @@ export function applyVoxelLight(material) {
   material.onBeforeCompile = (shader) => {
     injectCommonUniforms(shader);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 voxelLight;\nvarying vec2 vVoxelLight;\nvarying vec3 vWorldPos;\nvarying vec3 vNrmW;\n#include <shadowmap_pars_vertex>')
+      .replace('#include <common>', '#include <common>\nattribute vec2 voxelLight;\nattribute vec4 aUvTile;\nvarying vec2 vVoxelLight;\nvarying vec4 vUvTile;\nvarying vec3 vWorldPos;\nvarying vec3 vNrmW;\n#include <shadowmap_pars_vertex>')
       .replace('#include <begin_vertex>', [
         '#include <begin_vertex>',
         'vVoxelLight = voxelLight;',
+        'vUvTile = aUvTile;',
         'vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
         'vNrmW = normalize(mat3(modelMatrix) * normal);',
         'vec3 objectNormal = vec3( normal );',
@@ -166,7 +182,8 @@ export function applyVoxelLight(material) {
       ].join('\n'))
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#include <shadowmap_vertex>');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + FRAG_HEADER + '\nvarying vec3 vNrmW;\n' + CLOUD_SHADOW_GLSL + '\nuniform float uShadowOn;\nuniform float uShadowStrength;\n#include <packing>\nuniform bool receiveShadow;\n#include <shadowmap_pars_fragment>')
+      .replace('#include <common>', '#include <common>\n' + FRAG_HEADER + '\nvarying vec4 vUvTile;\nuniform vec2 uAtlasSpan;\nvarying vec3 vNrmW;\n' + CLOUD_SHADOW_GLSL + '\nuniform float uShadowOn;\nuniform float uShadowStrength;\n#include <packing>\nuniform bool receiveShadow;\n#include <shadowmap_pars_fragment>')
+      .replace('#include <map_fragment>', ATLAS_TILED_MAP_GLSL)
       .replace('#include <color_fragment>', VOXEL_LIGHT_SOLID_GLSL);
   };
 }

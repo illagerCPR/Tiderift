@@ -80,3 +80,15 @@
 - **7 个调用站委托**：Hotbar（`isStale = () => this._sig[i] !== sig` 延续防闪烁守卫语义，`iconCache`/`getIconSvg` 已删）；RemoteHotbarSprite 的 `getIcon` 先 `getBlockIcon(name, 32)`（canvas）再 `getIconSvg`（物品/非立方）兜底——`drawImage` 接受 canvas 源，绘制站零改动；ChestScreen/FurnaceScreen/TradeScreen/InventoryScreen/RecipeViewer 的 `drawIcon` 全部一行转发。
 - **测试侧高坑**：node 套件里 `import ItemRegistry` 后 **必须副作用导入 `ItemDefs.js`**，否则 `getByName` 全空（同 worker 图陷阱，本批再踩一次）。
 - **验证**：`tests/build29-rename-icons.mjs` 405 断言（iso 判定正反清单 / 全部 iso 方块三面贴图齐备 / 矩阵·亮度·multiply·缓存·isStale 绊线 / 7 站委托 / 旧链仅剩一处）；实机 agent-browser 热栏混合排布截图确认"立方等轴 + 床/火把平铺"同框正确、创造栏与 JEI 图标同步等轴。
+
+## Build 39 批次（2026-10-24 交付）—— U-1 实体方块贪心合并（图集 UV 平铺）
+
+- **合并位置**：`ChunkMeshBuilder._collectData` 内新增记录桶 + `_emitGreedyFaces`（`src/render/ChunkMesh.js`）。逐面直推的老路径**保持不变**，只把符合条件的普通立方体面改成「先记录、循环结束后合并输出」（合并四边形追加在直推顶点之后，顺序不影响渲染）。
+- **合并判据（视觉等价的充分条件，勿放宽）**：四角 `(sky, blk, ao)` 必须**全等且四角互等**（即一张面上四角同值）。原因是合并四边形只有 4 个顶点：只要有一格带梯度，拉伸插值就与原逐格插值不同。**再排除流体与自发光面**（水面已有顶面贪心；自发光面与 light mesh 逐格共面）。放宽这条会直接产生光照/AO 错位。
+- **切片与平面**：±X → slice=x/u=y/v=z，±Y → slice=y/u=x/v=z，±Z → slice=z/u=x/v=y（`GREEDY_AXIS`）。key = `u + v*uDim`，平面格数上界 256×16 = 4096（y 轴只会与 x 或 z 之一配对），scratch `_greedyPlane`/`_greedyUsed` 跨构建复用。
+- **顶点属性 `aUvTile`（vec4 = u0, v0, repU, repV）**：未合并面填 `(u0, v0, 1, 1)`。**solid 几何里每个顶点都必须写满**——`uv` 属性语义未改（仍是图集子区域坐标），纹理平铺靠 `rep` + 片元 `fract`。漏写会让属性长度与顶点数错位（顶点属性整体移位，画面乱纹理），套件 ③ 段守这条。
+- **片元采样（`ATLAS_TILED_MAP_GLSL`，替换 `#include <map_fragment>`）**：`tileLocal = fract((vMapUv - aUvTile.xy)/uAtlasSpan * rep * 0.999999)`，再 `texture2D(map, lo + tileLocal*uAtlasSpan)`。`0.999999` 压缩防 `fract(1.0)=0` 让四边形远边采到对侧纹素；`rep=(1,1)` 时退化为原采样。**勿改用 mipmap/线性过滤**——图集是 `NearestFilter` + `generateMipmaps=false`，开 mip 会让 `fract` 出现接缝。
+- **`uAtlasSpan` 语义**：图集单 tile 跨度，由 `ChunkMeshBuilder` 构造期从 `atlasUV` 首项推导（`buildAtlas` 拼的是 `cols×rows` 等大格）。**若将来图集改成不等距格，这套平铺直接失效**。
+- **Worker 路径零改动**：同步与 Worker 都只跑 `_collectData`，`MeshWorker` 按 `Object.values(g)` 枚举属性做 transfer，新增数组自动随转移——**勿把它改成写死列表**（套件 ⑤ 段绊线）。
+- **调试开关 `RenderQuality.greedyMesh`**（默认 true）：`false` 时走逐面直推，用于同一场景前后对拍；不接视频设置面板。
+- **实测收益**（seed 20260214，49 区块）：solid 顶点 −31.0%、四边形 −31.0%，`_collectData` 每区块 18.43 → 18.81 ms（+2.1%）。合并张数只占输出四边形 4% 左右，但每张平均覆盖约 26 张原四边形。

@@ -4,7 +4,7 @@ import { BlockRegistry } from '../core/BlockRegistry.js';
 import { fluidInfo } from '../core/FluidSim.js';
 import { CHUNK_SIZE, CHUNK_HEIGHT, SEA_LEVEL } from '../core/Chunk.js';
 import { SVGTextures } from './SVGTextures.js';
-import { applyVoxelLight, applyVoxelLightWater, GfxState } from './VoxelLight.js';
+import { applyVoxelLight, applyVoxelLightWater, GfxState, VoxelLightUniforms } from './VoxelLight.js';
 
 // 6 个面的方向定义：[dx, dy, dz]
 const FACES = [
@@ -47,6 +47,7 @@ const AO_CURVE = [1.0, 0.8, 0.62, 0.45];
 export const RenderQuality = {
   smoothLighting: true,  // 平滑光照（四角取邻格均值）
   aoEnabled: true,       // 环境光遮蔽
+  greedyMesh: true,      // B39 U-1 实体方块贪心合并（调试开关：false 走逐面直推，用于合并前后对拍）
 };
 
 // 逐面逐顶点的 AO 采样偏移（相对方块坐标）：[side1, side2, corner]
@@ -67,6 +68,26 @@ const AO_SAMPLES = FACES.map((face, f) => {
     return [mk(o1, 0), mk(0, o2), mk(o1, o2)];
   });
 });
+
+// B39 U-1：贪心合并的静态表——每个面方向的切片轴与平面内两轴（u=先扩展轴，v=整行扩展轴）。
+// 平面格数上界 = 256×16 = 4096（y 轴只可能与 x 或 z 之一配对）。
+const GREEDY_AXIS = [
+  { slice: 0, u: 1, v: 2 }, // +X: slice=x, u=y, v=z
+  { slice: 0, u: 1, v: 2 }, // -X
+  { slice: 1, u: 0, v: 2 }, // +Y: slice=y, u=x, v=z
+  { slice: 1, u: 0, v: 2 }, // -Y
+  { slice: 2, u: 0, v: 1 }, // +Z: slice=z, u=x, v=y
+  { slice: 2, u: 0, v: 1 }  // -Z
+];
+
+// 图集纹理 u/v 各自的物理轴：由 faceCorners 静态推导（角0→角1 变化的轴 = u，角0→角2 = v）
+const FACE_UV_AXIS = faceCorners.map((corners) => {
+  const axisOf = (a, b) => (a[0] !== b[0] ? 0 : a[1] !== b[1] ? 1 : 2);
+  return { u: axisOf(corners[0], corners[1]), v: axisOf(corners[0], corners[2]) };
+});
+
+// 缺纹理时的兜底 UV：同一定值对象，使贪心合并的"同一贴图"判定可走引用比较
+const FALLBACK_UV = { u0: 0, v0: 0, u1: 1, v1: 1 };
 
 // 缓存尺寸：区块四周各垫 1 格（18×256×18），AO/剔除查表全走本地数组
 const PAD = CHUNK_SIZE + 2; // 18
@@ -117,6 +138,12 @@ export class ChunkMeshBuilder {
     this._blockLCache = new Uint8Array(PAD * CHUNK_HEIGHT * PAD);
     this._curChunk = null;
     this._opaqueLUT = new Uint8Array(256);
+    // B39 U-1：贪心合并 scratch（切片平面格数上界 4096，跨构建复用不分配）
+    this._greedyPlane = new Int32Array(CHUNK_HEIGHT * CHUNK_SIZE);
+    this._greedyUsed = new Uint8Array(CHUNK_HEIGHT * CHUNK_SIZE);
+    // 图集单 tile 跨度（片元 UV 平铺 uniform）：图集是等距网格，取任一 UV 条目推导即可
+    const anyUv = atlasUV && typeof atlasUV.values === 'function' ? atlasUV.values().next().value : null;
+    if (anyUv) VoxelLightUniforms.uAtlasSpan.value.set(anyUv.u1 - anyUv.u0, anyUv.v1 - anyUv.v0);
     this._disposed = false;
   }
 
@@ -137,6 +164,8 @@ export class ChunkMeshBuilder {
     this._skyCache = null;
     this._blockLCache = null;
     this._opaqueLUT = null;
+    this._greedyPlane = null;
+    this._greedyUsed = null;
     this._curChunk = null;
   }
 
@@ -274,6 +303,9 @@ export class ChunkMeshBuilder {
     const indices = [];
     const colors = [];
     const voxLight = []; // solid 顶点体素光 (skyL, blockL) 归一化
+    const tiles = []; // B39 U-1：solid 顶点图集平铺参数 (u0, v0, repU, repV)
+    // B39 U-1：贪心合并候选记录桶（按面方向分桶；null = 该方向无候选）
+    const gRec = [null, null, null, null, null, null];
     let idx = 0;
     const portalCells = []; // 环境粒子发射点（M3）：与方块数据天然同步
 
@@ -322,7 +354,7 @@ export class ChunkMeshBuilder {
           if (def.renderType === 'cross') {
             // addCross 画 2 交叉面共 8 顶点并返回推进后索引——调用处必须接收返回值，
             // 否则 cross 之后所有方块的顶点索引整体错位 4（曾真出，见 AGENTS.md 渲染批次备忘）。
-            idx = this.addCross(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight);
+            idx = this.addCross(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight, tiles);
             if (def.light >= 13) {
               lIdx = this.addCross(lightPos, lightNorm, lightUv, lightCol, lightIdx, x, y, z, def, lIdx, null);
             }
@@ -330,7 +362,7 @@ export class ChunkMeshBuilder {
           }
           if (def.renderType === 'flat') {
             // 水平薄板（睡莲）：单顶面微抬于格顶，正反双面索引（水下仰视可见）
-            idx = this.addFlat(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight);
+            idx = this.addFlat(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight, tiles);
             if (def.light >= 13) {
               lIdx = this.addFlat(lightPos, lightNorm, lightUv, lightCol, lightIdx, x, y, z, def, lIdx, null);
             }
@@ -338,7 +370,7 @@ export class ChunkMeshBuilder {
           }
           if (def.shape) {
             // B27 形制方块（门/床/活板门）：格内 AABB 盒渲染（无 AO，四角取自身格光）
-            idx = this.addBox(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight);
+            idx = this.addBox(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight, tiles);
             continue;
           }
 
@@ -376,7 +408,7 @@ export class ChunkMeshBuilder {
             }
 
             const texName = faceTexName(def, face);
-            const uv = this.atlasUV.get(texName) || { u0: 0, v0: 0, u1: 1, v1: 1 };
+            const uv = this.atlasUV.get(texName) || FALLBACK_UV;
             const corners = faceCorners[f];
             const faceLight = FACE_LIGHT[f];
 
@@ -421,6 +453,27 @@ export class ChunkMeshBuilder {
               skyV[0] = skyV[1] = skyV[2] = skyV[3] = nSky;
               blkV[0] = blkV[1] = blkV[2] = blkV[3] = nBlk;
             }
+            // B39 U-1：贪心合并候选——四角光照与 AO 全均一的普通立方体面。
+            // 一张合并四边形只有 4 个顶点，复现不了逐格梯度；均一面合并前后逐像素等价。
+            // 排除：流体（水面已有顶面合并，岩浆走原路径）、自发光面（与 light mesh 共面）。
+            if (RenderQuality.greedyMesh && !isWater && !def.fluid && !hasLight) {
+              const a0 = a[0], s0 = skyV[0], b0 = blkV[0];
+              if (a[1] === a0 && a[2] === a0 && a[3] === a0 &&
+                  skyV[1] === s0 && skyV[2] === s0 && skyV[3] === s0 &&
+                  blkV[1] === b0 && blkV[2] === b0 && blkV[3] === b0) {
+                const ax = GREEDY_AXIS[f];
+                let rec = gRec[f];
+                if (!rec) rec = gRec[f] = { slice: [], u: [], v: [], uv: [], sky: [], blk: [], ao: [] };
+                rec.slice.push(ax.slice === 0 ? x : ax.slice === 1 ? y : z);
+                rec.u.push(ax.u === 0 ? x : ax.u === 1 ? y : z);
+                rec.v.push(ax.v === 0 ? x : ax.v === 1 ? y : z);
+                rec.uv.push(uv);
+                rec.sky.push(s0);
+                rec.blk.push(b0);
+                rec.ao.push(a0);
+                continue;
+              }
+            }
             const targetLight = isWater ? waterVoxLight : voxLight;
 
             // 顶点色 = 面向系数 × AO；AO 各向异性时翻转对角线避免暗色斜纹
@@ -460,6 +513,8 @@ export class ChunkMeshBuilder {
             } else {
               // 图集 UV：顶点顺序为 [底,顶,底,顶]，让方块顶部对应纹理 v=v1（SVG 顶部）
               targetUv.push(uv.u0, uv.v0, uv.u0, uv.v1, uv.u1, uv.v0, uv.u1, uv.v1);
+              // B39 U-1：逐面直推的顶点平铺参数为 (1,1)，片元采样退化为原图集子区域
+              tiles.push(uv.u0, uv.v0, 1, 1, uv.u0, uv.v0, 1, 1, uv.u0, uv.v0, 1, 1, uv.u0, uv.v0, 1, 1);
             }
             // 索引（AO 各向异性时换对角线：v1-v2 ↔ v0-v3，绕向不变）
             if (!isWater && a[1] + a[2] > a[0] + a[3]) {
@@ -485,21 +540,27 @@ export class ChunkMeshBuilder {
       }
     }
 
+    // B39 U-1：贪心合并实体方块面（顶点追加在逐面直推之后；顺序不影响渲染）
+    for (let f = 0; f < 6; f++) {
+      if (gRec[f]) idx = this._emitGreedyFaces(f, gRec[f], positions, normals, uvs, colors, voxLight, tiles, indices, idx);
+    }
+
     // 贪心合并水面（顶面），消除网格分界
     wIdx = this._mergeWaterTops(waterTops, waterPositions, waterNormals, waterUvs, waterColors, waterVoxLight, waterIndices, wIdx, chunk);
 
     // 转 typed arrays（transferable；索引按需选 16/32 位省内存）
-    const pack = (pos, norm, uv, col, vl, ind, maxIdx) => ({
+    const pack = (pos, norm, uv, col, vl, ind, maxIdx, uvTile) => ({
       position: new Float32Array(pos),
       normal: new Float32Array(norm),
       uv: new Float32Array(uv),
       color: new Float32Array(col),
       voxelLight: new Float32Array(vl),
+      uvTile: uvTile ? new Float32Array(uvTile) : null,
       index: maxIdx > 65535 ? new Uint32Array(ind) : new Uint16Array(ind),
     });
     return {
       portalCells,
-      solid: positions.length ? pack(positions, normals, uvs, colors, voxLight, indices, idx) : null,
+      solid: positions.length ? pack(positions, normals, uvs, colors, voxLight, indices, idx, tiles) : null,
       water: waterPositions.length ? pack(waterPositions, waterNormals, waterUvs, waterColors, waterVoxLight, waterIndices, wIdx) : null,
       light: lightPos.length ? {
         position: new Float32Array(lightPos),
@@ -521,6 +582,8 @@ export class ChunkMeshBuilder {
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(g.color, 3));
       geo.setAttribute('voxelLight', new THREE.Float32BufferAttribute(g.voxelLight, 2));
+      // B39 U-1：图集平铺参数（未合并面 (u0,v0,1,1)，合并面 (u0,v0,repU,repV)）
+      if (g.uvTile) geo.setAttribute('aUvTile', new THREE.Float32BufferAttribute(g.uvTile, 4));
       // setIndex(原始 TypedArray) 会被 three 原样存为 geo.index（非 BufferAttribute），
       // 渲染期读 attribute.array 崩溃——必须显式包一层 BufferAttribute
       geo.setIndex(new THREE.BufferAttribute(g.index, 1));
@@ -564,6 +627,105 @@ export class ChunkMeshBuilder {
     if (aboveDef && aboveDef.fluid && aboveDef.fluidType === def.fluidType) return 1;
     const info = fluidInfo(this._solidAt(x, y, z));
     return (8 - (info ? info.level : 0)) / 9;
+  }
+
+  // B39 U-1：单个面方向的实体方块面贪心合并。
+  // recs 为该方向"四角光照与 AO 全均一"的普通立方体面记录；按 slice 分组成平面后做二维贪心，
+  // 合并区角点由种子格角点沿高位轴投影到区边界，顶点属性取种子格（区内全等 → 与逐面绘制逐像素等价）。
+  // 返回推进后的顶点索引。
+  _emitGreedyFaces(f, recs, positions, normals, uvs, colors, voxLight, tiles, indices, startIdx) {
+    const ax = GREEDY_AXIS[f];
+    const uDim = ax.u === 1 ? CHUNK_HEIGHT : CHUNK_SIZE;
+    const vDim = ax.v === 1 ? CHUNK_HEIGHT : CHUNK_SIZE;
+    const plane = this._greedyPlane;
+    const used = this._greedyUsed;
+    const corners = faceCorners[f];
+    const dir = FACES[f].dir;
+    const faceLight = FACE_LIGHT[f];
+    const uvAxis = FACE_UV_AXIS[f];
+    const n = recs.slice.length;
+    // 同组判据：同一图集条目（引用比较）+ 天光/方块光浮点全等 + AO 档位全等
+    const same = (i, j) =>
+      recs.uv[i] === recs.uv[j] && recs.sky[i] === recs.sky[j] &&
+      recs.blk[i] === recs.blk[j] && recs.ao[i] === recs.ao[j];
+    let idx = startIdx;
+
+    const bySlice = new Map();
+    for (let i = 0; i < n; i++) {
+      const s = recs.slice[i];
+      const arr = bySlice.get(s);
+      if (arr) arr.push(i); else bySlice.set(s, [i]);
+    }
+
+    for (const [s, ids] of bySlice) {
+      const keys = [];
+      for (let k = 0; k < ids.length; k++) {
+        const i = ids[k];
+        const key = recs.u[i] + recs.v[i] * uDim;
+        plane[key] = i + 1;
+        keys.push(key);
+      }
+      keys.sort((p, q) => p - q); // key = u + v*uDim → 升序即 (v,u) 行主序
+
+      for (let ki = 0; ki < keys.length; ki++) {
+        const key = keys[ki];
+        if (used[key]) continue;
+        const r0 = plane[key] - 1;
+        const u0 = key % uDim;
+        const v0 = (key - u0) / uDim;
+        let w = 1;
+        while (u0 + w < uDim) {
+          const k = key + w;
+          if (used[k] || plane[k] === 0 || !same(r0, plane[k] - 1)) break;
+          w++;
+        }
+        let d = 1;
+        expand: for (let dv = 1; v0 + dv < vDim; dv++) {
+          const rowBase = key + dv * uDim;
+          for (let du = 0; du < w; du++) {
+            const k = rowBase + du;
+            if (used[k] || plane[k] === 0 || !same(r0, plane[k] - 1)) break expand;
+          }
+          d++;
+        }
+        for (let dv = 0; dv < d; dv++) {
+          const rowBase = key + dv * uDim;
+          for (let du = 0; du < w; du++) used[rowBase + du] = 1;
+        }
+
+        const base = [0, 0, 0];
+        base[ax.slice] = s;
+        base[ax.u] = u0;
+        base[ax.v] = v0;
+        const uv = recs.uv[r0];
+        const l = faceLight * AO_CURVE[recs.ao[r0]];
+        const sky = recs.sky[r0];
+        const blk = recs.blk[r0];
+        for (let c = 0; c < 4; c++) {
+          const corner = corners[c];
+          const offU = corner[ax.u] === 1 ? w - 1 : 0;
+          const offV = corner[ax.v] === 1 ? d - 1 : 0;
+          positions.push(
+            base[0] + corner[0] + (ax.u === 0 ? offU : ax.v === 0 ? offV : 0),
+            base[1] + corner[1] + (ax.u === 1 ? offU : ax.v === 1 ? offV : 0),
+            base[2] + corner[2] + (ax.u === 2 ? offU : ax.v === 2 ? offV : 0)
+          );
+          normals.push(dir[0], dir[1], dir[2]);
+          colors.push(l, l, l);
+          voxLight.push(sky, blk);
+        }
+        uvs.push(uv.u0, uv.v0, uv.u0, uv.v1, uv.u1, uv.v0, uv.u1, uv.v1);
+        // 纹理 u/v 各自的重复次数 = 合并区在该物理轴上的跨度
+        const repU = uvAxis.u === ax.u ? w : d;
+        const repV = uvAxis.v === ax.u ? w : d;
+        for (let c = 0; c < 4; c++) tiles.push(uv.u0, uv.v0, repU, repV);
+        indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3);
+        idx += 4;
+      }
+
+      for (let k = 0; k < keys.length; k++) { plane[keys[k]] = 0; used[keys[k]] = 0; }
+    }
+    return idx;
   }
 
   // 贪心合并水面顶面，消除方块边界网格（B26 M2：按 y + 水位高度分层，仅同高合并）
@@ -670,7 +832,7 @@ export class ChunkMeshBuilder {
 
   // 十字形渲染（火把/花）；voxLight 非空时写入自身格光照（发光体 light mesh 传 null 跳过）。
   // 返回推进后的顶点索引（2 交叉面共 8 顶点）。
-  addCross(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight) {
+  addCross(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight, tiles = null) {
     const texName = def.side;
     const uv = this.atlasUV.get(texName) || { u0: 0, v0: 0, u1: 1, v1: 1 };
     const corners = [
@@ -687,6 +849,7 @@ export class ChunkMeshBuilder {
         if (voxLight) voxLight.push(skyL, blkL);
       }
       uvs.push(uv.u0, uv.v0, uv.u0, uv.v1, uv.u1, uv.v0, uv.u1, uv.v1);
+      if (tiles) for (let t = 0; t < 4; t++) tiles.push(uv.u0, uv.v0, 1, 1);
       indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3);
       idx += 4;
     }
@@ -694,7 +857,7 @@ export class ChunkMeshBuilder {
   }
 
   // 水平薄板渲染（睡莲）：顶面抬升 0.002 防与水面 z-fighting，正反双面索引；返回推进后索引（4 顶点）。
-  addFlat(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight) {
+  addFlat(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight, tiles = null) {
     const texName = def.side;
     const uv = this.atlasUV.get(texName) || { u0: 0, v0: 0, u1: 1, v1: 1 };
     const skyL = voxLight ? this._skyAt(x, y, z) / 15 : 0;
@@ -710,6 +873,7 @@ export class ChunkMeshBuilder {
       if (voxLight) voxLight.push(skyL, blkL);
     }
     uvs.push(uv.u0, uv.v0, uv.u0, uv.v1, uv.u1, uv.v0, uv.u1, uv.v1);
+    if (tiles) for (let t = 0; t < 4; t++) tiles.push(uv.u0, uv.v0, 1, 1);
     indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3); // 正面（上方可见）
     indices.push(idx, idx + 2, idx + 1, idx + 2, idx + 3, idx + 1); // 反面（下方仰视可见）
     return idx + 4;
@@ -720,7 +884,7 @@ export class ChunkMeshBuilder {
   // UV：盒空间坐标即贴图比例（满幅面取整图、窄条面取对应切条，原版观感）；侧向 v 轴随 y 上升。
   // 贴边整体内缩 E：门板贴墙面/床贴地面时避免与邻格同平面 z-fighting。
   // 返回推进后的顶点索引（6 面 24 顶点）。voxLight 非空时写入自身格光照。
-  addBox(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight) {
+  addBox(positions, normals, uvs, colors, indices, x, y, z, def, idx, voxLight, tiles = null) {
     const { from, to } = def.shape;
     const E = 0.0008;
     const lo = [x + from[0] + E, y + from[1] + E, z + from[2] + E];
@@ -747,6 +911,7 @@ export class ChunkMeshBuilder {
         else if (f === 4) { fu = 1 - cc[0]; fv = cc[1]; }
         else { fu = cc[0]; fv = cc[1]; }
         uvs.push(uv.u0 + fu * (uv.u1 - uv.u0), uv.v0 + fv * (uv.v1 - uv.v0));
+        if (tiles) tiles.push(uv.u0, uv.v0, 1, 1);
       }
       indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3);
       idx += 4;

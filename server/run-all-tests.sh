@@ -40,6 +40,7 @@ PURE_NODE_SUITES=(
     build28-block-textures     # B28 方块材质（定向面/多面纠偏 + 状态家族）回归（纯 node）
     build29-rename-icons       # B29 更名 Tiderift（Beta 版本格式/logo/引用面）+ 创造栏技术方块过滤 + 等轴图标回归（纯 node）
     build30-water-exit-air     # B30 水中上岸助推 + 氧气原版口径回归（纯 node：物理场景仿真/助推门限/陆上台阶保持/氧气 15 秒/溺水 2HP/s/接线绊线）
+    build39-greedy-mesh        # B39 U-1 实体方块贪心合并（纯 node：均一平板合并到 6 面/天光切分不合并/aUvTile 对齐/平铺跨度/Worker 绊线）
     end-dragon                 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
     end-gateway                # 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
     end-city                   # 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）
