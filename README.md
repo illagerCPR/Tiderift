@@ -155,7 +155,7 @@ Copyright (C) 2026 illagerCPR and Tiderift contributors
 
 本项目以 [GNU Affero General Public License v3.0](LICENSE) 发布。通过网络使用本项目的修改版本时，须按 AGPL-3.0 第 13 条向用户提供对应源码。
 
-第三方组件（three.js / Vite / ws）的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+默认皮肤、logo 与主菜单全景图均为本项目原创，未包含 Mojang 素材。第三方组件（three.js / Vite / ws）的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ---
 
