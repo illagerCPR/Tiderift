@@ -22,6 +22,9 @@ server/*.json
 # 启动脚本运行时状态（pid 文件等）
 .run/
 
+# 工作区记忆库（meow-memory 数据，不随仓库提交）
+.dsh-meow/
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db
