@@ -122,6 +122,20 @@ export class MenuScreen {
       font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
     `;
     document.body.appendChild(this.versionEl);
+    // 许可证与源码入口（AGPL-3.0 §13：通过网络与程序交互的用户须能获取对应源码）
+    this.legalEl = document.createElement('div');
+    this.legalEl.innerHTML = `
+      <a href="https://github.com/illagerCPR/Tiderift/blob/master/LICENSE" target="_blank" rel="noopener"
+         style="color:inherit;text-decoration:none;">AGPL-3.0</a>
+      <span> · </span>
+      <a href="https://github.com/illagerCPR/Tiderift" target="_blank" rel="noopener"
+         style="color:inherit;text-decoration:none;">Source</a>`;
+    this.legalEl.style.cssText = `
+      position: fixed; left: 10px; bottom: 26px; z-index: 60;
+      color: rgba(255,255,255,0.66); font-size: 11px; text-shadow: 1px 1px 0 #000;
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    `;
+    document.body.appendChild(this.legalEl);
   }
 
   render() {
@@ -413,6 +427,6 @@ export class MenuScreen {
   }
 
   // onShow/onHide 由 main.js 注入（切换全景背景的启停）
-  hide() { this.el.style.display = 'none'; this.versionEl.style.display = 'none'; if (this.onHide) this.onHide(); }
-  show() { this.page = 'main'; this.el.style.display = 'flex'; this.versionEl.style.display = 'block'; this.render(); if (this.onShow) this.onShow(); }
+  hide() { this.el.style.display = 'none'; this.versionEl.style.display = 'none'; this.legalEl.style.display = 'none'; if (this.onHide) this.onHide(); }
+  show() { this.page = 'main'; this.el.style.display = 'flex'; this.versionEl.style.display = 'block'; this.legalEl.style.display = 'block'; this.render(); if (this.onShow) this.onShow(); }
 }

@@ -143,4 +143,20 @@ npm run preview        # 预览构建产物
 
 ---
 
+## 在线试玩
+
+GitHub Pages 提供构建产物的单机版本：<https://www.illageraris.dpdns.org/Tiderift/>。联机仍需按上文在局域网自建服务器。
+
+---
+
+## 许可证
+
+Copyright (C) 2026 illagerCPR and Tiderift contributors
+
+本项目以 [GNU Affero General Public License v3.0](LICENSE) 发布。通过网络使用本项目的修改版本时，须按 AGPL-3.0 第 13 条向用户提供对应源码。
+
+第三方组件（three.js / Vite / ws）的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+---
+
 开发者参考资料：[`docs/development.md`](docs/development.md)（环境与依赖、命令、目录结构、架构概览、回归测试与 CI）。

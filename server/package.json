@@ -12,5 +12,6 @@
   },
   "dependencies": {
     "ws": "^8.21.3"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }
