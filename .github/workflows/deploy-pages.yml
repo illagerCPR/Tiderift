@@ -1,0 +1,46 @@
+name: Deploy Pages
+
+# 仅当发布 Release 时部署客户端到 GitHub Pages；
+# workflow_dispatch 用于手动补发 / 回滚到历史 tag。
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy-pages:
+    name: Deploy client to GitHub Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci --no-fund --no-audit
+
+      - name: Build frontend
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
