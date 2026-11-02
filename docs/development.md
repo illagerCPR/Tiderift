@@ -7,7 +7,7 @@
 
 ## 环境要求
 
-- Node.js 18+（根与 `server/package.json` 的 `engines.node` 均为 `>=18`，下限来自 server 侧用到的全局 `fetch` 与 `AbortSignal.timeout`（Node 17.3+）；Vite 5 自身声明 `^18.0.0 || >=20.0.0`，19.x 属未验证的过渡版本，实际使用 18 / 20 / 22 / 24）。开发与 CI 固定使用 Node 24，版本源为根目录 `.nvmrc`（CI 经 `node-version-file` 读取，不再硬编码）。
+- Node.js 18+（根与 `server/package.json` 的 `engines.node` 均为 `>=18`，下限来自 server 侧用到的全局 `fetch` 与 `AbortSignal.timeout`（Node 17.3+）；Vite 5 自身声明 `^18.0.0 || >=20.0.0`，19.x 属未验证的过渡版本，实际使用 18 / 20 / 22 / 24 / 26）。开发与 CI 固定使用 Node 26，版本源为根目录 `.nvmrc`（CI 经 `node-version-file` 读取，不再硬编码）。
 - npm
 - bash：`start.sh` 与 `server/run-all-tests.sh` 都是 bash 脚本；Windows 原生 cmd / PowerShell 下无 bash 会直接失败，需在 Git Bash / WSL 中执行（或手动 `bash server/run-all-tests.sh`）。
 
@@ -191,6 +191,6 @@ Tiderift/
 
 ### CI
 
-`.github/workflows/ci.yml`：push 到 master / PR / 手动触发时，在 `.nvmrc` 指定的 Node（当前 24）上 `npm ci`（前端与 server 各一次）→ 对 `src/`、`server/`、`tests/` 下全部 `.js` / `.mjs` 跑一遍 `node --check`（语法级全量兜底，任一文件失败即整步失败）→ `npm run build` → `./server/run-all-tests.sh`。CI 不写死套件与断言数量。
+`.github/workflows/ci.yml`：push 到 master / PR / 手动触发时，在 `.nvmrc` 指定的 Node（当前 26）上 `npm ci`（前端与 server 各一次）→ 对 `src/`、`server/`、`tests/` 下全部 `.js` / `.mjs` 跑一遍 `node --check`（语法级全量兜底，任一文件失败即整步失败）→ `npm run build` → `./server/run-all-tests.sh`。CI 不写死套件与断言数量。
 
 批次踩坑备忘见 `docs/agent-notes/`（按主题分文件，改动对应子系统前先读）；局域网联机设计见 `docs/lan-multiplayer-design.md`。

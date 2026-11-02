@@ -22,7 +22,7 @@
 //   3) Game.loop() 末尾无条件 requestAnimationFrame 续链，只有 running=false 才会断。
 //      boot() 在 start() 返回后立即 stop()，把主循环交还给调用方定步长驱动。
 
-import { register as registerLoader } from 'node:module';
+import { registerHooks, register as registerLoader } from 'node:module';
 
 const GAME_URL = new URL('../../src/player/Game.js', import.meta.url).href;
 
@@ -32,7 +32,19 @@ let shellInstalled = false;
 // 按精确模式屏蔽以免淹没套件输出；其余任何 warn 原样放行。
 const MOCK_GL_WARN = /^THREE\.WebGLRenderer: (EXT_blend_minmax|OES_vertex_array_object) extension not supported\.$/;
 
-// ── 静态资源导入：Vite 语义（默认导出资源 URL 字符串）由内联 data: URL loader 复刻 ──
+// ── 静态资源导入：Vite 语义（默认导出资源 URL 字符串）──
+// 首选同步钩子 registerHooks（Node ≥22.15）：module.register() 自 Node 26 起废弃，会在 stderr 打
+// DEP0205，而本套件的 A3/A4 断言要求 boot 期间除 PostFX 外零噪声，故不能留用废弃 API。
+// 老运行时（<22.15）回退到 data: URL 异步 loader——两条路径的语义完全一致。
+const ASSET_EXT = /\.(png|jpe?g|svg|gif|webp|css)$/;
+
+function assetLoadHook(url, context, nextLoad) {
+  if (ASSET_EXT.test(new URL(url).pathname)) {
+    return { format: 'module', shortCircuit: true, source: 'export default ' + JSON.stringify(url) + ';' };
+  }
+  return nextLoad(url, context);
+}
+
 const ASSET_LOADER_SRC = [
   'export async function load(url, context, nextLoad) {',
   "  if (/.\\.(png|jpe?g|svg|gif|webp|css)$/.test(new URL(url).pathname)) {",
@@ -41,6 +53,10 @@ const ASSET_LOADER_SRC = [
   '  return nextLoad(url, context);',
   '}',
 ].join('\n');
+
+const installAssetLoader = typeof registerHooks === 'function'
+  ? () => registerHooks({ load: assetLoadHook })
+  : () => registerLoader('data:text/javascript,' + encodeURIComponent(ASSET_LOADER_SRC));
 
 // ── ① DOM / Canvas / WebAudio 壳 ──
 function makeStyle() {
@@ -354,7 +370,7 @@ function installShell() {
   if (shellInstalled) return;
   shellInstalled = true;
 
-  registerLoader('data:text/javascript,' + encodeURIComponent(ASSET_LOADER_SRC));
+  installAssetLoader();
 
   const origWarn = console.warn;
   console.warn = (...a) => {
