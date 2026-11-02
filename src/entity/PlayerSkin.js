@@ -3,7 +3,7 @@
 //   ① 原版 64×64 皮肤 UV 映射：部件区域表（classic/slim 双模型）+ BoxGeometry 六面 UV 写入
 //      （镜像标志按 BoxGeometry buildPlane 顶点走向推导，截图校准）
 //   ② 双层渲染：base 层不透明 + overlay 第二层（帽/外套/袖/裤，alphaTest 透明壳，外扩 0.5px）
-//   ③ legacy 64×32 皮肤归一化（下半区下移 16px 拼成 64×64）
+//   ③ legacy 64×32 皮肤归一化（左肢镜像补位 + overlay 直拷，B41 重写）
 //   ④ 皮肤来源与持久化：默认内置 PNG（res/default_skin/） / 本地上传 / M3 用户名拉取；
 //      localStorage 键 project-mc-skin-v1（单机本地，联机同步走 M2 协议）
 // 纯数据函数（partRects/faceRects/isLegacySkin 归一化坐标）node 可测；canvas/Image 操作仅浏览器路径。
@@ -35,15 +35,17 @@ const PART_DEFS = [
 //   BoxGeometry 面序 [px(+x), nx(-x), py(+y), ny(-y), pz(+z), nz(-z)]
 //   模型自身右=+X、面朝-Z → px=右面(right) / nx=左面(left) / py=top / ny=bottom /
 //   pz=背面(back) / nz=脸面(front)
-// 镜像标志推导（BoxGeometry buildPlane 顶点 uv 走向 + 皮肤十字展开连续性）：
-//   px/nx/nz 无镜像；py 水平镜像（俯视画面右=-X 与 uv u 增=+X 相反）；
-//   pz 水平镜像（背面在十字展开中翻正，左右反转）；ny 双向翻转（原版 bottom 特殊朝向）。
-const FACE_MAP = [
+// 镜像标志推导方式（B41 修正）：以 skinview3d 的 setUVs 为参考实现，把两边都折算成
+//   「角色空间角点（右/左·上/下·前/后）→ 图集像素」逐点比对，6 部件×6 面×4 角=144 点全等。
+//   B41 前 back/top/bottom 三面全错（back 多翻 u、top 少翻 v、bottom 多翻 v），
+//   正面与左右两侧本来就对——默认皮肤这几处多为对称纯色，故长期未被肉眼发现。
+// 纪律：改这里必须跑 tests/build41-skin-uv.mjs（144 点钉值 + 负控）。
+export const FACE_MAP = [
   { face: 0, sel: 'right', flipU: false, flipV: false },
   { face: 1, sel: 'left', flipU: false, flipV: false },
-  { face: 2, sel: 'top', flipU: true, flipV: false },
-  { face: 3, sel: 'bottom', flipU: true, flipV: true },
-  { face: 4, sel: 'back', flipU: true, flipV: false },
+  { face: 2, sel: 'top', flipU: true, flipV: true },
+  { face: 3, sel: 'bottom', flipU: true, flipV: false },
+  { face: 4, sel: 'back', flipU: false, flipV: false },
   { face: 5, sel: 'front', flipU: false, flipV: false },
 ];
 
@@ -70,7 +72,8 @@ export function partRects(model = 'classic') {
 
 // 单面 UV 写入：BoxGeometry 每面 4 顶点 uv 序 [左上, 右上, 左下, 右下]（uv 空间）。
 // flipU/flipV 按区域角点交换（PNG y 向下 → uv v=1-y/64 已在角点坐标内处理）。
-function setFaceUV(geo, faceIndex, rect, flipU, flipV) {
+// 导出供 FirstPersonHand 复用（B41：第一人称手臂与第三人称同一套面表，禁止各写一套）。
+export function setFaceUV(geo, faceIndex, rect, flipU, flipV) {
   const u0 = rect.x / 64, u1 = (rect.x + rect.w) / 64;
   const vT = 1 - rect.y / 64, vB = 1 - (rect.y + rect.h) / 64;
   const LT = [u0, vT], RT = [u1, vT], LB = [u0, vB], RB = [u1, vB];
@@ -139,15 +142,44 @@ export function applySkinToRig(rig, img, model = 'classic') {
   };
 }
 
-// ── legacy 64×32 归一化 ────────────────────────────────────────────────
-// 64×32（旧版）布局 = 64×64 的上半区；下半区（left arm/leg base 与全部 overlay）缺失。
-// 归一化：把上半区拷到新 64×64 画布，再把 arm/leg base 行（y16-32）复制下移 16px 补齐
-// left 侧与 overlay 位（社区通行做法：left 用 right 贴图镜像缺失——这里取简：下移补位，
-// left 部件显示 right 贴图，双层与 base 同图，视觉可接受；原版现代皮肤不受影响）。
+// ── legacy 64×32 归一化（B41 重写）────────────────────────────────────
+// 64×32（旧版）布局 = 64×64 的上半区；下半区（左臂/左腿 base 与全部 overlay）整段缺失。
+// B41 前只把 y16..31 下移 16px，左臂(32,48)/左腿(16,48) 的 base 与 overlay 仍整面透明，
+// transparent:false 材质下渲染成纯黑肢体（实测 8 个区域 alpha=0）。
+// 现按原版 1.8 语义补位：
+//   ① 左肢 base ← 右肢 base 的**几何镜像**（x → -x）：±X 两面互换区域，六个面均水平翻转；
+//   ② overlay ← 自身 base 直拷（旧皮肤没有身体/四肢的第二层数据，复制层让双层渲染与单层一致）；
+//      head 的 hat 区保持**原样**——1.7 皮肤本来就自带帽层数据（(32,0) 8×8），
+//      无帽的皮肤那块是透明的，绝不能拿 base 顶替（否则头顶凭空多一层放大的头）。
+// 纯数据拆分：legacySkinOps() 只产拷贝算子（node 可测），normalizeSkin() 负责执行。
 export function isLegacySkin(img) { return img.height === 32 && img.width === 64; }
 
-// 需要下移补位的行块（PNG y 范围）：[srcY, height] → 复制到 y+16
-const LEGACY_ROW_BLOCKS = [[16, 16]]; // y16..31（arm/leg base 行）→ y32..47 与 overlay 位共图
+// 需要镜像补位的左右肢对（右 → 左）
+const LEGACY_LIMB_PAIRS = [['armR', 'armL'], ['legR', 'legL']];
+// 不生成 overlay 的部件（hat 用旧皮肤自带的 (32,0) 区域，不被 base 顶替）
+const LEGACY_NO_OVERLAY = ['head'];
+const FACE_KEYS = ['front', 'back', 'top', 'bottom', 'right', 'left'];
+
+// legacy 64×32 → 64×64 的拷贝算子表：[{ sx, sy, w, h, dx, dy, flipH, from }]
+//   from='image'（源=原始 64×32 图）| 'canvas'（源=已写入上半区与左肢的画布，用于 overlay）
+// 纯函数（只依赖 partRects），node 直接可测；坐标系为 PNG 像素（y 向下）。
+export function legacySkinOps(model = 'classic') {
+  const rects = partRects(model);
+  const ops = [];
+  const copy = (src, dst, flipH, from) => ops.push({ sx: src.x, sy: src.y, w: src.w, h: src.h, dx: dst.x, dy: dst.y, flipH, from });
+  // ① 左肢 base ← 右肢 base 镜像：±X 两面互换，其余四面同区域
+  for (const [r, l] of LEGACY_LIMB_PAIRS) {
+    for (const face of ['front', 'back', 'top', 'bottom']) copy(rects[r].base[face], rects[l].base[face], true, 'image');
+    copy(rects[r].base.left, rects[l].base.right, true, 'image');   // 左肢 +X 面 ← 右肢 -X 面
+    copy(rects[r].base.right, rects[l].base.left, true, 'image');
+  }
+  // ② overlay ← base 直拷（源取画布：左肢 base 是上一步补出来的）
+  for (const key of Object.keys(rects)) {
+    if (LEGACY_NO_OVERLAY.includes(key)) continue;
+    for (const face of FACE_KEYS) copy(rects[key].base[face], rects[key].overlay[face], false, 'canvas');
+  }
+  return ops;
+}
 
 // 在浏览器执行：返回归一化后的 canvas（legacy 输入）或原 img（现代皮肤）
 export function normalizeSkin(img) {
@@ -156,9 +188,19 @@ export function normalizeSkin(img) {
   cv.width = 64; cv.height = 64;
   const ctx = cv.getContext('2d');
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, 0, 0); // 上半区原样
-  for (const [sy, hgt] of LEGACY_ROW_BLOCKS) {
-    ctx.drawImage(img, 0, sy, 64, hgt, 0, sy + 16, 64, hgt);
+  ctx.drawImage(img, 0, 0); // 上半区原样（头/身体/右肢 base 与头顶 base 都在这里）
+  for (const op of legacySkinOps()) {
+    const src = op.from === 'canvas' ? cv : img;
+    if (!op.flipH) {
+      ctx.drawImage(src, op.sx, op.sy, op.w, op.h, op.dx, op.dy, op.w, op.h);
+      continue;
+    }
+    // 水平镜像落位：平移到目标右边界后 x 取反
+    ctx.save();
+    ctx.translate(op.dx + op.w, op.dy);
+    ctx.scale(-1, 1);
+    ctx.drawImage(src, op.sx, op.sy, op.w, op.h, 0, 0, op.w, op.h);
+    ctx.restore();
   }
   return cv;
 }
