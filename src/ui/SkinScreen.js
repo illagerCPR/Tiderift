@@ -7,7 +7,7 @@ import { t } from '../i18n/index.js';
 import { ensureStoneStyles } from './StoneStyle.js';
 import {
   getSkinPrefs, saveSkinPrefs, clearSkinPrefs,
-  loadImageFromURL, normalizeSkin, DEFAULT_SKIN_URLS,
+  loadImageFromURL, normalizeSkin, DEFAULT_SKIN_URLS, buildSkinCandidates,
 } from '../entity/PlayerSkin.js';
 
 // 像素风小人图标（皮肤设置入口）：头+躯干+张开双臂，SVG data-URI 背景用
@@ -222,41 +222,38 @@ export class SkinScreen {
     }
   }
 
-  // Build 21 M3：按正版用户名拉取皮肤。回退链：
-  //   ① 联机：走连接中的服务器代理（同 host HTTP）——确定性可行（服务器无 CORS 限制）
-  //   ② 单机：试本机 3001（若恰好开着服务器）→ 第三方镜像（minotar，PNG 直取、model 按 classic）
-  // 失败：提示需联机服务器或改用上传。
+  // Build 21 M3 / B41 重写：按正版用户名拉取皮肤。候选链见 PlayerSkin.buildSkinCandidates：
+  //   ① 联机：走连接中的服务器代理（服务器无 CORS 限制，还能拿到 slim 标记）
+  //   ② 本机 3001：仅本地地址或 http 页面才试（静态托管上 100% 被混合内容拦，不再白试）
+  //   ③ 第三方镜像（mc-heads / minotar）：必须 crossOrigin 载入，否则画布污染、toDataURL 抛
+  //      SecurityError——这正是 Pages 上"既没有服务器、镜像也读不回"的静默失败根因。
   async _onFetchByName() {
     const name = (this._nameInput && this._nameInput.value || '').trim();
     if (this._hint) this._hint.textContent = t('正在获取皮肤…');
     const g = window.game;
-    const candidates = [];
-    if (g && g.networkMode && g.net && g.net._url) {
-      candidates.push(g.net._url.replace(/^ws/, 'http').replace(/\/ws$/, '') + '/api/skin/' + encodeURIComponent(name));
-    } else if (g && location.hostname) {
-      candidates.push(`http://${location.hostname}:3001/api/skin/${encodeURIComponent(name)}`);
-    }
-    candidates.push(`https://minotar.net/skin/${encodeURIComponent(name)}`);
-    for (let i = 0; i < candidates.length; i++) {
-      const url = candidates[i];
-      const isProxy = url.includes('/api/skin/');
+    const candidates = buildSkinCandidates(name, {
+      netUrl: (g && g.networkMode && g.net && g.net._url) ? g.net._url : null,
+      protocol: location.protocol,
+      hostname: location.hostname,
+    });
+    for (const cand of candidates) {
       try {
-        let data = null, model = 'classic';
-        if (isProxy) {
-          const r = await fetch(url);
-          if (!r.ok) throw new Error('proxy ' + r.status);
-          const j = await r.json();
-          data = j.data; model = j.model === 'slim' ? 'slim' : 'classic';
-        } else {
-          // 第三方镜像直接返回 PNG（无 slim 标记，按 classic 渲染）
-          const img = await loadImageFromURL(url);
+        let data = null, model = 'classic'; // 镜像无 slim 判定，按 classic 臂宽
+        if (cand.kind === 'mirror') {
+          const img = await loadImageFromURL(cand.url, { crossOrigin: true });
           const cv = document.createElement('canvas');
           cv.width = 64; cv.height = 64;
           const ctx = cv.getContext('2d');
           ctx.imageSmoothingEnabled = false;
           ctx.drawImage(normalizeSkin(img), 0, 0);
           data = cv.toDataURL('image/png');
+        } else {
+          const r = await fetch(cand.url, { signal: AbortSignal.timeout(6000) });
+          if (!r.ok) throw new Error('proxy ' + r.status);
+          const j = await r.json();
+          data = j.data; model = j.model === 'slim' ? 'slim' : 'classic';
         }
+        if (!data) throw new Error('empty');
         const prefs = getSkinPrefs();
         prefs.data = data;
         prefs.model = model;
@@ -264,11 +261,13 @@ export class SkinScreen {
         saveSkinPrefs(prefs);
         this._notifyGame();
         this.render();
-        if (this._hint) this._hint.textContent = '';
+        if (this._hint) this._hint.textContent = t('来源：{src}', { src: cand.name });
         return;
-      } catch (e) { /* 试下一个候选 */ }
+      } catch (e) {
+        console.debug('[skin] 候选失败', cand.url, e && e.message);
+      }
     }
-    if (this._hint) this._hint.textContent = t('获取失败：需连接中的服务器（代理 Mojang API）或改用上传 PNG。');
+    if (this._hint) this._hint.textContent = t('获取失败：网络不可用或用户名不存在，可改用上传 PNG。');
   }
 
   // 通知游戏内模型实时换肤（主菜单期 game 亦已存在；running=false 时刷新无副作用）。

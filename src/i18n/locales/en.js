@@ -439,6 +439,8 @@ export const en = {
   "按用户名获取": "Fetch by Username",
   "正在获取皮肤…": "Fetching skin…",
   "获取失败：需连接中的服务器（代理 Mojang API）或改用上传 PNG。": "Fetch failed: needs a connected server (Mojang API proxy) or upload a PNG instead.",
+  "来源：{src}": "Source: {src}",
+  "获取失败：网络不可用或用户名不存在，可改用上传 PNG。": "Fetch failed: network unavailable or username not found — upload a PNG instead.",
   "LAN 服务器 IP": "LAN server IP",
   "LAN默认服务器设置": "LAN Default Server",
   "设置为默认": "Set as Default",

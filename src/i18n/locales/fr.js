@@ -439,6 +439,8 @@ export const fr = {
   "按用户名获取": "Récupérer par pseudo",
   "正在获取皮肤…": "Récupération du skin…",
   "获取失败：需连接中的服务器（代理 Mojang API）或改用上传 PNG。": "Échec : nécessite un serveur connecté (proxy API Mojang) ou importez un PNG.",
+  "来源：{src}": "Source : {src}",
+  "获取失败：网络不可用或用户名不存在，可改用上传 PNG。": "Échec : réseau indisponible ou nom introuvable — importez un PNG.",
   "LAN 服务器 IP": "IP du serveur LAN",
   "LAN默认服务器设置": "Serveur LAN par défaut",
   "设置为默认": "Définir par défaut",

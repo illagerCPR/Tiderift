@@ -4,7 +4,8 @@
 //      （镜像标志按 BoxGeometry buildPlane 顶点走向推导，截图校准）
 //   ② 双层渲染：base 层不透明 + overlay 第二层（帽/外套/袖/裤，alphaTest 透明壳，外扩 0.5px）
 //   ③ legacy 64×32 皮肤归一化（左肢镜像补位 + overlay 直拷，B41 重写）
-//   ④ 皮肤来源与持久化：默认内置 PNG（res/default_skin/） / 本地上传 / M3 用户名拉取；
+//   ④ 皮肤来源与持久化：默认内置 PNG（res/default_skin/） / 本地上传 / M3 用户名拉取
+//      （B41：跨域镜像需 crossOrigin 才能读回画布；静态托管走镜像候选链）；
 //      localStorage 键 project-mc-skin-v1（单机本地，联机同步走 M2 协议）
 // 纯数据函数（partRects/faceRects/isLegacySkin 归一化坐标）node 可测；canvas/Image 操作仅浏览器路径。
 import * as THREE from 'three';
@@ -244,17 +245,61 @@ export function clearSkinPrefs() {
   try { localStorage.removeItem(SKIN_STORAGE_KEY); } catch (e) { /* 忽略 */ }
 }
 
-// 解析 dataURL（上传/存储）→ HTMLImageElement（浏览器异步）
-export function loadImageFromURL(url) {
+// 解析图片 URL / dataURL → HTMLImageElement（浏览器异步）
+// B41：跨域图片必须设 crossOrigin='anonymous'，否则画布被标记为 tainted，
+//   随后的 drawImage→toDataURL 会抛 SecurityError（Pages 上按用户名取皮肤的静默失败主因）。
+// 同源与 data: 不受影响；超时兜底防止镜像站挂起把面板卡在"正在获取…"。
+export function loadImageFromURL(url, opts = {}) {
+  const { crossOrigin = true, timeoutMs = 8000 } = opts;
   return new Promise((resolve, reject) => {
     const img = new Image();
+    let done = false;
+    const finish = (fn, arg) => { if (done) return; done = true; clearTimeout(timer); fn(arg); };
+    const timer = setTimeout(() => finish(reject, new Error('皮肤图片加载超时')), timeoutMs);
+    if (crossOrigin && /^https?:/i.test(url)) img.crossOrigin = 'anonymous';
     img.onload = () => {
-      if ((img.width === 64 && (img.height === 64 || img.height === 32))) resolve(img);
-      else reject(new Error(`皮肤尺寸须为 64×64（或旧版 64×32），当前 ${img.width}×${img.height}`));
+      if (img.width === 64 && (img.height === 64 || img.height === 32)) finish(resolve, img);
+      else finish(reject, new Error(`皮肤尺寸须为 64×64（或旧版 64×32），当前 ${img.width}×${img.height}`));
     };
-    img.onerror = () => reject(new Error('皮肤图片加载失败'));
+    img.onerror = () => finish(reject, new Error('皮肤图片加载失败'));
     img.src = url;
   });
+}
+
+// 第三方皮肤镜像（B41：静态托管上没有 node 服务器时的回退链），按**用户名**直取 PNG。
+// 顺序按实测排：minotar 对浏览器请求带 Access-Control-Allow-Origin: *（可读回画布）；
+// mc-heads 的 ACAO 只对非浏览器客户端出现（curl 有、浏览器 Origin 下被拒），故降为备用。
+// 代价：镜像不提供 slim 判定，只能按 classic 臂宽渲染。
+export const SKIN_MIRRORS = [
+  { name: 'minotar', url: (n) => `https://minotar.net/skin/${n}` },
+  { name: 'mc-heads', url: (n) => `https://mc-heads.net/skin/${n}` },
+];
+
+// 本机 LAN 服务器的候选是否值得尝试：只有本地开发地址或 http 页面（内网直连）才可能命中；
+// 静态托管（https 的 Pages）上 `http://<pages-host>:3001` 必被混合内容拦截，不再白白试一次。
+function localServerWorthTrying(protocol, hostname) {
+  if (protocol === 'http:') return true;
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+}
+
+// 按用户名取皮肤的候选链（纯函数，node 可测）：[{ kind:'proxy'|'local'|'mirror', url, name }]
+//   ctx = { netUrl?: 'ws://host:3001/ws', protocol: 'https:', hostname: 'example.org' }
+// 顺序：联机代理 → 本机 3001（仅本地/http）→ 第三方镜像 → 由调用方兜底提示上传。
+export function buildSkinCandidates(username, ctx = {}) {
+  const enc = encodeURIComponent(username);
+  const out = [];
+  const { netUrl, protocol = 'https:', hostname = '' } = ctx;
+  if (netUrl) {
+    const base = String(netUrl).replace(/^ws/, 'http').replace(/\/ws$/, '');
+    out.push({ kind: 'proxy', name: 'Mojang API', url: `${base}/api/skin/${enc}` });
+  }
+  if (localServerWorthTrying(protocol, hostname)) {
+    out.push({ kind: 'local', name: 'Mojang API', url: `http://${hostname}:3001/api/skin/${enc}` });
+  }
+  for (const m of SKIN_MIRRORS) out.push({ kind: 'mirror', name: m.name, url: m.url(enc) });
+  // 联机时代理地址与本机 3001 可能同 URL：去重（保留先出现的那条）
+  const seen = new Set();
+  return out.filter((c) => (seen.has(c.url) ? false : (seen.add(c.url), true)));
 }
 
 // 当前 prefs → 已归一化的皮肤图（浏览器异步）。顺序：用户 data（有则用，含 model）→ 内置默认。

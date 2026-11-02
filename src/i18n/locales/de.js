@@ -439,6 +439,8 @@ export const de = {
   "按用户名获取": "Nach Name abrufen",
   "正在获取皮肤…": "Skin wird abgerufen…",
   "获取失败：需连接中的服务器（代理 Mojang API）或改用上传 PNG。": "Abruf fehlgeschlagen: Verbundener Server (Mojang-API-Proxy) nötig oder PNG hochladen.",
+  "来源：{src}": "Quelle: {src}",
+  "获取失败：网络不可用或用户名不存在，可改用上传 PNG。": "Fehlgeschlagen: Netzwerk nicht verfügbar oder Name unbekannt — PNG hochladen.",
   "LAN 服务器 IP": "LAN-Server-IP",
   "LAN默认服务器设置": "LAN-Standardserver",
   "设置为默认": "Als Standard festlegen",

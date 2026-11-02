@@ -88,9 +88,12 @@ function buildRig(model) {
 // ── ② 第一人称手臂尺寸（Build 22 修复②） ──
 {
   const src = srcOf('../src/render/FirstPersonHand.js');
-  const geoCount = src.split('new THREE.BoxGeometry(0.16, 0.16, 0.42)').length - 1;
-  ok(geoCount === 2, `第一人称手臂几何 0.16×0.16×0.42 恰好两处（兜底+贴肤），当前 ${geoCount}`);
+  // B41：手臂盒长轴改为 Y（0.16×0.42×0.16），尺寸收敛成文件头常量，几何由 buildPartBox 生成
+  ok(src.includes('const ARM_W = 0.16') && src.includes('const ARM_DEPTH = 0.16') && src.includes('const ARM_LEN = 0.42'),
+    '手臂截面 0.16×0.16、臂长 0.42（Build 22 缩小后的尺寸保持）');
+  ok(src.includes("buildPartBox('armR'"), '手臂几何走 buildPartBox（与第三人称同一套皮肤 UV，B41）');
   ok(!src.includes('0.25, 0.25, 0.5'), '旧尺寸 0.25×0.25×0.5 已移除');
+  ok(!src.includes('new THREE.BoxGeometry(0.16, 0.16, 0.42)'), 'B41 前的 Z 长轴几何已移除');
   const posCount = src.split('this.armMesh.position.set(0, -0.07, 0.30)').length - 1;
   ok(posCount === 2, `手臂挂位 (0,-0.07,0.30) 恰好两处，当前 ${posCount}`);
   ok(!src.includes('0.13, 0.13, 0.48'), 'Build 21 前旧兜底几何已同步，不再残留双尺寸');

@@ -45,6 +45,7 @@ PURE_NODE_SUITES=(
     build41-skin-uv            # B41 皮肤六面 UV 回归（纯 node：144 个角色空间角点对拍 skinview3d 参考表 + 旧翻转负控）
     build41-legacy-skin        # B41 legacy 64×32 归一化回归（纯 node：左肢镜像补位/overlay 直拷/hat 不被顶替/无空洞）
     build41-fp-arm-uv          # B41 第一人称手臂朝向回归（纯 node：六面各就各位/长轴 Y/旋转后手在远端/正面朝上/负控）
+    build41-skin-candidates    # B41 按用户名取皮肤候选链回归（纯 node：Pages 不再试 3001/镜像顺序/去重/编码/混合内容约束）
     end-dragon                 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
     end-gateway                # 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
     end-city                   # 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）

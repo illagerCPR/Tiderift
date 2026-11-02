@@ -211,8 +211,11 @@ function noOverlap(a, b) {
   ok(idx.includes("metadata.model === 'slim'"), '代理携带 slim 标记');
   ok(idx.includes('const SKIN_CACHE_TTL = 5 * 60 * 1000;'), '5min 缓存防 Mojang 限速');
   const ss = srcOf('../src/ui/SkinScreen.js');
-  ok(ss.includes("g.net._url.replace(/^ws/, 'http')"), '联机走连接中服务器的 HTTP 代理');
-  ok(ss.includes('https://minotar.net/skin/'), '单机回退第三方镜像');
+  const ps = srcOf('../src/entity/PlayerSkin.js');
+  ok(ss.includes('buildSkinCandidates('), '候选链收敛到 PlayerSkin.buildSkinCandidates（B41）');
+  ok(ps.includes("replace(/^ws/, 'http')"), '联机走连接中服务器的 HTTP 代理');
+  ok(ps.includes('https://minotar.net/skin/') && ps.includes('https://mc-heads.net/skin/'), '单机回退第三方镜像（minotar + mc-heads）');
+  ok(ps.includes("crossOrigin = 'anonymous'"), '跨域镜像以 CORS 模式载入（否则画布污染、toDataURL 抛 SecurityError）');
   ok(ss.includes("prefs.source = 'username'"), '拉取成功标记来源');
 }
 finish('build21-skins');
