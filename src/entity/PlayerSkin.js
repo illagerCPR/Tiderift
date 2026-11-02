@@ -85,6 +85,19 @@ export function setFaceUV(geo, faceIndex, rect, flipU, flipV) {
   for (let k = 0; k < 4; k++) uv.setXY(faceIndex * 4 + k, order[k][0], order[k][1]);
 }
 
+// 构建"已按皮肤 UV 写好的部件长方体"（B41：第一人称手臂与第三人称共用同一套 FACE_MAP）。
+// partKey: partRects 的键（head/body/armR/armL/legR/legL）；model: 'classic'|'slim'
+// size: 世界尺寸 { w, h, d }（缺省按原版 16px = 1 格换算）；返回 BoxGeometry（长轴仍按原版：手臂沿 Y）。
+export function buildPartBox(partKey, model = 'classic', size = null) {
+  const r = partRects(model)[partKey];
+  if (!r) throw new Error(`未知部件：${partKey}`);
+  const s = size || { w: r.dims.w / 16, h: r.dims.h / 16, d: r.dims.d / 16 };
+  const geo = new THREE.BoxGeometry(s.w, s.h, s.d);
+  for (const fm of FACE_MAP) setFaceUV(geo, fm.face, r.base[fm.sel], fm.flipU, fm.flipV);
+  geo.attributes.uv.needsUpdate = true;
+  return geo;
+}
+
 // 把整张皮肤贴到部件几何集合上（双层）。
 // rig: { joints: { [key]: { pivot, mesh } }, partsByName?: { [key]: mesh } }——
 // joints 只含关节部件（head/双臂/双腿），body 无 pivot 仅在 partsByName；
