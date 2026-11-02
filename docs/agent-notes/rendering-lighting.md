@@ -92,3 +92,12 @@
 - **Worker 路径零改动**：同步与 Worker 都只跑 `_collectData`，`MeshWorker` 按 `Object.values(g)` 枚举属性做 transfer，新增数组自动随转移——**勿把它改成写死列表**（套件 ⑤ 段绊线）。
 - **调试开关 `RenderQuality.greedyMesh`**（默认 true）：`false` 时走逐面直推，用于同一场景前后对拍；不接视频设置面板。
 - **实测收益**（seed 20260214，49 区块）：solid 顶点 −31.0%、四边形 −31.0%，`_collectData` 每区块 18.43 → 18.81 ms（+2.1%）。合并张数只占输出四边形 4% 左右，但每张平均覆盖约 26 张原四边形。
+
+## Build 40 批次（2026-11-02 交付）—— B39 贪心合并贴图拉伸修复（u/v 轴写反）
+
+- **症状**：大平原/斜地表的草方块顶面出现长条涂抹，纹理被各向异性拉伸（用户截图 `材质被异常拉伸`）。方形合并区（w=d）正常，所以 B39 的截图目视检查没抓到。
+- **根因（`FACE_UV_AXIS`）**：顶点 UV 顺序是 `(u0,v0)(u0,v1)(u1,v0)(u1,v1)`，即**角0→角1 是纹理 v 方向、角0→角2 是纹理 u 方向**。B39 把两者写反（`u: axisOf(c0,c1)`、`v: axisOf(c0,c2)`），于是合并面的 `repU/repV` 互换。贪心先沿 u 轴（x 或 z）铺满再向 v 扩展，平坦地表极容易产出 **16×1 长条合并区** → 贴图被压成 16 倍细条、另一向拉成 16 倍长 → 就是画面里的长条纹。
+- **修复**：`FACE_UV_AXIS` 改为 `u: axisOf(corners[0], corners[2])`、`v: axisOf(corners[0], corners[1])`。方形合并区前后逐像素相同（这是旧回归全绿的原因），非方形合并区恢复正常平铺。
+- **判据（写测试时别复用 `FACE_UV_AXIS`）**：合并四边形的 `aUvTile.repU` 必须等于「顶点0→顶点2 的物理距离（格）」，`repV` 等于「顶点0→顶点1 的距离」。距离直接从已输出的 `position` 反推，是**独立 oracle**；`tests/build40-greedy-uv-axis.mjs` 用这条守 8×16 平板 / 浮空薄板六面 / 天光切分三组场景，回退到 B39 写法时 3 条断言必红。
+- **顺带修 `RenderQuality.greedyMesh` 的 Worker 缺传**：`Game._dispatchMeshBuild` 的 quality 只下发 `smoothLighting/aoEnabled`，Worker 是**独立模块实例**、默认恒 true → 开关在游戏里其实无效（对拍时会出现"开了关看不出来"的假象）。现在 `greedyMesh` 随派发下发，`MeshWorker` 侧 `d.quality.greedyMesh !== false` 落地。**新增 RenderQuality 开关时必须同步这条链路**，否则主线程与 Worker 会各渲一套。
+- **对拍方法（复现/验证用）**：worker 在跑时改主线程 `RenderQuality` 不生效——先 `game.world.meshWorker.broken = true` 熔断成同步构建，再 `world.markAllDirty()` 等重建，才能做同机位 A/B。实测：修复前 贪心 vs 逐面 同会话像素差 19.09%（可见拉伸），修复后 0.16%（残差为云影/天光时间差）。

@@ -30,6 +30,8 @@ self.onmessage = (e) => {
       builder._refreshOpaqueLUT();
       RenderQuality.smoothLighting = d.quality.smoothLighting;
       RenderQuality.aoEnabled = d.quality.aoEnabled;
+      // B40：贪心合并开关随派发下发（worker 是独立模块实例，缺此项则恒为默认 true）
+      RenderQuality.greedyMesh = d.quality.greedyMesh !== false;
       const out = builder._collectData({ cx: d.cx, cz: d.cz });
       const transfer = [];
       for (const key of ['solid', 'water', 'light']) {

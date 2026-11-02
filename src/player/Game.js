@@ -1963,7 +1963,7 @@ export class Game {
     chunk.dirty = false;
     mw.build(chunk.cx, chunk.cz,
       builder._cache.slice(), builder._skyCache.slice(), builder._blockLCache.slice(),
-      { smoothLighting: RenderQuality.smoothLighting, aoEnabled: RenderQuality.aoEnabled },
+      { smoothLighting: RenderQuality.smoothLighting, aoEnabled: RenderQuality.aoEnabled, greedyMesh: RenderQuality.greedyMesh },
       version)
       .then((out) => {
         chunk._meshInFlight = false;

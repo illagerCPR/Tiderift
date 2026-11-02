@@ -80,10 +80,12 @@ const GREEDY_AXIS = [
   { slice: 2, u: 0, v: 1 }  // -Z
 ];
 
-// 图集纹理 u/v 各自的物理轴：由 faceCorners 静态推导（角0→角1 变化的轴 = u，角0→角2 = v）
+// 图集纹理 u/v 各自的物理轴：由 faceCorners 静态推导。
+// 顶点 UV 顺序是 (u0,v0)(u0,v1)(u1,v0)(u1,v1) → 角0→角1 只变 v、角0→角2 只变 u（B40 修正：
+// 旧版把两者写反，导致贪心合并面 repU/repV 互换，非方形合并区的贴图被各向异性拉伸）。
 const FACE_UV_AXIS = faceCorners.map((corners) => {
   const axisOf = (a, b) => (a[0] !== b[0] ? 0 : a[1] !== b[1] ? 1 : 2);
-  return { u: axisOf(corners[0], corners[1]), v: axisOf(corners[0], corners[2]) };
+  return { u: axisOf(corners[0], corners[2]), v: axisOf(corners[0], corners[1]) };
 });
 
 // 缺纹理时的兜底 UV：同一定值对象，使贪心合并的"同一贴图"判定可走引用比较
