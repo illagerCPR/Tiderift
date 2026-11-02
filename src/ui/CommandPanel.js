@@ -257,6 +257,29 @@ export class CommandPanel {
     this.curTimeLabel = curTimeLabel;
     timeCard.appendChild(timeCustomRow);
 
+    // ⑦ 灵魂出窍（B41）：相机离体查看（可穿墙），身体与人物视角留在原地。
+    // 面板打开时 game.paused=true，所以按钮必须"先关面板再出窍"（关面板恢复 paused/controls）。
+    const soulCard = this._mkCard('灵魂出窍');
+    colR.appendChild(soulCard);
+    const soulHint = document.createElement('div');
+    soulHint.textContent = t('相机离体查看（可穿墙），身体与人物视角留在原地；再按 P 或再次点击按钮归体。');
+    soulHint.style.cssText = 'font-size:12px; color:#9ab; line-height:1.45;';
+    soulCard.appendChild(soulHint);
+    const soulRow = document.createElement('div');
+    soulRow.style.cssText = 'display:flex; gap:6px; align-items:center;';
+    this.soulBtn = this._mkBtn('出窍（离开身体）');
+    this.soulBtn.addEventListener('click', () => {
+      const g = this.game;
+      this.hide();                 // 先解暂停/恢复输入，否则灵魂相机进不了可操作态
+      g.toggleSoul();
+      if (g.soulView && g.soulView.active && g.controls) g.controls.requestLock();
+    });
+    soulRow.appendChild(this.soulBtn);
+    this.soulState = document.createElement('span');
+    this.soulState.style.cssText = 'font-size:12px; color:#9ab;';
+    soulRow.appendChild(this.soulState);
+    soulCard.appendChild(soulRow);
+
     // ⑤b 维度检查（世界观批次 N1 起跨维度）：复潮切换（仅天域，单机权威）+
     // 终局演出调试口（Build 20 ⑥：不再限定天域——四界分段本就全维度并行，任意维度可预览）+
     // 石碑章节直读（按当前维度过滤章节，免跑图逐碑检查叙事；无章节的维度整行隐藏）
@@ -543,6 +566,18 @@ export class CommandPanel {
     this.game.mobManager.spawnMob(mob);
   }
 
+  // B41：灵魂出窍卡片状态（面板重开时同步"出窍中/未出窍"与按钮文案）
+  _refreshSoul() {
+    if (!this.soulBtn) return;
+    const active = !!(this.game.soulView && this.game.soulView.active);
+    this.soulBtn.textContent = t(active ? '归体' : '出窍（离开身体）');
+    if (this.soulState) {
+      if (!active) { this.soulState.textContent = ''; return; }
+      const v = this.game.soulView.position;
+      this.soulState.textContent = `XYZ: ${v.x.toFixed(1)} / ${v.y.toFixed(1)} / ${v.z.toFixed(1)}`;
+    }
+  }
+
   show() {
     this.visible = true;
     // 进入时填入当前坐标
@@ -556,6 +591,7 @@ export class CommandPanel {
     this._refreshTimeLabel();
     this._refreshExplore();
     this._refreshDimTools();
+    this._refreshSoul();
     this.el.style.display = 'flex';
     if (this.game.inventoryScreen && this.game.inventoryScreen.visible) this.game.inventoryScreen.hide();
     if (this.game.controls) {

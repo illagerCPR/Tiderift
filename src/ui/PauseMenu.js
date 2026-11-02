@@ -126,6 +126,8 @@ export class PauseMenu {
   }
 
   show() {
+    // B41：暂停即归体（暂停后 Game.update 不再跑，灵魂相机否则会被冻结在半空）
+    if (this.game && this.game.soulView) this.game.soulView.exit();
     this.visible = true;
     this.el.style.display = 'flex';
     if (this.game.inventoryScreen && this.game.inventoryScreen.visible) this.game.inventoryScreen.hide();

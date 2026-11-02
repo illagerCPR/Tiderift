@@ -11,6 +11,8 @@ export class Controls {
     this.wheelDelta = 0;
     this.enabled = false;
     this.sensitivityScale = 1; // 视频设置：鼠标灵敏度倍率
+    // B41：鼠标位移的落点。非空时写到该对象（灵魂出窍相机），玩家的 yaw/pitch 保持不变
+    this.lookTarget = null;
     
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
@@ -58,7 +60,7 @@ export class Controls {
     //——否则长按空格期间 lastJumpTap 被连发刷新（间隔恒 <300ms），飞行状态被以键率翻转，
     // 释放时空格相位随机落在"关"上（表现为松开空格意外取消飞行）
     if (!this.enabled || e.repeat) return;
-    if (e.code === 'Space') {
+    if (e.code === 'Space' && !this.lookTarget) {
       const now = performance.now();
       // Build 19 K3：佩戴原初纹章的生存玩家同样可双击空格切换飞行（创造式飞行）
       if (now - this.lastJumpTap < 300 && (this.player.creative || this.player.emblemWorn)) {
@@ -76,10 +78,11 @@ export class Controls {
   onMouseMove(e) {
     if (!this.locked) return;
     const sensitivity = 0.0022 * this.sensitivityScale;
-    this.player.yaw -= e.movementX * sensitivity;
-    this.player.pitch -= e.movementY * sensitivity;
+    const rig = this.lookTarget || this.player; // B41：灵魂出窍时改道到独立相机位姿
+    rig.yaw -= e.movementX * sensitivity;
+    rig.pitch -= e.movementY * sensitivity;
     const lim = Math.PI / 2 - 0.01;
-    this.player.pitch = Math.max(-lim, Math.min(lim, this.player.pitch));
+    rig.pitch = Math.max(-lim, Math.min(lim, rig.pitch));
   }
 
   onMouseDown(e) {
@@ -110,8 +113,8 @@ export class Controls {
     this.wheelDelta += Math.sign(e.deltaY);
   }
 
-  // 获取移动方向（基于朝向）
-  getMoveVector() {
+  // 获取移动方向（基于朝向）；yaw 可显式传入（灵魂出窍用相机 yaw，身体朝向不参与）
+  getMoveVector(yaw = this.player.yaw) {
     let fx = 0, fz = 0;
     if (this.keys['KeyW']) fz -= 1;
     if (this.keys['KeyS']) fz += 1;
@@ -123,8 +126,8 @@ export class Controls {
     // forward = (-sin(yaw), 0, -cos(yaw))
     // right   = ( cos(yaw), 0, -sin(yaw))
     // W (fz=-1) 朝 forward，D (fx=+1) 朝 right
-    const sin = Math.sin(this.player.yaw);
-    const cos = Math.cos(this.player.yaw);
+    const sin = Math.sin(yaw);
+    const cos = Math.cos(yaw);
     const wx = (-fz) * (-sin) + fx * cos;
     const wz = (-fz) * (-cos) + fx * (-sin);
     

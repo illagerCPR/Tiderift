@@ -43,7 +43,7 @@ function faceCenter(geo, f) {
 const rotX90 = ([x, y, z]) => [x, -z, y];
 const near = (a, b) => Math.abs(a - b) < 1e-6;
 
-function check(geo, model = 'classic') {
+function inspectGeometry(geo, model = 'classic') { // 本地几何探针（非 runner，勿与 harness 的 check() 混淆）
   const rects = partRects(model).armR.base;
   const out = { face: [], axis: [], hand: [], normal: [] };
   // ① 六面各就各位
@@ -73,7 +73,7 @@ function check(geo, model = 'classic') {
 // ── ①〜⑤ classic ──
 {
   const geo = buildPartBox('armR', 'classic', { w: ARM_W, h: ARM_LEN, d: ARM_DEPTH });
-  const r = check(geo, 'classic');
+  const r = inspectGeometry(geo, 'classic');
   const size = r.size;
   assert('① 六个面各自落在 armR 的对应区域（不再共用 front）', r.face.length === 0, r.face.join(' ｜ '));
   assert('② 长轴 = Y，尺寸为 (0.16, 0.42, 0.16)', r.axis.length === 0 && near(size.x, ARM_W) && near(size.y, ARM_LEN) && near(size.z, ARM_DEPTH), `${size.x}×${size.y}×${size.z}`);
@@ -90,7 +90,7 @@ function check(geo, model = 'classic') {
 // ── ⑥ slim ──
 {
   const geo = buildPartBox('armR', 'slim', { w: SLIM_ARM_W, h: ARM_LEN, d: ARM_DEPTH });
-  const r = check(geo, 'slim');
+  const r = inspectGeometry(geo, 'slim');
   assert('⑥ slim 臂宽 3px ↔ 0.12 且六面区域正确', r.face.length === 0 && r.hand.length === 0 && near(r.size.x, SLIM_ARM_W), [...r.face, ...r.hand].join(' ｜ '));
   const front = faceRect(geo, 5); // nz = 正面
   assert('⑥ slim 正面两侧比例一致（3px/0.12 = 12px/0.48）', Math.abs(front.w / SLIM_ARM_W - front.h / ARM_LEN) / (front.h / ARM_LEN) <= 0.2, `u=${(front.w / SLIM_ARM_W).toFixed(1)} v=${(front.h / ARM_LEN).toFixed(1)}`);
@@ -106,7 +106,7 @@ function check(geo, model = 'classic') {
     uv.setXY(f * 4 + 0, u0, vT); uv.setXY(f * 4 + 1, u1, vT);
     uv.setXY(f * 4 + 2, u0, vB); uv.setXY(f * 4 + 3, u1, vB);
   }
-  const neg = check(geo, 'classic');
+  const neg = inspectGeometry(geo, 'classic');
   const fail = [...neg.face, ...neg.axis, ...neg.hand, ...neg.normal];
   assert('⑦ 负控：六面同贴 front 至少触发 3 条断言', fail.length >= 3, `实际 ${fail.length} 条：${fail.slice(0, 3).join(' ｜ ')}`);
 }

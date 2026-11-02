@@ -46,10 +46,13 @@ export class InfoBar {
   //   rttMs: 阶段10 联机平滑 RTT（毫秒），null=单机/未测得（隐藏该行）
   //   dimensionName: 非主世界维度名（生物群系行加"维度: X ｜"前缀；null=主世界）
   //   rttJitterMs: 阶段11 RTT 抖动（毫秒），null=未测得（网络行不显示 ± 部分）
-  update(player, generator, sky, crosshairInfo, rttMs = null, dimensionName = null, rttJitterMs = null) {
-    const x = player.position.x;
-    const y = player.position.y;
-    const z = player.position.z;
+  //   viewPos: B41 灵魂出窍时的相机坐标（null=玩家坐标）
+  // viewPos（B41）：灵魂出窍时用相机坐标（侦察坐标才有意义）；null=用玩家坐标
+  update(player, generator, sky, crosshairInfo, rttMs = null, dimensionName = null, rttJitterMs = null, viewPos = null) {
+    const at = viewPos || player.position;
+    const x = at.x;
+    const y = at.y;
+    const z = at.z;
     this.coordLine.textContent = `XYZ: ${x.toFixed(2)} / ${y.toFixed(2)} / ${z.toFixed(2)}`;
 
     // 生物群系全维度显示：维度生成器自带 biomeNames 名表（主世界走 biomes.js 的 BiomeNames）；

@@ -17,6 +17,7 @@ import { Projectiles } from './Projectiles.js';
 import { Beacon } from './Beacon.js';
 import { Placement } from './Placement.js';
 import { PortalSystem } from './PortalSystem.js';
+import { SoulView } from './SoulView.js';
 import { AetherFinale } from './AetherFinale.js';
 import { InteractionController } from './InteractionController.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
@@ -154,6 +155,8 @@ export class Game {
     this.biomeScale = DEFAULT_BIOME_SCALE; // 生物群系规模档位（新建走参数/联机消息，载入走存档）
     this.paused = false;
     // 阶段10：第一人称手持物（跨存档共享相机挂点，start 时重置手持内容）
+    // B41 灵魂出窍相机（独立位姿，绝不写 player 的 position/yaw/pitch）
+    this.soulView = new SoulView(this);
     this.hand = new FirstPersonHand(this);
     // Build 20 ⑤：本地玩家第三人称模型（跨存档共享场景挂点，可见性随视角模式）
     this.playerModel = new LocalPlayerModel(this.renderer.scene, this);
@@ -407,6 +410,7 @@ export class Game {
     if (!networkMode) this.finaleInfo = null;
     this.paused = false;
     this.running = false;
+    this.soulView.exit();           // B41：换存档/换维一律先归体（幂等）
     this.spectating = false;        // 阶段4：新世界默认不观战
     this.spectateTargetId = null;
     this._specSmoothed = null;      // 阶段6：观战平滑状态重置
@@ -814,6 +818,7 @@ export class Game {
       if (e.code === 'KeyQ') {
         // 界面/文本焦点时早退（不 preventDefault，避免吃掉聊天与命令面板输入框的字符）
         if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
+        if (this.soulView && this.soulView.active) return; // B41：灵魂出窍不做身体操作
         if (this.pauseMenu && this.pauseMenu.visible) return;
         if (this.chatBox && this.chatBox.input) return;
         if (this.commandPanel && this.commandPanel.visible) return;
@@ -923,9 +928,20 @@ export class Game {
         if (this.spectating) {
           this.cycleSpectateTarget();
           this._spectateHint();
-        } else if (!this.player.spectator) {
+        } else if (!this.player.spectator && !(this.soulView && this.soulView.active)) {
+          // B41：灵魂出窍期间相机由 SoulView 驱动，F5 改了也会在归体时被复原 → 不响应
           this.player.viewMode = (this.player.viewMode + 1) % 3;
         }
+      }
+      // B41：P = 灵魂出窍 / 归体（与命令面板同门控：仅启用作弊的存档）
+      if (e.code === 'KeyP') {
+        if (!this.running || this.spectating || (this.deathScreen && this.deathScreen.visible)) return;
+        if (this.pauseMenu && this.pauseMenu.visible) return;
+        if (this.chatBox && this.chatBox.input) return;
+        if (this.commandPanel && this.commandPanel.visible) return;
+        if (this._anyInputBlockingUI()) return;
+        if (this.toggleSoul()) e.preventDefault();
+        return;
       }
       // Build 20 ⑤：F6 = 手动保存（原 F5 功能挪位；联机模式不保存本地槽位）
       if (e.code === 'F6') {
@@ -1005,6 +1021,9 @@ export class Game {
     const def = BlockRegistry.getById(id);
     p.inWater = !!(def && def.fluid && def.fluidType === 'water');
 
+    // B41：灵魂出窍期间身体冻结——氧气与熔岩点燃都不推进（身体不饿不淹不着火）
+    if (this.soulView && this.soulView.active) return;
+
     if (p.survival) {
       // 氧气/溺水（B30 起原版口径：满氧 15 秒、溺水每秒 2 血，逐帧按 dt 折算帧率无关）
       updateAirSupply(p, p.inWater, dt);
@@ -1017,6 +1036,15 @@ export class Game {
         if (inLava) p.onFire = 3;
       }
     }
+  }
+
+  // B41：水下滤镜跟随**相机**（灵魂出窍时相机可能泡在水里而身体没有）
+  _viewInWater() {
+    if (!this.soulView || !this.soulView.active) return this.player.inWater;
+    const v = this.soulView.position;
+    const id = this.world.getBlock(Math.floor(v.x), Math.floor(v.y), Math.floor(v.z));
+    const def = BlockRegistry.getById(id);
+    return !!(def && def.fluid && def.fluidType === 'water');
   }
 
   // 上升气流检测（天域批次 B）：足部/身体任一格 def.updraft → 本帧处于气流柱内。
@@ -1553,10 +1581,18 @@ export class Game {
     }
 
     // 玩家移动
+    // B41 灵魂出窍：相机离体自由飞行（可穿墙），身体与人物视角全部冻结——不跑物理/生存分支
+    const soul = this.soulView;
     // 观战模式：跟随目标时本地实体吸附到目标（无碰撞）+ 相机贴合目标视角；无目标时 spectator 自由飞行（穿墙）
     let specTarget = this.spectating ? this.remotePlayers.get(this.spectateTargetId) : null;
     if (specTarget && specTarget.dead) { this.spectateTargetId = null; specTarget = null; } // 目标死亡/离开 → 回自由
-    if (specTarget) {
+    if (soul.active) {
+      // 身体冻结：速度清零、不跑 Physics；相机由独立位姿驱动；天空/区块跟随相机
+      soul.step(dt, this.controls);
+      this.player.velocity.set(0, 0, 0);
+      this.player.updateCamera(this.world, soul);
+      this.sky.update(dt, soul.position);
+    } else if (specTarget) {
       // 观战跟随：吸附（平滑）+ 相机贴合 + 天空跟随（区块加载以吸附后的位置为中心，正好加载目标周围）
       // 阶段6 平滑：对目标插值位置再做指数平滑（帧率无关系数），切换目标/目标瞬移时不跳变
       const targetPos = specTarget.group.position;
@@ -1714,7 +1750,7 @@ export class Game {
     // 停写即回落 applyFogRange 值（零还原动作，纯客户端零持久化）
     this._updateFinaleTide(dt);
     // 水下屏幕滤镜（HUD 蓝色薄纱）
-    this.hud.setUnderwater(this.player.inWater);
+    this.hud.setUnderwater(this._viewInWater());
 
     // 粒子系统推进
     if (this.particles) this.particles.update(dt);
@@ -1749,8 +1785,16 @@ export class Game {
     // 重新构建脏区块网格
     this.rebuildDirtyChunks();
     
-    // 射线选择
-    this.updateRaycast();
+    // 射线选择（B41：灵魂出窍时不与方块交互，准星只是视角参考）
+    if (this.soulView.active) {
+      this.selectedBlock = null;
+      this.highlight.visible = false;
+      this.crosshairInfo = null;
+      this.breakingProgress = 0;
+      if (this.breakMesh) this.breakMesh.visible = false;
+    } else {
+      this.updateRaycast();
+    }
     if (this.ghostPreview && this.ghostPreview.blueprint) {
       const anchor = this.selectedBlock ? this.selectedBlock.block : this.player.position;
       const blueprint = this.ghostPreview.blueprint;
@@ -1760,8 +1804,8 @@ export class Game {
       this.ghostPreview.setAnchor(Math.floor(anchor.x) + 0.5 - widthX / 2, Math.floor(anchor.y), Math.floor(anchor.z) + 0.5 - widthZ / 2);
     }
     
-    // 鼠标交互（观战模式不操作方块/物品）
-    if (this.spectating) {
+    // 鼠标交互（观战模式 / 灵魂出窍不操作方块/物品）
+    if (this.spectating || this.soulView.active) {
       if (this._bowCharging) this._cancelBowCharge(); // 进入观战：蓄力作废
       this.controls.mouseLeft = false;
       this.controls.mouseRight = false;
@@ -1784,15 +1828,19 @@ export class Game {
       this.infoBar.update(this.player, this.world.generator, this.sky, this.crosshairInfo,
         this.networkMode && this.net ? this.net.rttMs : null, // 阶段10：联机时显示 RTT
         this.world.dimension !== 'overworld' ? this.world.dimDef.name : null, // 非主世界显示维度
-        this.networkMode && this.net ? this.net.rttJitterMs : null); // 阶段11：抖动 ± 显示
+        this.networkMode && this.net ? this.net.rttJitterMs : null, // 阶段11：抖动 ± 显示
+        this.soulView.active ? this.soulView.position : null); // B41：灵魂出窍显示相机坐标
     }
     // B38 L1：Tab 玩家列表可见时重绘（延迟与在线名单会变化；节流在面板内部）
     if (this.playerListScreen && this.playerListScreen.visible) this.playerListScreen.tick(performance.now());
 
     // 阶段10：第一人称手持物（物品变化检测 + bob/挥动；观战与旁观隐藏）
     // Build 20 ⑤：第三人称视角隐藏第一人称手，同步驱动本地玩家模型（F5 切换）
-    const thirdPerson = !this.spectating && !this.player.spectator && !this.player.dead && this.player.viewMode > 0;
-    this.hand.setVisible(!this.spectating && !this.player.spectator && this.player.viewMode === 0);
+    // B41：灵魂出窍时隐藏第一人称手臂、显示自己的躯壳（离体后看得见身体留在原地）
+    const soulActive = this.soulView.active;
+    const thirdPerson = !this.spectating && !this.player.spectator && !this.player.dead
+      && (this.player.viewMode > 0 || soulActive);
+    this.hand.setVisible(!this.spectating && !this.player.spectator && !soulActive && this.player.viewMode === 0);
     this.playerModel.update(dt, this.player, thirdPerson, this._miningActive);
     {
       const sel = this.inventory.getSelected();
@@ -1831,8 +1879,8 @@ export class Game {
     // 盔甲点数汇总（4 格查表，每帧重算 → player.armor；hurt 内做减伤）
     this.player.armor = this._armorPoints();
 
-    // 生存模式更新
-    if (this.player.survival) {
+    // 生存模式更新（B41：灵魂出窍期间身体冻结，不饿不淹不着火不掉血）
+    if (this.player.survival && !this.soulView.active) {
       this.updateSurvival(dt);
     }
 
@@ -1851,7 +1899,7 @@ export class Game {
     }
 
     // 传送门穿越检测（所有模式；观战/死亡在函数内早退）
-    this.updatePortals(dt);
+    if (!this.soulView.active) this.updatePortals(dt);
 
     // 末影之眼飞行（寻要塞指引）
     if (this.eyeFlight) this._updateEyeFlight(dt);
@@ -1881,8 +1929,13 @@ export class Game {
   }
 
   updateChunks() {
-    const pcx = Math.floor(this.player.position.x / CHUNK_SIZE);
-    const pcz = Math.floor(this.player.position.z / CHUNK_SIZE);
+    // B41：灵魂出窍时以相机为锚加载区块，但**始终保留玩家所在区块**——否则相机飞远后
+    // 身体所在区块被卸载，归体那一帧物理读到空气会直接往下掉。
+    const anchor = this.soulView && this.soulView.active ? this.soulView.position : this.player.position;
+    const pcx = Math.floor(anchor.x / CHUNK_SIZE);
+    const pcz = Math.floor(anchor.z / CHUNK_SIZE);
+    const bodyCx = Math.floor(this.player.position.x / CHUNK_SIZE);
+    const bodyCz = Math.floor(this.player.position.z / CHUNK_SIZE);
     const renderDistance = this.settings ? this.settings.renderDistance : 6;
 
     // 加载（分帧预算）：跨入新区块列时一次会缺 13+ 个区块，全量同步生成曾致单帧
@@ -1912,6 +1965,7 @@ export class Game {
     // 卸载（距离过远）
     const maxDist = renderDistance + 2;
     for (const [key, chunk] of this.world.chunks) {
+      if (chunk.cx === bodyCx && chunk.cz === bodyCz) continue; // 身体所在区块常驻
       const dx = chunk.cx - pcx, dz = chunk.cz - pcz;
       if (Math.abs(dx) > maxDist || Math.abs(dz) > maxDist) {
         if (chunk.mesh) this.renderer.scene.remove(chunk.mesh);
@@ -2735,6 +2789,7 @@ export class Game {
     if (this.player.health <= 0) {
       this.player.health = 0;
       if (this.deathScreen && !this.deathScreen.visible) {
+        this.soulView.exit(); // B41：死亡必先归体（幂等），避免灵魂态跨死亡残留
         this.deathScreen.show();
         if (this.networkMode && this.net) {
           // 阶段6：死亡上报（含背包掉落列表）→ 服务器生成世界掉落物广播；随后清空背包
@@ -2972,6 +3027,25 @@ export class Game {
     this._specSmoothPitch = 0;
   }
 
+  // B41：灵魂出窍开关。进入=相机离体（穿墙），身体与人物视角冻结；退出=相机归位、视角复原。
+  // 与命令面板同门控（cheatsEnabled）；联机模式拿不到作弊权限，故天然只单机可用。
+  toggleSoul() {
+    if (!this.running || !this.world) return false;
+    if (this.player.dead || (this.deathScreen && this.deathScreen.visible)) return false;
+    if (this.soulView.active) {
+      this.soulView.exit();
+      if (this.chatBox) this.chatBox.add(t('已归体'), '#aac');
+      return true;
+    }
+    if (!this.cheatsEnabled || this.paused || this.spectating || this.player.spectator) return false;
+    if (!this.soulView.enter()) return false;
+    this.player.velocity.set(0, 0, 0);
+    if (this.chatBox) {
+      this.chatBox.add(t('灵魂出窍 · WASD 移动 / Space 上升 / Shift 下降 / Ctrl 加速 / P 归体'), '#aac');
+    }
+    return true;
+  }
+
   // 观战提示（聊天栏显示当前跟随目标 / 操作说明）
   _spectateHint() {
     if (!this.chatBox) return;
@@ -3034,6 +3108,7 @@ export class Game {
       SaveSystem.save(this);
     }
     this.stop();
+    this.soulView.exit(); // B41：回菜单前归体（幂等）
     // 终止潮汐时先完成可能的仪式奖励，再释放其世界对象。
     this._stopFinaleTide();
     // 清理旧世界 Three.js 资源和 UI DOM，防止回到菜单再进新存档时残留

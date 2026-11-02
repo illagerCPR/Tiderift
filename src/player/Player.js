@@ -137,8 +137,16 @@ export class Player {
   // 相机位姿（Game.update 每帧调用；world 供第三人称遮挡裁剪，缺省跳过裁剪）。
   // Build 20 ⑤ 三态：0 第一人称（眼点） / 1 第三人称背后（视线反方向退距） /
   // 2 第三人称正面（视线正方向退距，相机回望玩家）。准星射线仍从眼睛发射（原版语义）。
-  updateCamera(world = null) {
+  // view（Build 41）：灵魂出窍相机位姿 { position, yaw, pitch }；给定时相机完全由它驱动，
+  // 本方法不读写 player.position/yaw/pitch —— 这正是"人物不动、人物视角不变"的实现点。
+  updateCamera(world = null, view = null) {
     this.camera.rotation.order = 'YXZ';
+    if (view) {
+      this.camera.position.copy(view.position);
+      this.camera.rotation.y = view.yaw;
+      this.camera.rotation.x = view.pitch;
+      return;
+    }
     if (this.viewMode === 0) {
       this.camera.position.copy(this.position);
       this.camera.position.y += PLAYER_EYE_HEIGHT; // 视点高度
