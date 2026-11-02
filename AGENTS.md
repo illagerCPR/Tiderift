@@ -215,6 +215,7 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 - **版本号同步纪律（2026-09-13 补强）**：每次变动版本号（BUILD 递增）**必须在同一批次提交内更新 `src/version.js` 的 `BUILD`**——主界面与游戏内左下角均引用 `VERSION_LABEL` 常量自动跟随，改常量即改界面，勿漏；发布 Release 前先核对 `src/version.js` 的 BUILD 数值 = 目标 Build 号（曾发生连发 3 个 Release 而常量停在 1、界面显示与实际版本脱节的失误）。
 - 显示规则：主界面（`MenuScreen.versionEl`）与游戏内（`Hud.versionTag`）**左下角**常驻文本 `Tiderift Beta Build X`，格式勿改；新增 UI 不得遮挡/移除该元素（主菜单元素挂 body 勿挂 `MenuScreen.el`——`render()` 重建 innerHTML 会清除）。
 - 发布：每批 CI 绿后 `gh release create beta-build-<X> --repo illagerCPR/Tiderift --title "Tiderift Beta Build <X>" --notes "<本批内容简述>"`，tag 指向已绿的 master 提交（B29 前的 tag 为 `alpha-build-1..28`，保留不改）。
+- **GitHub Pages 部署（2026-11-02 起）**：部署已从 `ci.yml` 拆出，由 `.github/workflows/deploy-pages.yml` 在 **Release 发布（`release: published`）** 时触发，产物取自该 tag 指向的提交；push master 只跑 CI、不再部署，**未发 Release 的批次不会更新线上站点**。`github-pages` 环境策略 = 分支 `master` + tag `*`（版本号命名规则变更无需改环境配置；`*` 不跨 `/`，将来若用 `release/1.0` 这类 tag 需补 `*/*`）。手动补发/回滚：`gh workflow run deploy-pages.yml --repo illagerCPR/Tiderift --ref <tag 或 master>`。
 - **发布授权（2026-10-23 用户确认）**：只要**本轮计划文件/交付计划已明确安排该 Release**（如 `docs/archives/new-horizon-plan-b34.md` 写明某轮发布 `beta-build-X`），CI 全绿后即**直接 `git tag -s` + push tag + `gh release create`，无需再向用户逐次确认**；计划未提及发布时才需要先问。
 - **更名落地（B29）**：游戏内显示名/README/徽章/package.json 已改 Tiderift；仓库已 `gh repo rename`（旧 URL GitHub 自动重定向）；**本地工作区目录名 `project-mc` 保留不改**；`res/logo-tiderift-js-edition.png` 为当前 logo（旧 logo-cubeworld 素材保留未引用）。
 
