@@ -44,11 +44,14 @@ export class CommandPanel {
       font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; color: #fff;
     `;
 
+    // B42 布局：面板本身是三段式 flex（头 / 双列主体 / 生成实体），主体吃掉剩余高度——
+    // 左列"探索"列表随高度伸缩填满，两列等高且各自可滚动，不再出现左列下方的大片空白，
+    // 也不会再把底部"生成实体"整卡挤出视口（旧版 panel 整体 overflow-y:auto 的副作用）。
     this.panel = document.createElement('div');
     this.panel.style.cssText = `
       background: #2a2a2a; border: 3px solid #555; padding: 14px 18px;
       display: flex; flex-direction: column; gap: 10px;
-      width: min(780px, 94vw); max-height: 88vh; overflow-y: auto;
+      width: min(900px, 95vw); max-height: 88vh; overflow-y: auto;
     `;
     this.el.appendChild(this.panel);
 
@@ -125,19 +128,27 @@ export class CommandPanel {
     header.appendChild(closeBtn);
     this.panel.appendChild(header);
 
-    // 双列卡片主体：左列 = 传送/探索；右列 = 维度/模式/时间
+    // 双列卡片主体：左列 = 传送/探索/灵魂出窍；右列 = 维度/模式/时间/维度检查
+    // （B42：align-items 由 flex-start 改为 stretch——两列等高，"探索"卡片靠 flex 吃掉
+    //   左列剩余高度，空白由可滚动的建筑列表填满而不是留白）
+    // flex 用 `1 0 auto`：有富余空间时主体长高（探索列表跟着长），空间不够时**不压缩**
+    // —— 压缩会让卡片被挤到内容高度以下互相重叠（矮视口实测），改为整块面板滚动。
     const body = document.createElement('div');
-    body.style.cssText = 'display:flex; gap:10px; align-items:flex-start;';
+    body.style.cssText = 'display:flex; gap:10px; align-items:stretch; flex:1 0 auto;';
     const colL = document.createElement('div');
     const colR = document.createElement('div');
     for (const col of [colL, colR]) {
-      col.style.cssText = 'flex:1 1 0; min-width:0; display:flex; flex-direction:column; gap:10px;';
+      col.style.cssText = 'flex:1 1 0; min-width:0; min-height:0; display:flex; flex-direction:column; gap:8px;';
       body.appendChild(col);
     }
+    // 两列都可独立滚动：卡片数量多/换行变高/视口矮时列内滚动，不撑高整个面板也不互相压
+    colL.style.overflowY = 'auto';
+    colR.style.overflowY = 'auto';
     this.panel.appendChild(body);
 
     // ① 传送（左上）
     const tpCard = this._mkCard('传送至坐标');
+    tpCard.style.flex = '0 0 auto';
     colL.appendChild(tpCard);
     const tpRow = document.createElement('div');
     tpRow.style.cssText = 'display:flex; gap:6px; align-items:center;';
@@ -177,12 +188,15 @@ export class CommandPanel {
     tpCard.appendChild(tpBtns);
 
     // ② 探索：附近建筑坐标（W2，show() 时刷新；点击行内按钮直接传送）
+    // B42：卡片与列表都 flex 撑满左列剩余高度（列表自身滚动），左列因此不再留白
     const exploreCard = this._mkCard('探索：附近建筑');
+    exploreCard.style.flex = '1 1 auto';
+    exploreCard.style.minHeight = '160px';
     colL.appendChild(exploreCard);
     this.exploreBox = document.createElement('div');
     this.exploreBox.style.cssText = `
       display: flex; flex-direction: column; gap: 3px; font-size: 12px;
-      max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.25);
+      flex: 1 1 auto; min-height: 120px; overflow-y: auto; background: rgba(0,0,0,0.25);
       padding: 6px 8px; border: 1px solid #444;
     `;
     exploreCard.appendChild(this.exploreBox);
@@ -259,8 +273,10 @@ export class CommandPanel {
 
     // ⑦ 灵魂出窍（B41）：相机离体查看（可穿墙），身体与人物视角留在原地。
     // 面板打开时 game.paused=true，所以按钮必须"先关面板再出窍"（关面板恢复 paused/controls）。
+    // B42：移入左列底部（原右列），两列高度因此接近；伸缩差额交给上面的"探索"列表吸收。
     const soulCard = this._mkCard('灵魂出窍');
-    colR.appendChild(soulCard);
+    soulCard.style.flex = '0 0 auto';
+    colL.appendChild(soulCard);
     const soulHint = document.createElement('div');
     soulHint.textContent = t('相机离体查看（可穿墙），身体与人物视角留在原地；再按 P 或再次点击按钮归体。');
     soulHint.style.cssText = 'font-size:12px; color:#9ab; line-height:1.45;';
@@ -339,7 +355,9 @@ export class CommandPanel {
     aetherCard.appendChild(steleRow);
 
     // ⑥ 生成实体（整宽卡片：全部注册怪物动态枚举，网格排布）
+    // B42：固定在面板底部不参与收缩——主体超高时由整块面板滚动，本卡不会被压扁
     const mobCard = this._mkCard('生成实体（玩家前方 3 格）');
+    mobCard.style.flex = '0 0 auto';
     this.panel.appendChild(mobCard);
     const mobRow = document.createElement('div');
     mobRow.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(88px, 1fr)); gap:6px;';
@@ -427,6 +445,14 @@ export class CommandPanel {
       }
     }
     items.sort((a, b) => a.d - b.d);
+    // B42：列表撑满左列后必须显式说明空状态，否则一片空白会被当成渲染故障
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.textContent = t('附近没有可传送的建筑');
+      empty.style.cssText = 'color:#889; padding:6px 2px;';
+      box.appendChild(empty);
+      return;
+    }
     for (const it of items) {
       const row = document.createElement('div');
       row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px;';

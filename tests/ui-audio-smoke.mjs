@@ -10,12 +10,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { register as registerLoader } from 'node:module';
+import { registerHooks, register as registerLoader } from 'node:module';
 import { assert, finish } from './harness.mjs';
 
 // 静态资源导入（MenuScreen 的 logo png、Panorama 的六面 jpg）由 Vite 处理成"默认导出 URL 字符串"，
 // node 原生 ESM 不认这些扩展名。注册一个内联（data: URL）最小 loader 复刻 Vite 语义，
 // 使这些模块可在 node 下 import；不改动任何工程文件。
+// 同 tests/lib/game-env.mjs：优先同步钩子 registerHooks（Node ≥22.15）——module.register()
+// 自 Node 26 起废弃（DEP0205），会往 stderr 打警告；老运行时回退 data: URL 异步 loader。
+const ASSET_EXT = /\.(png|jpe?g|svg|gif|webp|css)$/;
+function assetLoadHook(url, context, nextLoad) {
+  if (ASSET_EXT.test(new URL(url).pathname)) {
+    return { format: 'module', shortCircuit: true, source: 'export default ' + JSON.stringify(url) + ';' };
+  }
+  return nextLoad(url, context);
+}
 const assetLoaderSrc = [
   'export async function load(url, context, nextLoad) {',
   "  if (/\.(png|jpe?g|svg|gif|webp|css)$/.test(new URL(url).pathname)) {",
@@ -24,7 +33,8 @@ const assetLoaderSrc = [
   '  return nextLoad(url, context);',
   '}',
 ].join('\n');
-registerLoader('data:text/javascript,' + encodeURIComponent(assetLoaderSrc));
+if (typeof registerHooks === 'function') registerHooks({ load: assetLoadHook });
+else registerLoader('data:text/javascript,' + encodeURIComponent(assetLoaderSrc));
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 const uiDir = path.join(SRC, 'ui');

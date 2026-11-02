@@ -31,14 +31,14 @@ export class PauseMenu {
     panel.appendChild(title);
     this.title = title;
 
-    // 主视图按钮组（视频设置打开时整组隐藏，面板关闭后恢复）
+    // 主视图按钮组（设置面板打开时整组隐藏，面板关闭后恢复）
     this.mainView = document.createElement('div');
     this.mainView.style.cssText = 'display:flex; flex-direction:column; gap:12px;';
     panel.appendChild(this.mainView);
 
     this.resumeBtn = this._mkBtn('继续游戏');
     this.saveBtn = this._mkBtn('保存游戏');
-    this.videoBtn = this._mkBtn('视频设置');
+    this.videoBtn = this._mkBtn('设置');
     this.exitBtn = this._mkBtn('保存并回到标题', 'danger');
     this.mainView.appendChild(this.resumeBtn);
     this.mainView.appendChild(this.saveBtn);
@@ -69,11 +69,11 @@ export class PauseMenu {
         this.saveBtn.textContent = t('保存游戏');
       }, 1200);
     });
-    // 视频设置：显示共用面板，关闭后回到暂停菜单（保持暂停态）
+    // 设置：显示共用面板（VideoSettings，B42 起标题为「设置」），关闭后回到暂停菜单（保持暂停态）
     this.videoBtn.addEventListener('click', () => {
       if (!this.game.videoSettings) return;
       this.mainView.style.display = 'none';
-      this.title.textContent = t('视频设置');
+      this.title.textContent = t('设置');
       this.game.videoSettings.onHide = () => {
         this.game.videoSettings.onHide = null;
         if (this.visible) {
@@ -112,7 +112,7 @@ export class PauseMenu {
     this.title.textContent = t('游戏暂停');
     this.resumeBtn.textContent = t('继续游戏');
     this.saveBtn.textContent = this.saveBtn.disabled ? t('✓ 已保存') : t('保存游戏');
-    this.videoBtn.textContent = t('视频设置');
+    this.videoBtn.textContent = t('设置');
     this.exitBtn.textContent = t('保存并回到标题');
   }
 

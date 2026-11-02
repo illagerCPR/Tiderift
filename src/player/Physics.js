@@ -18,6 +18,9 @@ const GLIDE_WALL_CRASH_SPEED = 8; // 滑翔撞墙的最小水平冲击速度（�
 export class Physics {
   constructor(world) {
     this.world = world;
+    // 自动跳跃（B42，Settings.autoJump 经 applySettings 写入）：仅对玩家生效——
+    // 怪物 AI 的台阶跨越恒开（entity.isMob 直接跳过本开关），关掉会让村民/僵尸卡在坡坎
+    this.autoJump = true;
   }
 
   // 玩家 AABB：0.6 x 1.8 x 0.6
@@ -174,8 +177,11 @@ export class Physics {
               this._yClearAt(entity, half, height, targetY)) {
             entity.velocity.y = Math.max(entity.velocity.y, WATER_EXIT_BOOST);
           }
-        } else if (this._yClearAt(entity, half, height, targetY)) {
+        } else if ((entity.isMob || this.autoJump) &&
+                   this._yClearAt(entity, half, height, targetY)) {
           // 陆上：抬升 y 到阻挡方块顶面，保留水平移动
+          // B42：玩家关闭"自动跳跃"后不再踏越，走下面的碰撞回退（需手动跳）；
+          //      水中助推分支不受本开关影响（上岸是生存必需，不是自动跳跃）
           entity.position.y = targetY;
           return;
         }

@@ -1,4 +1,4 @@
-// VideoSettings.js -- 视频设置面板（ESC 暂停菜单与主菜单共用）
+// VideoSettings.js -- 设置面板（ESC 暂停菜单与主菜单共用；B42 起标题由「视频设置」改为「设置」）
 // Build 4 全新布局：原版 MC 选项页风格——分组两列网格（画面 / 光影增强 / 音频与操作），
 // 按钮统一 .cw-stone-btn 石质材质；点击循环取值，改动即存 localStorage 并实时生效。
 // 平滑光照开关切换时对所有区块 markAllDirty，网格在后续帧内分批重建。
@@ -16,9 +16,11 @@ export class VideoSettings {
     this.onHide = null; // 主界面注入：ESC/完成后回调（暂停菜单返回子视图用）
 
     this.el = document.createElement('div');
+    // B42：justify-content 由 center 改 flex-start + 面板 margin:auto 0——内容超高时
+    // flex 居中会裁掉顶部且滚不到（经典陷阱），auto 边距有剩余空间才居中、溢出时置顶可滚。
     this.el.style.cssText = `
       position: absolute; inset: 0; display: none; flex-direction: column;
-      align-items: center; justify-content: center; z-index: 60;
+      align-items: center; justify-content: flex-start; z-index: 60;
       background: rgba(0,0,0,0.65); color: #fff;
       font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
       overflow-y: auto; padding: 16px 0;
@@ -42,13 +44,13 @@ export class VideoSettings {
     this.el.innerHTML = '';
 
     const panel = document.createElement('div');
-    panel.style.cssText = 'display:flex; flex-direction:column; align-items:center;';
+    panel.style.cssText = 'display:flex; flex-direction:column; align-items:center; margin:auto 0;';
     this.el.appendChild(panel);
 
     const title = document.createElement('div');
-    title.textContent = t('视频设置');
+    title.textContent = t('设置');
     this._titleEl = title;
-    title.style.cssText = 'font-size: 24px; font-weight: bold; margin-bottom: 16px; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.6);';
+    title.style.cssText = 'font-size: 24px; font-weight: bold; margin-bottom: 12px; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.6);';
     panel.appendChild(title);
 
     this.rows = {};
@@ -57,14 +59,14 @@ export class VideoSettings {
     // 分组容器：标题 + 两列网格（Build 4 重排，替代原单列长条）
     const mkGroup = (label) => {
       const group = document.createElement('div');
-      group.style.cssText = 'margin-bottom: 16px;';
+      group.style.cssText = 'margin-bottom: 12px;';
       const gt = document.createElement('div');
       gt.textContent = label;
       this._groupHeads.push({ el: gt, key: label });
       gt.style.cssText = 'font-size: 13px; color: #ffd97a; letter-spacing: 3px; margin-bottom: 8px; text-shadow: 1px 1px 0 #000;';
       group.appendChild(gt);
       const grid = document.createElement('div');
-      grid.style.cssText = 'display: grid; grid-template-columns: repeat(2, 262px); gap: 8px;';
+      grid.style.cssText = 'display: grid; grid-template-columns: repeat(2, 262px); gap: 7px;';
       group.appendChild(grid);
       panel.appendChild(group);
       return grid;
@@ -76,7 +78,7 @@ export class VideoSettings {
     const mkRow = (label, groupEl) => {
       const b = document.createElement('button');
       b.className = 'cw-stone-btn';
-      b.style.cssText = 'padding: 10px 12px; font-size: 13px;';
+      b.style.cssText = 'padding: 8px 12px; font-size: 13px;';
       groupEl.appendChild(b);
       this.rows[label] = b;
       return b;
@@ -125,6 +127,11 @@ export class VideoSettings {
     // 视角摇晃
     mkRow('viewBobbing', gDisplay).addEventListener('click', () => {
       this.game.settings.viewBobbing = !this.game.settings.viewBobbing;
+      this._apply();
+    });
+    // 自动跳跃（B42，原版控制项口径）：撞上 ≤1 格台阶时自动抬升，关掉须手动跳
+    mkRow('autoJump', gAudio).addEventListener('click', () => {
+      this.game.settings.autoJump = this.game.settings.autoJump === false;
       this._apply();
     });
     // 鼠标灵敏度
@@ -187,7 +194,7 @@ export class VideoSettings {
     // 全屏（不持久化，按浏览器当前状态显示；归入"画面"组）
     this.fullscreenBtn = document.createElement('button');
     this.fullscreenBtn.className = 'cw-stone-btn';
-    this.fullscreenBtn.style.cssText = 'padding: 10px 12px; font-size: 13px;';
+    this.fullscreenBtn.style.cssText = 'padding: 8px 12px; font-size: 13px;';
     this.fullscreenBtn.addEventListener('click', async () => {
       try {
         if (document.fullscreenElement) await document.exitFullscreen();
@@ -202,7 +209,7 @@ export class VideoSettings {
     done.className = 'cw-stone-btn';
     done.textContent = t('完成');
     this._doneBtn = done;
-    done.style.cssText = 'width: 532px; padding: 12px 14px; font-size: 15px; margin-top: 4px;';
+    done.style.cssText = 'width: 532px; padding: 10px 14px; font-size: 15px; margin-top: 2px;';
     done.addEventListener('click', () => this.hide());
     panel.appendChild(done);
 
@@ -212,7 +219,7 @@ export class VideoSettings {
   }
 
   _applyLang() {
-    this._titleEl.textContent = t('视频设置');
+    this._titleEl.textContent = t('设置');
     for (const g of this._groupHeads) g.el.textContent = t(g.key);
     this._doneBtn.textContent = t('完成');
     this._refresh();
@@ -235,6 +242,7 @@ export class VideoSettings {
     this.rows.phenomena.textContent = t('潮候现象: {v}', { v: onOff(s.phenomena !== false) });
     this.rows.smoothLighting.textContent = t('平滑光照: {v}', { v: onOff(s.smoothLighting) });
     this.rows.viewBobbing.textContent = t('视角摇晃: {v}', { v: onOff(s.viewBobbing) });
+    this.rows.autoJump.textContent = t('自动跳跃: {v}', { v: onOff(s.autoJump !== false) });
     this.rows.sensitivity.textContent = t('鼠标灵敏度: {p}%', { p: s.sensitivity });
     this.rows.volume.textContent = t('音量: {p}%', { p: s.volume });
     this.rows.sound.textContent = t('音效: {v}', { v: onOff(s.sound) });

@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   phenomena: true,     // 局部潮候与稀有景象（Build 37 G）：关掉即无粒子与预兆提示，观测记录不受影响
   smoothLighting: true,
   viewBobbing: true,
+  autoJump: true,      // 自动跳跃（B42）：撞上 ≤1 格台阶时自动抬升；关掉后须手动跳
   sensitivity: 100,    // 30..200 (%)
   gfx: 'full',         // off | basic | full 光照增强档位（默认完整档大满：基础=水面反射+云影，完整=再加后处理）
   gfxBloom: true,      // 完整档子开关：泛光
@@ -50,6 +51,7 @@ export function loadSettings() {
         if (saved.phenomena !== undefined) s.phenomena = !!saved.phenomena;
         if (saved.smoothLighting !== undefined) s.smoothLighting = !!saved.smoothLighting;
         if (saved.viewBobbing !== undefined) s.viewBobbing = !!saved.viewBobbing;
+        if (saved.autoJump !== undefined) s.autoJump = !!saved.autoJump;
         if (saved.sensitivity !== undefined) s.sensitivity = clamp(Math.round(saved.sensitivity), 30, 200);
         if (GFX_ORDER.includes(saved.gfx)) s.gfx = saved.gfx;
         if (saved.gfxBloom !== undefined) s.gfxBloom = !!saved.gfxBloom;
@@ -103,6 +105,8 @@ export function applySettings(game) {
   }
   // 鼠标灵敏度
   if (game.controls) game.controls.sensitivityScale = s.sensitivity / 100;
+  // 自动跳跃（B42）：只作用于玩家——怪物 AI 的台阶跨越仍恒开（关掉会让村民/僵尸卡在坡坎上）
+  if (game.physics) game.physics.autoJump = s.autoJump !== false;
   // 渲染距离（无需立即处理：updateChunks 每帧按此值加载/卸载；雾距已在上方同步）
   // 平滑光照/AO（改动后由面板触发 markAllDirty）
   RenderQuality.smoothLighting = s.smoothLighting;

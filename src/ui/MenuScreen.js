@@ -48,7 +48,7 @@ export class MenuScreen {
       color: #fff; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
     `;
     document.body.appendChild(this.el);
-    // 页面导航 + 视频设置入口：事件委托挂构造期（render() 重建 innerHTML 无需重绑）
+    // 页面导航 + 设置入口：事件委托挂构造期（render() 重建 innerHTML 无需重绑）
     // 语言切换（Build 5 i18n）：常驻主菜单重绘当前页
     onLocaleChange(() => this.render());
     this.el.addEventListener('click', (e) => {
@@ -155,7 +155,7 @@ export class MenuScreen {
         <button id="menu-single" class="cw-stone-btn" style="width:400px; height:52px; font-size:18px;">${t('单人游戏')}</button>
         <button id="menu-lan" class="cw-stone-btn" style="width:400px; height:52px; font-size:18px;">${t('局域网游戏')}</button>
         <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
-          <button id="video-settings-btn" class="cw-stone-btn" style="width:196px; height:38px; font-size:14px;">${t('⚙ 视频设置')}</button>
+          <button id="video-settings-btn" class="cw-stone-btn" style="width:196px; height:38px; font-size:14px;">${t('⚙ 设置')}</button>
           <button id="language-btn" class="cw-stone-btn" title="${t('语言')}" aria-label="${t('语言')}" style="
             width:38px; height:38px; padding:0; background-size:64%; background-repeat:no-repeat; background-position:center;
             background-image:url('${globeIconDataUri()}');"></button>

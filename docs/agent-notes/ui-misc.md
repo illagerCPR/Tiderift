@@ -220,3 +220,23 @@
 - **现在**：`loadImageFromURL(url, { crossOrigin = true, timeoutMs = 8000 })` 对 http(s) 设 `crossOrigin='anonymous'`（data:/blob: 不设）；候选链收敛成纯函数 `buildSkinCandidates(name, { netUrl, protocol, hostname })` = 联机代理 → 本机 3001（仅 localhost/127.0.0.1/http 页面）→ **minotar**（浏览器实测 `ACAO:*`，可读回画布）→ mc-heads（备用：ACAO 只对非浏览器客户端出现，浏览器 Origin 下被拒）→ 提示上传。URL 去重（联机时代理与本机 3001 常同址）。
 - **镜像不给 slim 判定**，一律按 classic 臂宽；服务器代理仍能拿到 `model`。
 - 回归：`tests/build41-skin-candidates.mjs`（Pages 不再出现 3001 / 镜像顺序 / 去重 / 编码 / 混合内容约束）。真机验证：`game.skinScreen._onFetchByName()` 在 `http://127.0.0.1:5175` 上跑通，hint 显示「来源：minotar」，`prefs.data` 落库。
+
+## Build 42 批次（2026-11-02 交付）—— 命令面板布局 / 设置面板更名与自动跳跃行
+
+### 命令面板空白区（布局三段式，`src/ui/CommandPanel.js`）
+
+- **症状**：左列只有「传送至坐标」+「探索：附近建筑」两张卡（后者 `max-height:150px` 定死），右列五张卡；`body` 用 `align-items:flex-start` → 左列下方留出一大片纯深色空白。同时面板整体 `overflow-y:auto` 把底部整宽的「生成实体」卡片挤出视口（只露出第一行按钮）。
+- **修法（结构不变量，勿改回）**：面板 = 三段式 flex column（头 / `body` / 生成实体卡）。`body` 给 **`flex:1 0 auto`** + `align-items:stretch`——**shrink 必须为 0**：早先用 `1 1 auto + min-height:220px`，矮视口下 body 被压到 220px，卡片被挤到内容高度以下**互相重叠**（1024×640 实测「灵魂出窍」压在探索列表上）。两列 `flex:1 1 0; min-width:0; min-height:0` 且各自 `overflow-y:auto`（视口矮时列内滚动兜底）。
+- **空白由「探索」列表吸收**：探索卡 `flex:1 1 auto; min-height:160px`（**不能写 0**，否则被压扁后内容溢出重叠），其列表 `flex:1 1 auto; min-height:120px; overflow-y:auto`（旧的 `max-height:150px` 已删）。传送/灵魂出窍卡 `flex:0 0 auto`（不可压缩）。空列表必须给文案「附近没有可传送的建筑」，否则撑满后就是一块空白。
+- **列内容重排**：左列 = 传送 / 探索 / 灵魂出窍；右列 = 维度传送 / 模式 / 时间 / 维度检查。灵魂出窍卡从右列移入左列底部（两列原始高度 427 vs 456，差值交给探索列表吸收）。
+- **生成实体卡固定底部**：`flex:0 0 auto`，主体超高时先压缩主体，本卡始终可见。
+- 面板宽 `min(780px → 900px, 95vw)`：`repeat(auto-fill, minmax(88px, 1fr))` 由此从 7 列变 8 列，23 个生物按钮少一行。
+- **视口实测**：1280×800 整块面板一屏放得下（两列底部齐平、生成实体 3 行全见）；1024×640 时面板整体滚动、列内不叠卡、设置面板标题不再被裁顶。
+- 回归：`tests/build42-panel-settings.mjs` ③段（布局参数 + 列挂载顺序绊线）。
+
+### 设置面板（原「视频设置」）—— 更名 + 溢出裁顶修复 + 自动跳跃行
+
+- **更名「视频设置」→「设置」**：三处调用点（`MenuScreen` 主页 `⚙ 设置`、`PauseMenu.videoBtn`、`VideoSettings` 标题）。**i18n 键是原文，键名一并换**：10 个语言包的 `'视频设置'`/`'⚙ 视频设置'` 改成 `'设置'`/`'⚙ 设置'`（改键不改调用点会回落简体原文）。类名/文件名 `VideoSettings.js` 保持不动（避免大范围改名）。
+- **溢出裁顶（经典 flex 陷阱）**：容器是 `display:flex; justify-content:center; overflow-y:auto`——内容高于视口时，flex 居中会**同时裁掉上下两端且滚不回顶部**。改为 `justify-content:flex-start` + 面板 `margin:auto 0`：有剩余空间时自动边距居中，溢出时退化为置顶可滚。顺带纵向紧凑一档（行 padding 10→8、网格 gap 8→7、组间距 16→12、标题 16→12），800px 高视口整页放得下。
+- **自动跳跃行**：`Settings.autoJump`（默认 true）→ `applySettings` 写 `game.physics.autoJump`；行在「音频与操作」组首位，点击翻转并即存。物理侧语义见 `docs/agent-notes/survival-items.md` 的 B42 节。
+- 回归：`tests/build42-panel-settings.mjs` ②/④段（设置读写 + 更名与溢出参数绊线 + 10 包键退休断言）。

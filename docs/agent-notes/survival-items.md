@@ -93,3 +93,10 @@
 - **助推门限 `vy > -0.6` 的取舍**：被动下沉稳态 ≈ -0.53（60fps；-8 重力 × 0.8 阻力），-0.6 恰好放行"悬浮贴岸助推"；潜游（Shift 每帧 vy=-4）、坠水掠墙（高速下沉）被拦住不打断。若调门限注意 30fps 稳态 ≈ -0.47、低 fps ≈ -0.42，门限必须低于全部稳态。
 - **氧气原版口径（`src/core/AirSupply.js` 纯函数，node 可测）**：旧实现逐帧 -1（60fps 下满氧仅 5 秒，与 Player.js 注释"原版 15 秒"脱节）、溺水每 20 帧扣 1 血（≈3HP/s）。现 `airTicks` 语义 = 原版 tick（20 tick/s），`-=` `dt*20`（帧率无关，60/30fps 均 15 秒耗尽，钉值 895..905 帧）；耗尽后 `drownTimer` 每秒扣 2 血（原版口径）；出水 `+dt*600`（约 0.5 秒回满）并复位计时。`airTicks` 仍进存档（SaveSystem），`drownTimer` 不进（加载复位 1，Game.start 有显式复位行）。Hud 气泡公式 `(airTicks/300)*10` 未动（满值 300 不变）。
 - **测试基建**：`tests/build30-water-exit-air.mjs`（44 断言）——物理场景用**稀疏 Map stub world + 最小实体对象**直跑真 `Physics`（无需 World/Renderer）；贴岸场景起始 x=0.68（0.5 起步单帧位移 0.036 碰不到墙，曾假 FAIL）；全程爬岸仿真模拟 Game 双分支速度覆写（inWater→2.15 / 陆上→4.3 + 眼位 inWater 折算）。AGENTS.md「玩家物理与游泳」节已重写为 B30 口径。
+
+### B42 批次备忘（防回退）—— 自动跳跃改为设置项（只对玩家生效）
+
+- **开关链路**：`Settings.autoJump`（默认 `true`，localStorage `cubeworld-settings`）→ `applySettings` 写 `game.physics.autoJump` → `Physics.moveAxis` 陆上台阶分支。`Physics` 构造里初始 `autoJump = true`（未套设置前行为与旧版一致）。
+- **门控位置很讲究**：只加在**陆上分支**（`else if ((entity.isMob || this.autoJump) && this._yClearAt(...))` 这一句），不能加在外层 if 上——外层同时统辖**水中上岸助推**（`entity.bodyInWater` 分支），那条是生存必需（关掉自动跳跃后玩家仍必须能爬上岸）。
+- **怪物恒开**：`entity.isMob` 直接放行（`Mob.js` 构造的鸭子标记，HMR 双模块实例下 `instanceof` 不可靠）。村民/僵尸 AI 的坡坎跨越依赖这条抬升，跟着玩家设置关会卡地形。
+- **回归**：`tests/build42-panel-settings.mjs` ①段——1 格台阶（地面 y=63 顶面 64、台阶块 y=64 顶面 65）起手 x=0.7 vx=3 单帧（**x=0.6 起步单帧位移 0.05 撞不到 x=1 的台阶面，会假 FAIL**）：开 → 抬到 65.0001 且 x 保留；关 → y 不动、x 回退到 0.6999、vx 清零、仍 onGround；`isMob` → 关着也照抬；水中场景 autoJump=false 仍给 `vy ≥ 3.9` 助推。
