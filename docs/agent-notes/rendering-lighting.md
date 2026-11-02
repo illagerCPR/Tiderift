@@ -101,3 +101,27 @@
 - **判据（写测试时别复用 `FACE_UV_AXIS`）**：合并四边形的 `aUvTile.repU` 必须等于「顶点0→顶点2 的物理距离（格）」，`repV` 等于「顶点0→顶点1 的距离」。距离直接从已输出的 `position` 反推，是**独立 oracle**；`tests/build40-greedy-uv-axis.mjs` 用这条守 8×16 平板 / 浮空薄板六面 / 天光切分三组场景，回退到 B39 写法时 3 条断言必红。
 - **顺带修 `RenderQuality.greedyMesh` 的 Worker 缺传**：`Game._dispatchMeshBuild` 的 quality 只下发 `smoothLighting/aoEnabled`，Worker 是**独立模块实例**、默认恒 true → 开关在游戏里其实无效（对拍时会出现"开了关看不出来"的假象）。现在 `greedyMesh` 随派发下发，`MeshWorker` 侧 `d.quality.greedyMesh !== false` 落地。**新增 RenderQuality 开关时必须同步这条链路**，否则主线程与 Worker 会各渲一套。
 - **对拍方法（复现/验证用）**：worker 在跑时改主线程 `RenderQuality` 不生效——先 `game.world.meshWorker.broken = true` 熔断成同步构建，再 `world.markAllDirty()` 等重建，才能做同机位 A/B。实测：修复前 贪心 vs 逐面 同会话像素差 19.09%（可见拉伸），修复后 0.16%（残差为云影/天光时间差）。
+
+## Build 41 批次（2026-11-02 交付）—— 皮肤六面纠偏 + legacy 转换 + 第一人称手臂
+
+### 皮肤 UV（`src/entity/PlayerSkin.js` 的 `FACE_MAP`）
+
+- **判据别靠肉眼，靠参考实现**：以 **skinview3d 3.4.2** 的 `setUVs` 为 oracle，把两边都折算成「角色空间角点（右/左·上/下·前/后）+ 面法线 → 图集像素」，逐点比对 **6 部件 × 6 面 × 4 角 = 144 点**。本项目模型面朝 -Z（角色右手 = +X）、参考实现面朝 +Z（右手 = -X），比对时把参考坐标按 `(x,z)→(-x,-z)` 折算、面法线表按 `['L','R','T','B','F','Bk']` 换算。
+- **B41 前 72/144 不一致，全部在 back/top/bottom**：`back` 多翻了 u（后脑/后背左右镜像）、`top` 少翻 v（头顶前后颠倒）、`bottom` 多翻 v（底面颠倒）；right/left/front 本来就对——默认皮肤这几处多为对称纯色，所以自 B21 起一直没被肉眼发现。穷举 64 种翻转组合后**唯一零差异方案** = `top[U,V] / bottom[U] / back[无]`。**改这张表必须跑 `tests/build41-skin-uv.mjs`**（144 点钉值 + 旧表负控：回退时 72 点变红且全部落在 T/B/Bk）。
+- **区域表本身是对的**：`partRects` 的 `(u,v,w,h,d)` 与 skinview3d 完全一致（含 slim 的 3px 臂宽、各 overlay 原点），不要动它。
+
+### legacy 64×32 皮肤（`legacySkinOps` + `normalizeSkin`）
+
+- **旧实现只把 y16..31 下移 16px**：左臂(32,48)/左腿(16,48) 的 base 与 overlay 仍是透明 → `transparent:false` 的材质把四肢渲染成**纯黑**（实测 8 个区域整面 alpha=0）。
+- **现在的补位规则（纯数据算子，node 可测）**：① 左肢 base ← 右肢 base 的**几何镜像**（x→-x：±X 两面互换区域，六面全部水平翻转）；② overlay ← 自身 base 直拷（旧皮肤没有身体/四肢第二层数据）；③ **head 的 hat 区保持原样**——1.7 皮肤自带帽层数据 (32,0) 8×8，绝不能拿 base 顶替（否则头顶凭空多一层放大的头）。
+- **执行顺序有依赖**：`'image'` 源算子（镜像左肢）必须全部排在 `'canvas'` 源算子（overlay 直拷）之前，因为左肢 base 是补出来的、overlay 要读它的结果。
+- 回归：`tests/build41-legacy-skin.mjs`（覆盖/顺序/源边界/逐像素镜像语义/无空洞/尺寸判定）。
+
+### 第一人称手臂（`src/render/FirstPersonHand.js`）
+
+- **症状**：用户报「像'肩膀'在前，用'肩膀'交互」。探针实测：手臂盒长轴是 **Z**（0.16×0.16×0.42），但皮肤 armR 区域是按**长轴 Y** 画的，且六面共用同一块 `front` 区域、角序固定：
+  - 顶面 py：v 沿 Z（比例 ✔）但**方向反** → 肩落远端、手落近端；
+  - 侧面 px/nx：u 沿 Z（4px 铺满 0.42）、v 沿 Y（12px 压进 0.16）→ 横截面被沿臂长拉伸 2.6×；
+  - 端盖 pz/nz：整条 4×12 压进 0.16 方盖。
+- **修法**：几何改 `BoxGeometry(0.16, 0.42, 0.16)`（长轴 Y，与原版模型同构）→ 用 `PlayerSkin.buildPartBox('armR', model, {w, h: 0.42, d: 0.16})` 按 `FACE_MAP` 逐面写入（与第三人称**完全同源**，slim 用 0.12/3px）→ 整块绕 X 转 `π/2 + 0.55`：手（bottom 面）落远端、肩（top）落近端、臂正面（front）朝上。**别再用"六面同贴 front"的写法**，回归 `tests/build41-fp-arm-uv.mjs` 直接从顶点 `position`+`uv` 反推（六面区域/长轴/旋转后手在远端/正面朝上/负控）。
+- **顺带两条**：① 手臂原本 95% 落在 75° 视锥外（B22 把截面从 0.25 缩到 0.16 后位置没跟着调），`basePos` 抬到 `(0.42, -0.30, -0.60)` 才真正进入视野——用户看到的"肩膀"就是原先那条边；② 手持物挂点从 `z=-0.10`（手掌外 0.2 格）移到 `z=0.12` 掌前，缩放 0.30 → 0.20 与手臂比例对齐。

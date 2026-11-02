@@ -199,3 +199,24 @@
 - **清理**：新建型子系统（`Game.start` 创建 / `_disposeWorld` 里 `dispose()` 摘 DOM 与 blur 监听器）。
 - **验证陷阱**：agent-browser 的 `press Tab` 是按下即抬起，看不到面板；要 `eval` 派发 `keydown`（不带 `keyup`）→ 读 `game.playerListScreen.el.textContent` → 最后补一条 `keyup`。两个 WebGL 实例并行时 CDP 会 `Runtime.evaluate` 超时，验完一个会话就 `close` 掉再开下一个。
 
+
+## Build 41 批次（2026-11-02 交付）—— 灵魂出窍相机 + 皮肤来源链
+
+### M1 灵魂出窍（`src/player/SoulView.js` + P 键 + 命令面板卡片）
+
+- **需求原话**：「在不移动人物、人物视角的情况下，摄像机离体查看（可穿墙）」。三条硬约束＝身体不动、**人物朝向不被鼠标改**、相机无碰撞。
+- **实现点只有一个**：相机位姿与玩家位姿分离。`SoulView` 自持 `position/yaw/pitch`；`Player.updateCamera(world, view)` 在有 `view` 时直接写相机并 return（不读也不写 `player.position/yaw/pitch`）；`Controls.lookTarget` 非空时鼠标位移改到该对象、`getMoveVector(yaw)` 显式收 yaw。**别图省事去临时改 `player.yaw` 再还原**——中途任何一帧都会污染人物朝向，且与 `Game` 的视角逻辑打架。
+- **身体冻结清单**（`Game.update` 内逐处门控，漏一处就会被"离体还在饿/还在烧/还在掉血"咬）：移动+物理分支（改走 `soul.step` + `player.updateCamera(world, soul)`）、`updateSurvival`、`updatePortals`、`_updateWaterState` 的氧气与熔岩点燃段、`handleMouseInput`、`updateRaycast`。天空与区块锚点改跟相机。
+- **渲染**：`hand` 隐藏、`playerModel` 强制可见（离体后看得见自己的躯壳）、准星保留但无交互；`InfoBar.update(..., viewPos)` 显示相机坐标；水下滤镜按**相机**所在格判（`_viewInWater()`）。
+- **区块陷阱（必读）**：`updateChunks` 锚点切到相机后，卸载循环会连**身体所在区块**一起卸掉 → 归体那一帧 `getBlock` 读到空气，人直接往下掉。所以卸载循环里 `if (chunk.cx === bodyCx && chunk.cz === bodyCz) continue;` 常驻身体区块（1 块的代价）。
+- **收口（幂等）**：`P` 键 / 面板按钮 / `PauseMenu.show()`（暂停后 `update` 不再跑，相机会被冻在半空）/ 玩家死亡（先 `exit()` 再弹死亡屏）/ `returnToMenu()` / `Game.start()`（换存档与换维）。共 6 处，全部走 `soul.exit()`。
+- **门控**：与命令面板同款 `cheatsEnabled`；联机 `Game.start` 传 `cheatsEnabled=false`，所以本功能天然只单机可用，不涉协议、不上报相机位姿（`player_state` 仍发身体的位置与朝向）。
+- **面板按钮必须先 `hide()` 再 `toggleSoul()`**：命令面板 `show()` 会 `game.paused = true` 且 `controls.enabled = false`，不先关面板，灵魂相机进了不可操作态（字面意义上的"卡在半空"）。
+- 回归：`tests/build41-soul-camera.mjs`（位姿分离/相机跟随/穿墙/退出复原/viewMode 复原/幂等/门控与区块绊线）。手测：面板与 P 两个入口、俯视身体、钻进地形、暂停与死亡自动归体。
+
+### M3 按用户名取皮肤（`PlayerSkin.loadImageFromURL` + `buildSkinCandidates` + SkinScreen）
+
+- **根因两条，缺一不可**：① `new Image()` 不设 `crossOrigin` → 镜像图（即便带 `ACAO:*`）以 no-cors 载入，`drawImage` 后 `toDataURL()` 抛 **SecurityError**，异常被 catch 吞掉，表现成"获取失败"；② 候选链在静态托管上仍请求 `http://<pages-host>:3001/api/skin/...`——HTTPS 页面的混合内容必被拦，且那台主机没有 3001。
+- **现在**：`loadImageFromURL(url, { crossOrigin = true, timeoutMs = 8000 })` 对 http(s) 设 `crossOrigin='anonymous'`（data:/blob: 不设）；候选链收敛成纯函数 `buildSkinCandidates(name, { netUrl, protocol, hostname })` = 联机代理 → 本机 3001（仅 localhost/127.0.0.1/http 页面）→ **minotar**（浏览器实测 `ACAO:*`，可读回画布）→ mc-heads（备用：ACAO 只对非浏览器客户端出现，浏览器 Origin 下被拒）→ 提示上传。URL 去重（联机时代理与本机 3001 常同址）。
+- **镜像不给 slim 判定**，一律按 classic 臂宽；服务器代理仍能拿到 `model`。
+- 回归：`tests/build41-skin-candidates.mjs`（Pages 不再出现 3001 / 镜像顺序 / 去重 / 编码 / 混合内容约束）。真机验证：`game.skinScreen._onFetchByName()` 在 `http://127.0.0.1:5175` 上跑通，hint 显示「来源：minotar」，`prefs.data` 落库。

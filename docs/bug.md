@@ -1,6 +1,6 @@
 # Tiderift 已知问题
 
-> 条目前缀 `CW-` 为历史编号延续（CubeWorld 时期）：B29 更名 Tiderift 后**不重置、继续递增**。现有 CW-1（水体分界）、CW-2（地表贴图拉伸），均已解决；新问题按 CW-3、CW-4 … 依序追加（文末注释同款约定）。
+> 条目前缀 `CW-` 为历史编号延续（CubeWorld 时期）：B29 更名 Tiderift 后**不重置、继续递增**。现有 CW-1（水体分界）、CW-2（地表贴图拉伸）、CW-3（皮肤三面朝向 + 旧版皮肤左肢透明）、CW-4（Pages 上取不到皮肤），均已解决；新问题按 CW-5 … 依序追加（文末注释同款约定）。
 
 ## CW-1 — 水体在距玩家固定距离处出现直线分界(✅ 已解决,Build 24)
 
@@ -82,4 +82,51 @@ Worker 是独立模块实例、恒为默认 true，开关在游戏里实际无�
 
 ---
 
-<!-- 新问题按 CW-2、CW-3 … 追加 -->
+## CW-3 — 皮肤贴图三个面朝向错误 / 旧版 64×32 皮肤左肢渲染成黑块(✅ 已解决,Build 41)
+
+**现象**: ① 带图案的皮肤在顶/底/背面出现镜像或前后颠倒（帽檐、后背印花、发型分缝最明显），
+正面与左右两侧正常；② 上传旧版 64×32 皮肤后，左臂与左腿整条呈纯黑。
+
+**根因**: ① `src/entity/PlayerSkin.js` 的 `FACE_MAP` 三个面翻错——`back` 多翻 u、`top` 少翻 v、
+`bottom` 多翻 v。以 skinview3d 3.4.2 的 `setUVs` 为参考实现，把两边都折算成「角色空间角点 →
+图集像素」逐点比对 144 点（6 部件 × 6 面 × 4 角），B41 前 **72 点不一致且全部落在 back/top/bottom**。
+默认皮肤这几处多为对称纯色，故自 B21 引入皮肤以来一直没被肉眼发现。
+② `normalizeSkin` 只把 y16..31 下移 16px，左臂(32,48)/左腿(16,48) 的 base 与 overlay 仍是透明，
+`transparent:false` 的材质下渲染成纯黑（实测 8 个区域整面 alpha=0）。
+
+**修复**: ① `FACE_MAP` 改为 `top[flipU,flipV] / bottom[flipU] / back[无]`（穷举 64 组合后唯一零
+差异方案）；② `normalizeSkin` 改为按原版 1.8 语义补位——左肢 base ← 右肢 base 的几何镜像
+（±X 两面互换 + 全部水平翻转），overlay ← 自身 base 直拷，head 的 hat 区保留旧皮肤自带内容
+（不拿 base 顶替）。纯数据算子 `legacySkinOps()` 与执行器分离，node 可测。
+
+**回归**: `tests/build41-skin-uv.mjs`（144 点钉值 + 旧表负控：回退即 72 点红且只在 T/B/Bk）、
+`tests/build41-legacy-skin.mjs`（覆盖/顺序/源边界/逐像素镜像语义/无空洞）。
+
+---
+
+## CW-4 — GitHub Pages 上按用户名获取皮肤必定失败(✅ 已解决,Build 41)
+
+**现象**: 本地跑着 node 服务器时能按用户名拉到皮肤；部署到 GitHub Pages 后同一功能始终提示
+「获取失败」，只能改用上传 PNG。
+
+**根因(两条叠加)**:
+1. **画布污染**：`loadImageFromURL` 用 `new Image()` 且不设 `crossOrigin`，跨域镜像（哪怕响应带
+   `Access-Control-Allow-Origin: *`）仍以 no-cors 载入；`drawImage` 之后 `toDataURL()` 抛
+   `SecurityError`，异常被外层 catch 吞掉 → 逐候选失败。浏览器实测：
+   `minotar 无 crossOrigin → READ FAILED SecurityError`；加 `crossOrigin='anonymous'` →
+   `load OK 64x32, read OK`。
+2. **候选链在静态托管上必然失败**：Pages 上 `location.hostname = illagercpr.github.io`，代码生成的
+   候选是 `http://illagercpr.github.io:3001/api/skin/...`——HTTPS 页面的混合内容被浏览器直接拦，
+   且该主机根本没有 3001 端口。
+
+**修复**: `loadImageFromURL` 对 http(s) 设 `crossOrigin='anonymous'`（并加 8s 超时）；候选链收敛为
+纯函数 `buildSkinCandidates()`：联机代理 → 本机 3001（仅 localhost/127.0.0.1 或 http 页面）→
+minotar（浏览器实测 ACAO:*）→ mc-heads（备用，其 ACAO 只对非浏览器客户端出现）→ 提示上传；
+成功时在面板显示「来源：<源>」，失败文案改为「网络不可用或用户名不存在」。
+
+**回归**: `tests/build41-skin-candidates.mjs`（Pages 不再出现 :3001 / 镜像顺序 / URL 去重 /
+用户名编码 / 混合内容约束）；真机在 `http://127.0.0.1:5175` 上跑通，hint 显示「来源：minotar」。
+
+---
+
+<!-- 新问题按 CW-5、CW-6 … 追加 -->
