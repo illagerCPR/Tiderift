@@ -10,6 +10,7 @@ import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
 import { getDisplayName } from './itemName.js';
 import { CursorOverlay, tooltipContent } from './CursorOverlay.js';
+import { applySlotBackdrop } from './slotBackdrop.js';
 
 // 盔甲槽空槽底纹（Build 19 K2：原版式四件套轮廓，灰线风）——svgToDataUri 32×32
 function armorSlotIcon(kind) {
@@ -210,7 +211,8 @@ export class InventoryScreen {
     const armorGrid = this.makeGrid(2, 2, 'armor');
     const ARMOR_ICONS = [armorSlotIcon('helmet'), armorSlotIcon('chestplate'), armorSlotIcon('leggings'), armorSlotIcon('boots')];
     armorGrid.querySelectorAll('[data-slot^="armor-"]').forEach((el, i) => {
-      el.style.background = `#8b8b8b url(${ARMOR_ICONS[i]}) center / 32px 32px no-repeat`;
+      // 纹样只挂在元素上（空槽显示、有物品隐藏见 bindSlots），别在这里无条件铺底纹
+      el.dataset.armorIcon = ARMOR_ICONS[i];
     });
     armorArea.appendChild(armorGrid);
     topRow.appendChild(armorArea);
@@ -230,7 +232,7 @@ export class InventoryScreen {
         border: 2px solid ${worn ? '#ffd98a' : '#555'}; box-shadow: ${worn ? '0 0 8px rgba(255,217,138,0.5)' : 'none'};
         display: flex; align-items: center; justify-content: center; cursor: pointer; image-rendering: pixelated;
       `;
-      if (!worn) emblemSlot.style.background += `, url(${emblemSlotIcon()}) center / 32px 32px no-repeat`;
+      applySlotBackdrop(emblemSlot, emblemSlotIcon(), worn);
       if (worn && ItemSVGDefinitions.primordial_emblem) {
         const cv = document.createElement('canvas');
         cv.width = 32; cv.height = 32;
@@ -478,6 +480,8 @@ export class InventoryScreen {
     armorSlots.forEach((el) => {
       const idx = parseInt(el.dataset.slot.split('-')[1], 10);
       this.renderSlotContent(el, this.inventory.armor[idx]);
+      // 原版语义：空槽显示四件套轮廓，穿上盔甲即隐藏（否则纹样从物品透明处透出来）
+      applySlotBackdrop(el, el.dataset.armorIcon, !!this.inventory.armor[idx]);
       this.bindArmorSlotEvents(el, idx);
       this.cursor.bindHover(el, this.inventory.armor[idx] ? this.inventory.armor[idx].name : null);
     });

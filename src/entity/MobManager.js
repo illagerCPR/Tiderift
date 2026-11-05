@@ -4,6 +4,7 @@ import { Mob } from './Mob.js';
 import { MobTypes, generateMobSkinSVGs, MOB_ATLAS } from './MobTextures.js';
 import { buildPartGeometryData, derivePartPivot, inferPlan, applyMobPose } from './anim/MobRig.js';
 import { MobAnimator } from './anim/MobAnimator.js';
+import { turnToward } from './anim/YawTurn.js';
 import { SVGTextures } from '../render/SVGTextures.js';
 import { EntityPhysics } from './EntityPhysics.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
@@ -723,6 +724,10 @@ export class MobManager {
       // 普通帧
       mob.update(dt, player, sky, this.physics, this);
 
+      // B45 朝向平滑（纯视觉）：mob.yaw 是 AI 的期望朝向，整只怪按 turnRate 缓缓转过去；
+      // 头部追视在 MobAnimator 里另有更快阻尼——转身期间头先到、身子后到，像活物。
+      mob.displayYaw = turnToward(mob.displayYaw, mob.yaw, mob.turnRate * dt);
+
       // 体素光染色：按怪物所在格光照（max(天光×昼夜, 方块光)）调制 material 颜色，
       // 洞穴里变暗、火把旁带暖色；受击/死亡的 emissive 反馈走独立通道不冲突。
       // Build 22：公式抽到 render/entityLight.js 单一来源（玩家模型共用同一套）
@@ -740,7 +745,7 @@ export class MobManager {
       const mesh = mob.mesh;
       if (mesh) {
         mesh.position.copy(mob.position);
-        mesh.rotation.y = mob.yaw;
+        mesh.rotation.y = mob.displayYaw;
 
         // B44 第二轮：程序化动作（体型模板由 MobRig.inferPlan 从部件名推导）+ 头部追视玩家
         if (mob.animator) {
@@ -752,7 +757,7 @@ export class MobManager {
             const dz = player.position.z - mob.position.z;
             const dy = (player.position.y + 1.4) - (mob.position.y + mob.height * 0.7);
             const dist = Math.hypot(dx, dz);
-            const want = Math.atan2(dx, dz) - mob.yaw;
+            const want = Math.atan2(dx, dz) - mob.displayYaw;
             lookYaw = ((want + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
             lookPitch = Math.atan2(dy, Math.max(0.5, dist));
           }

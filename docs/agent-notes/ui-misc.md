@@ -265,3 +265,22 @@
 
 - 回归：`tests/build43-save-transfer.mjs`（gzip 往返 / magic 三分支 / 裸档兼容 / V1 迁移 / 版本与跨版本拒绝 / 六类脏数据净化 / 原型污染 / 解压炸弹 / 文件名 / `SaveSystem` 读写与配额 / 菜单接线 / i18n 10 包 / BUILD 钉值）。
 - 浏览器手测（Linux + `playwright-cli` + 系统 Chrome，WebGL 可用）：真实存档导出下载 → 上传导入到空槽 → 覆盖确认（取消 / 接受）→ 更新版本文件拒绝 → 垃圾文件提示。
+
+## Build 45 批次（2026-11-05 交付）—— 盔甲槽空槽纹样「有物品即隐藏」
+
+### 语义与 bug
+
+- 原版语义（B19 K2 落地时即按此写）：空槽显示四件套轮廓纹样，**槽里有物品就不显示**——纹样是「这里可以放什么」的提示，不是永久水印。
+- B45 前 `_renderSurvivalContent` 在搭网格时 `el.style.background = '#8b8b8b url(...)'` **无条件**铺纹样；物品图标 canvas 是透明背景（`helmetArt` 等只画形状），纹样就从透明处透出来。用户报告：「装备栏有物品时纹样应不显示」。
+- 修复：纹样只随槽位元素存放（`el.dataset.armorIcon`），由 `bindSlots` 每次刷新时按 `!!inventory.armor[idx]` 决定挂不挂——`renderSlotContent` 有内容签名早退，**不要把纹样逻辑塞进它**。
+
+### 单一入口 `src/ui/slotBackdrop.js`
+
+- `applySlotBackdrop(el, icon, hasItem)`：有物品或无图标 → `backgroundImage = 'none'`；空槽 → `url("...")` + `center / 32px 32px no-repeat`。
+- **只写 `backgroundImage` 系列，不写 `background` 简写**：简写会把 `makeSlotEl` 的 `#8b8b8b` 底色与边框一起冲掉。
+- 纹章槽（B19 K3）本就写了「佩戴即无底纹」，B45 一并改走同一入口，两处语义只留一份实现。
+- 回归：`tests/build45-slot-backdrop.mjs`（空槽显示/有物品隐藏/无图标/无元素/不写简写/接线绊线）。
+
+### 浏览器目测
+
+- 背包「生存物品栏」页签 → 在 `inventory.armor[0..1]` 放铁头盔/铁胸甲 → 两层截图：有物品槽无轮廓、空槽仍有轮廓（`.playwright-anim/24-armor-before.png` / `25-armor-after.png`）。

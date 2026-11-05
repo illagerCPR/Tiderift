@@ -147,3 +147,14 @@
 `tests/build44-mob-rig.mjs`（48 条）：几何 oracle 对拍、pivot 规则、体型全表、六模板关节运动、攻击/受击/追视钳制、确定性、接线绊线。
 浏览器目测：`spawnMob` 后**必须让 Game 跑一帧**（或手动 `mesh.position.copy(mob.position)`）再截图，否则 group 还在原点；
 Chrome 后台会节流 rAF，截图可能拿到旧帧——用 `renderer.render()` + `canvas.toDataURL()` 在同一任务内取帧最稳。
+
+## 十、B45 转身平滑（怪物朝向）
+
+- 问题：怪物 AI 每帧直接写 `mob.yaw`，渲染 `mesh.rotation.y = mob.yaw` → 玩家进入村民 4 格「注视」范围的那一帧整只怪瞬转 180°，很僵硬。
+- 语义拆分：`mob.yaw` 仍是 **AI 期望朝向**（`chase`/`flee`/游荡/Boss 状态机一行不改）；新增 `mob.displayYaw` = **实际渲染朝向**。
+- `src/entity/anim/YawTurn.js`（纯数学）：`wrapAngle`（[-π,π)）、`angleDelta`（跨 ±π 接缝走短边）、`turnToward(current, target, maxStep)`（进入步长即落位、不过冲；Infinity = 不限速）。
+- `MobManager.update` 在 `mob.update(...)` 之后：`mob.displayYaw = turnToward(mob.displayYaw, mob.yaw, mob.turnRate * dt)`；`mesh.rotation.y` 与头部追视基线（`Math.atan2(dx, dz) - mob.displayYaw`）都改用 `displayYaw`，所以转身期间**头先到、身子后到**。
+- 角速度表（`Mob.js` 顶部 `MOB_TURN_RATE`）：敌对 4.0 rad/s（≈229°/s）、被动 2.6 rad/s（≈149°/s，180° 约 1.2s）、dragon 1.4 / storm_colossus 1.2 / wither 2.0 / iron_golem 2.0。
+- **纯视觉**：不动 `velocity`/攻击判定；怪物朝向本就不进联机协议，零协议改动。
+- 回归：`tests/build45-mob-turn.mjs`（归一/短边/单步限速/落位/180° 用时/单调/接线绊线）。
+- 浏览器实测（playwright，`m.update = () => {}` 冻结 AI 后直接设 `yaw=π, displayYaw=0`）：每帧 0.13 rad（dt 钳 0.05 × 2.6），24 帧 ≈1.2s 转到位、`mesh.rotation.y === displayYaw`、头部偏航在转身期间先摆到 ±1.1 再回正。

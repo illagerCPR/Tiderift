@@ -8,6 +8,17 @@ import { updateWitherAI } from './WitherAI.js';
 import { updateColossusAI } from './StormColossusAI.js';
 import { audio } from '../audio/AudioEngine.js';
 
+// B45：转身角速度（rad/s）。AI 只写 this.yaw 作「期望朝向」，渲染朝向 displayYaw 以该速度追上去，
+// 玩家靠近/绕圈/换目标时整只怪缓缓转身而不是单帧瞬转。体型越大越慢；被动生物（村民/动物）更慢。
+const MOB_TURN_RATE = {
+  dragon: 1.4,          // 末影龙：大而缓
+  storm_colossus: 1.2,  // 守誓巨像
+  wither: 2.0,          // 凋灵
+  iron_golem: 2.0,      // 铁傀儡
+};
+const HOSTILE_TURN_RATE = 4.0;  // 敌对生物（≈229°/s，180° 约 0.8s）
+const PASSIVE_TURN_RATE = 2.6;  // 被动生物（≈149°/s，180° 约 1.2s）
+
 export class Mob extends Entity {
   constructor(typeName, world) {
     super();
@@ -53,6 +64,9 @@ export class Mob extends Entity {
     this.aggroTimer = 0;        // 激怒剩余时长（归零息怒）
     this.hoverPhase = Math.random() * Math.PI * 2; // 悬浮相位
     this.hoverBaseY = null;     // 悬浮基准高度（首帧取生成高度）
+    // B45 朝向平滑：yaw = AI 期望朝向（既有逻辑不动），displayYaw = 实际渲染朝向（MobManager 每帧追）
+    this.displayYaw = 0;
+    this.turnRate = MOB_TURN_RATE[typeName] || (type.passive ? PASSIVE_TURN_RATE : HOSTILE_TURN_RATE);
   }
 
   // AI 更新（mobManager 由 MobManager.update 注入，供村民逃敌/敌对索敌村民查询）
