@@ -456,6 +456,7 @@ export class Mob extends Entity {
 
   attack(player) {
     if (this.typeName === 'creeper') return;
+    if (this.animator) this.animator.noteAttack(); // B44：攻击前冲动作（纯表现，不影响结算）
     if (this.ranged) {
       // 骷髅射箭（简化：直接造成伤害）
       const dist = this.position.distanceTo(player.position);

@@ -1,7 +1,9 @@
 // MobManager.js -- 怪物管理：生成/更新/渲染/掉落物
 import * as THREE from 'three';
 import { Mob } from './Mob.js';
-import { MobTypes, generateMobSkinSVGs, mobSkinUV, MOB_ATLAS } from './MobTextures.js';
+import { MobTypes, generateMobSkinSVGs, MOB_ATLAS } from './MobTextures.js';
+import { buildPartGeometryData, derivePartPivot, inferPlan, applyMobPose } from './anim/MobRig.js';
+import { MobAnimator } from './anim/MobAnimator.js';
 import { SVGTextures } from '../render/SVGTextures.js';
 import { EntityPhysics } from './EntityPhysics.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
@@ -77,26 +79,8 @@ export function pickAetherSpawnV2(biome, nearTemple, isNight, rand) {
   return r < 0.08 ? 'gale_hawk' : 'wisp';
 }
 
-// 皮肤 atlas 各 face 的 col 索引映射（96×64 atlas：col 4=top，col 5=bottom 独立 cell，
-// 不再复用 front/back——此前 top 复用 front cell 导致"脸贴在头顶"）
-const FACE_COL = { front: 0, back: 1, left: 2, right: 3, top: 4, bot: 5 };
-
-// 6 个 face 定义：
-//   - corners：4 个顶点用 unit-cube [0/1, 0/1, 0/1] 描述，顺序为 [底,顶,底,顶]
-//   - uvs：每个 corner 的 [u 选位, v 选位]（0=u0/v0，1=u1/v1）。
-//     侧面统一 [[1,0],[1,1],[0,0],[0,1]]：u1 落在"观察者右侧"→ 从外看贴图不镜像；
-//     top/bot 用 [[0,0],[1,0],[0,1],[1,1]]：u 随 x、v1 落在 -Z（背面朝上），俯视不镜像。
-//     旧写法 `c<2?u0:u1` 把 u0 固定给前两个 corner，4 个侧面全部水平镜像，勿回退。
-const SIDE_UVS = [[1, 0], [1, 1], [0, 0], [0, 1]];
-const CAP_UVS = [[0, 0], [1, 0], [0, 1], [1, 1]];
-const FACE_DEFS = [
-  { name: 'right',  corners: [[1,0,0],[1,1,0],[1,0,1],[1,1,1]], uvs: SIDE_UVS }, // +X
-  { name: 'left',   corners: [[0,0,1],[0,1,1],[0,0,0],[0,1,0]], uvs: SIDE_UVS }, // -X
-  { name: 'top',    corners: [[0,1,1],[1,1,1],[0,1,0],[1,1,0]], uvs: CAP_UVS },  // +Y
-  { name: 'bot',    corners: [[0,0,0],[1,0,0],[0,0,1],[1,0,1]], uvs: CAP_UVS },  // -Y
-  { name: 'front',  corners: [[1,0,1],[1,1,1],[0,0,1],[0,1,1]], uvs: SIDE_UVS }, // +Z（脸朝向）
-  { name: 'back',   corners: [[0,0,0],[0,1,0],[1,0,0],[1,1,0]], uvs: SIDE_UVS }, // -Z
-];
+// B44 第二轮：每个 cuboid 部件生成独立几何 + pivot，由 MobRig 统一推导（几何数据与 UV 换到该模块，
+// 这里只负责把数据装配成 THREE 对象）。旧"合并成单 Mesh"的常量已迁走，勿再本地维护一份。
 
 export class MobManager {
   constructor(world, scene, atlasUV, atlasTexture) {
@@ -110,7 +94,7 @@ export class MobManager {
     this.spawnTimer = 0;
     this.mobSkins = generateMobSkinSVGs();
     this.mobMaterials = new Map();   // typeName -> master Material（含 master SkinTexture）
-    this.mobGeometries = new Map();   // typeName -> master BufferGeometry（cuboid 合并）
+    this.mobRigs = new Map();         // typeName -> { parts:[{name,box,pivot,geo}], plan }（B44 第二轮：按部件拆骨架）
     this.mobTextures = new Map();     // typeName -> master CanvasTexture（type 私有，dispose 时一并释放）
     this.droppedItems = [];
     this.pendingExplosions = [];
@@ -152,42 +136,23 @@ export class MobManager {
       tex.generateMipmaps = false;
       this.mobTextures.set(typeName, tex);
 
-      // 2. 用 parts 拼出 cuboid 的合并 BufferGeometry
-      const positions = [];
-      const uvs = [];
-      const indices = [];
-      let idx = 0;
+      // 2. 按命名 part 拆成"每部件一份几何 + 一个 pivot"（B44 第二轮：骨架化）
+      const parts = [];
       for (const part of type.model.parts) {
-        const [minX, minY, minZ, maxX, maxY, maxZ] = part.box;
-        const dimX = maxX - minX;
-        const dimY = maxY - minY;
-        const dimZ = maxZ - minZ;
-        for (const fdef of FACE_DEFS) {
-          const col = FACE_COL[fdef.name];
-          const uv = mobSkinUV(part.row, col);
-          // corners 用 unit [0/1] 缩放到 box 实际尺寸并偏移到 part 位置
-          for (let c = 0; c < 4; c++) {
-            const cx = fdef.corners[c][0];
-            const cy = fdef.corners[c][1];
-            const cz = fdef.corners[c][2];
-            positions.push(minX + cx * dimX, minY + cy * dimY, minZ + cz * dimZ);
-            // UV 按每面显式 uvs 表选位（保证从外看不镜像、v1=图像顶部朝上）
-            const [us, vs] = fdef.uvs[c];
-            uvs.push(us ? uv.u1 : uv.u0, vs ? uv.v1 : uv.v0);
-          }
-          // 两个三角形使用统一绕序 (0,1,2)(1,3,2)，保证每面两个三角形外法线一致，
-          // 否则 computeVertexNormals 会平均出 ~0 法线 → Lambert 方向光失效（"同色纸片"）
-          indices.push(idx, idx + 1, idx + 2, idx + 1, idx + 3, idx + 2);
-          idx += 4;
-        }
+        const data = buildPartGeometryData(part);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
+        geo.setIndex(data.indices);
+        // 每面顶点不共享 → 生成平坦面法线（每面一个朝向），方向光据此做明暗（立体感关键）
+        geo.computeVertexNormals();
+        parts.push({
+          name: part.name,
+          box: part.box,
+          pivot: derivePartPivot(part.name, part.box),
+          geo,
+        });
       }
-
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-      geo.setIndex(indices);
-      // 每面顶点不共享 → 生成平坦面法线（每面一个朝向），方向光据此做明暗（立体感关键）
-      geo.computeVertexNormals();
 
       const mat = new THREE.MeshLambertMaterial({
         map: tex,
@@ -196,7 +161,7 @@ export class MobManager {
         transparent: false,
       });
 
-      this.mobGeometries.set(typeName, geo);
+      this.mobRigs.set(typeName, { parts, plan: inferPlan(type.model.parts, !!type.flying) });
       this.mobMaterials.set(typeName, mat);
     }
   }
@@ -600,22 +565,49 @@ export class MobManager {
   }
 
   spawnMob(mob) {
-    const geo = this.mobGeometries.get(mob.typeName);
+    const rig = this.mobRigs.get(mob.typeName);
     const mat = this.mobMaterials.get(mob.typeName);
-    if (!geo || !mat) return;
+    if (!rig || !mat) return;
 
     // T5：村民交易种子兜底（正常路径已在生成处赋值；此为旧广播/命令面板生成村民的兜底）
     if (mob.typeName === 'villager' && mob.tradeSeed == null) {
       mob.tradeSeed = villagerTradeSeed(Math.floor(mob.position.x), Math.floor(mob.position.z), 0);
     }
 
-    // 每只怪独享一份 material（emissive 是 per-mob 状态，clone 即可）
+    // B44 第二轮：每只怪组装成 group → bodyRoot → 关节 pivot → mesh。
+    // 每只怪独享一份 material（emissive 是 per-mob 状态），所有部件共用同一个实例，
+    // 受击/燃烧的 emissive 才会整只一起变。
     const matInst = mat.clone();
-    mob.mesh = new THREE.Mesh(geo, matInst);
-    // L4-B：怪入 shadow pass 并接收影子（Lambert 原生支持 receiveShadow，零注入）
-    mob.mesh.castShadow = true;
-    mob.mesh.receiveShadow = true;
-    this.scene.add(mob.mesh);
+    const group = new THREE.Group();
+    const bodyRoot = new THREE.Group();
+    group.add(bodyRoot);
+    const joints = {};
+    const meshes = [];
+    for (const part of rig.parts) {
+      const mesh = new THREE.Mesh(part.geo, matInst);
+      // L4-B：怪入 shadow pass 并接收影子（Lambert 原生支持 receiveShadow，零注入）
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      if (part.pivot) {
+        // 几何顶点本身就是模型局部坐标 → 网格相对 pivot 平移 -pivot 即可（再多减一次部件中心会散架）
+        const pivot = new THREE.Group();
+        pivot.position.set(part.pivot[0], part.pivot[1], part.pivot[2]);
+        mesh.position.set(-part.pivot[0], -part.pivot[1], -part.pivot[2]);
+        pivot.add(mesh);
+        bodyRoot.add(pivot);
+        joints[part.name] = { pivot, mesh };
+      } else {
+        bodyRoot.add(mesh);
+      }
+      meshes.push(mesh);
+    }
+    mob.mesh = group;
+    mob.bodyRoot = bodyRoot;
+    mob.joints = joints;
+    mob.meshes = meshes;
+    mob.material = matInst;
+    mob.animator = new MobAnimator(rig.plan);
+    this.scene.add(group);
 
     // 头顶血条 sprite（默认隐藏）
     const cv = document.createElement('canvas');
@@ -709,8 +701,8 @@ export class MobManager {
           const scale = Math.max(0.05, 1 - t);
           mob.mesh.scale.setScalar(scale);
           mob.mesh.rotation.y += dt * 8;
-          // 渐隐 + 红光淡出
-          const mm = mob.mesh.material;
+          // 渐隐 + 红光淡出（B44 起材质是 per-mob 共享实例，所有部件一起变）
+          const mm = mob.material;
           if (mm) {
             mm.transparent = true;
             mm.opacity = 1 - t;
@@ -735,7 +727,7 @@ export class MobManager {
       // 洞穴里变暗、火把旁带暖色；受击/死亡的 emissive 反馈走独立通道不冲突。
       // Build 22：公式抽到 render/entityLight.js 单一来源（玩家模型共用同一套）
       if (mob.mesh && this.world) {
-        applyEntityLight(this.world, sky, mob.mesh.position, mob.mesh);
+        applyEntityLight(this.world, sky, mob.mesh.position, mob.meshes);
       }
 
       // 处理爆炸请求
@@ -750,7 +742,35 @@ export class MobManager {
         mesh.position.copy(mob.position);
         mesh.rotation.y = mob.yaw;
 
-        const mm = mesh.material;
+        // B44 第二轮：程序化动作（体型模板由 MobRig.inferPlan 从部件名推导）+ 头部追视玩家
+        if (mob.animator) {
+          if (mob.hitFlash > 0) mob.animator.noteHurt();
+          let lookYaw = 0;
+          let lookPitch = 0;
+          if (player) {
+            const dx = player.position.x - mob.position.x;
+            const dz = player.position.z - mob.position.z;
+            const dy = (player.position.y + 1.4) - (mob.position.y + mob.height * 0.7);
+            const dist = Math.hypot(dx, dz);
+            const want = Math.atan2(dx, dz) - mob.yaw;
+            lookYaw = ((want + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+            lookPitch = Math.atan2(dy, Math.max(0.5, dist));
+          }
+          const pose = mob.animator.update(dt, {
+            speed: Math.hypot(mob.velocity.x, mob.velocity.z),
+            onGround: mob.onGround,
+            flying: mob.flying,
+            lookYaw,
+            lookPitch,
+          });
+          applyMobPose(mob.joints, pose);
+          if (mob.bodyRoot) {
+            mob.bodyRoot.position.y = pose.bodyY;
+            mob.bodyRoot.rotation.x = pose.bodyPitch; // 怪物模型朝 +Z：正 = 前倾
+          }
+        }
+
+        const mm = mob.material;
         if (mm) {
           // 受击红光/燃烧火光临时覆盖 emissive；常态 emissive 由 applyEntityLight 的
           // 方块光辉光每帧重写（Build 22），故不再无条件清零
@@ -829,12 +849,18 @@ export class MobManager {
     this.updateDroppedItems(dt, player);
   }
 
-  // 释放 mob 占用的所有 Three 资源（mesh + 血条 sprite）
+  // 释放 mob 占用的所有 Three 资源（group + 血条 sprite）
   _removeMobResources(mob) {
     if (mob.mesh) {
       this.scene.remove(mob.mesh);
-      // material 是 per-mob 实例，释放；geometry 是 type 共享，不动
-      if (mob.mesh.material) mob.mesh.material.dispose();
+      // material 是 per-mob 实例，释放；geometry 是 type 共享（在 rig 里），不动
+      if (mob.material) mob.material.dispose();
+      mob.mesh = null;
+      mob.bodyRoot = null;
+      mob.joints = null;
+      mob.meshes = null;
+      mob.material = null;
+      mob.animator = null;
     }
     if (mob.healthBarSprite) {
       this.scene.remove(mob.healthBarSprite);
@@ -1307,9 +1333,9 @@ export class MobManager {
   dispose() {
     // 释放每只 mob 的 per-instance 资源（mesh + 血条）——单一实现 _removeMobResources（F8）
     for (const mob of this.mobs) this._removeMobResources(mob);
-    // 释放 type 级共享资源（master geometry + master material + skin texture）
-    for (const [name, geo] of this.mobGeometries) geo.dispose();
-    this.mobGeometries.clear();
+    // 释放 type 级共享资源（每部件 geometry + master material + skin texture）
+    for (const rig of this.mobRigs.values()) for (const part of rig.parts) part.geo.dispose();
+    this.mobRigs.clear();
     for (const [name, mat] of this.mobMaterials) {
       if (mat.map) mat.map.dispose();
       mat.dispose();

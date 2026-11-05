@@ -177,7 +177,8 @@ agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - 符号约定（改前必读，见 `docs/agent-notes/animation.md` §二）：模型朝 -Z；四肢 `rotation.x` 正 = 向前摆；`bodyPitch` 正 = 前倾（落点写 `rotation.x = -bodyPitch`）；`bodyRoll` 正 = 向右倾（`rotation.z = -bodyRoll`）；左右臂外展用 `armSpread`（`armL.z=-s`、`armR.z=+s`）。
 - 第一人称由 `src/render/fpHandPose.js` 的 `HandPose` 解算（bob / 挥动 / 换手抬起 / 起跳下沉 / 下落上抬 / 落地缓冲 / 游泳 / 冲刺侧倾 / 拉弓），`FirstPersonHand` 只把结果写到相机子节点；`hand.miningPeriod` 是转发到 pose 的访问器，`InteractionController` 的写法不变。
 - 联机：`player_state` 可选 `sprint` 0/1（服务端 `Room.onPlayerState` 清洗后透传，**不升 `PROTOCOL_VERSION`**；旧端缺省 false 向后兼容）。
-- 回归网 `tests/build44-anim-humanoid.mjs` + `tests/build44-anim-fp-hand.mjs`；浏览器截帧手法（自建平台 + `game.paused=true` 冻结帧 + 注意后台节流）见 `docs/agent-notes/animation.md` §七。
+- **B44 第二轮怪物骨架**：`src/entity/anim/MobRig.js`（部件几何数据/pivot/体型判定/`applyMobPose`，纯逻辑）+ `src/entity/anim/MobAnimator.js`（biped/quadruped/spider/flying/floating/static 六模板）。`MobManager` 由「每类型一个合并 Mesh」改为 `group → bodyRoot → 关节 pivot → mesh`；**几何顶点已是模型坐标，mesh 相对 pivot 只平移 `-pivot`**（曾误减部件中心导致整只怪散架）。体型靠部件名推导（`wing→flying`、`flying 且无腿无臂→floating`、`legs≥6→spider`…），传 `flyingHint`。怪物模型朝 +Z（与玩家相反），`bodyPitch` 正=前倾直接写正，**勿套玩家侧取负的 `applyBodyOffset`**。头部追视 ±1.1rad 偏航 / ±0.8 俯仰。
+- 回归网 `tests/build44-anim-humanoid.mjs` + `tests/build44-anim-fp-hand.mjs` + `tests/build44-mob-rig.mjs`；浏览器截帧手法（自建平台 + `game.paused=true` 冻结帧 + 注意后台节流）见 `docs/agent-notes/animation.md` §七 / §九。
 
 ## 代码风格
 
@@ -273,6 +274,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/blueprints.md` | B35 E 建筑蓝图与材料清单（描述式模型/RLE 规范形式/只读已加载区块的捕获/预览资源释放/材料统计口径/`blueprint_*` 房间账本与限速） | 改动 Blueprints/GhostPreview/BlueprintScreen、`blueprint_*` 协议、蓝图快照或材料统计时 |
 | `docs/agent-notes/phenomena.md` | B37 G 局部潮候与稀有景象（四维窗口与 60 秒预兆/观测累计与一次性纪念/粒子表现与开关/红线与接线点） | 改动 `Phenomena`/`PhenomenaView`、`Journal` 的 `phenomena` 桶、`tide_plaque` 方块或潮候音效时 |
 | `docs/agent-notes/ruins.md` | B35 D 可动手解开的遗迹（三种机关机制与判定口径/键与锚点推导/轮询节流与目标集扫描/`ruin_*` 房间账本与领取去重/奖励三件套与蓝图生成/结构密度调参） | 改动 Ruins.js、三种机关结构几何、`ruin_*` 协议、遗迹奖励或游记里的遗迹状态时 |
-| `docs/agent-notes/animation.md` | B44 动作系统第一轮（玩家）：HumanoidAnimator 相位=位移积分/五状态权重/落地包络/符号约定、bodyRoot 结构、第一人称 HandPose、`player_state.sprint`、截帧手法与第二轮怪物骨架计划 | 改动 `HumanoidAnimator`/`fpHandPose`/`RemotePlayer`/`LocalPlayerModel`/`FirstPersonHand`、动手臂/腿部/躯干姿态、改 `player_state` 或做怪物骨架拆分时 |
+| `docs/agent-notes/animation.md` | B44 动作系统：第一轮玩家（HumanoidAnimator 相位=位移积分/五状态权重/落地包络/符号约定、bodyRoot、第一人称 HandPose、`player_state.sprint`）+ 第二轮怪物骨架（按 part 拆几何/pivot 规则/六种体型模板/装配陷阱/追视与攻击受击） | 改动 `HumanoidAnimator`/`fpHandPose`/`RemotePlayer`/`LocalPlayerModel`/`FirstPersonHand`/`MobRig`/`MobAnimator`、动手臂腿部躯干姿态、改 `player_state` 或怪物装配时 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

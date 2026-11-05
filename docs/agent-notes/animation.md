@@ -85,3 +85,65 @@
   第二轮计划：按 `MobTextures` 的命名 parts 拆子几何 + 自动 pivot，上 biped / quadruped / spider / flying / Boss 五种体型模板。
 - 玩家侧未做：受击退缩、死亡倒地（死亡界面会隐藏模型）、潜行姿态（本作没有潜行机制，Shift 只用于水中下潜）。
 - 远端一次性动作（攻击/进食）未同步；若要同步需另开事件消息，不要塞进 20Hz 的 `player_state`。
+
+## 九、第二轮：怪物骨架与体型模板（B44 第二轮）
+
+第一轮只解决了玩家；怪物此前是「每类型一个合并 BufferGeometry + 一个 Mesh」，走路整体平移。第二轮把它拆成骨架。
+
+### 模块
+
+| 模块 | 职责 | 约束 |
+|---|---|---|
+| `src/entity/anim/MobRig.js` | 部件几何数据（顶点/UV/索引）、pivot 推导、体型判定、`applyMobPose` | 纯逻辑，不 import three；只依赖 `MobTextures.mobSkinUV` |
+| `src/entity/anim/MobAnimator.js` | 六种体型模板的程序化动作（相位/权重/追视/攻击/受击） | 纯数学，node 可测 |
+| `src/entity/MobManager.js` | 装配 group → bodyRoot → 关节 pivot → mesh；每帧落 pose | THREE 侧 |
+
+### 几何与装配（关键陷阱）
+
+- `buildPartGeometryData(part)` 输出与旧「合并几何」**逐顶点等价**（同一 FACE_DEFS/UV 选位，只是按 part 分组）。回归网用测试内独立 oracle 重算六面角点对拍，并钉住 `顶点数 = 部件数 × 24`。
+- **几何顶点已经是模型局部坐标**：`mesh.position` 相对 pivot 只能平移 `-pivot`。曾误写成「部件中心 − pivot」（照搬玩家 BoxGeometry 居中的写法），结果所有部件被二次平移、整只怪散架——浏览器截图一眼可见。回归网有 `mesh.position.set(-part.pivot[0], …)` 与「不再调用 partCenter」两条绊线。
+- 每只怪共享**一个** per-mob 材质实例（受击红光/燃烧/死亡淡出才会整只一起变）；几何是 type 级共享资源，销毁走 `mobRigs`。
+- 死亡动画仍走 `group.scale/rotation.y` + 材质 opacity/emissive；`_removeMobResources` 清空 `mob.mesh/bodyRoot/joints/meshes/material/animator`。
+
+### pivot 规则（按部件名）
+
+| 名称 | 支点 |
+|---|---|
+| `head` / `neck` / `shell` / `bell` | 部件底面中心（颈根） |
+| `arm` / `leg` / `rod` / `tent` | 部件顶面中心（肩/髋/根） |
+| `wing` | x 靠近 0 的一端（翼根） |
+| `tail` | z 靠近 0 的一端（尾根） |
+| `orb` | 自身中心（自转） |
+| `body` / `core` / `spine` / `ribs` | 无（随 bodyRoot） |
+
+### 体型判定（`inferPlan(parts, flyingHint)`）
+
+`wing → flying`；`flying 且无腿无臂 → floating`（凋灵/潮鸣/风灵/烈焰人）；`rod/orb/tent ≥ 4 → floating`；`legs ≥ 6 → spider`；`legs ≥ 3 → quadruped`；`arm → biped`；否则 `static`。
+`flyingHint` 必须传 `!!type.flying`，否则无翼悬浮怪会被判成 static。
+
+### 动作模板
+
+- **biped**：双腿反相 + 摆臂 + 头部追视 + 攻击前冲/受击后仰。
+- **quadruped**：对角步态（FR+BL 同相、FL+BR 反相）+ 头部起伏 + 尾巴摆动。
+- **spider**：三脚架步态（FL/MR/BL 同相、FR/ML/BR 反相）。
+- **flying**：双翼同向扇动（wingL 取负 z、wingR 取正 z）、悬停起伏、尾摆、追视。
+- **floating**：杆/光球绕 y 自转（按名字方位角错相位）、触手摆动、悬浮起伏。
+- **static**：呼吸 + 追视（潜影贝的 shell 也走追视）。
+
+### 符号约定（怪物与玩家相反，勿混用）
+
+- 怪物模型朝 **+Z**（玩家朝 -Z），`bodyPitch` 正 = 前倾，落点直接写 `bodyRoot.rotation.x = pose.bodyPitch`；
+  不要套用玩家侧的 `applyBodyOffset`（那边取负）。
+- 追视角度：`lookYaw` 钳 ±1.1 rad、`lookPitch` 钳 ±0.8；`headX` 内部取负（正 rotation.x 是低头）。
+
+### 已知限制
+
+- `spider` 的 `legML2/legMR2` 与 `legML` 同相（名字尾部没有 R，`/^legM/` 分支按 `endsWith('R')` 判相位）。
+- Boss 只用通用模板（龙 flying、凋灵 floating、巨像 biped），没有专属技能前摇；攻击动作是纯表现，不改结算。
+- 玩家侧未做受击退缩/死亡倒地（死亡界面隐藏模型）；远端一次性动作（攻击/进食）仍未同步。
+
+### 验证
+
+`tests/build44-mob-rig.mjs`（48 条）：几何 oracle 对拍、pivot 规则、体型全表、六模板关节运动、攻击/受击/追视钳制、确定性、接线绊线。
+浏览器目测：`spawnMob` 后**必须让 Game 跑一帧**（或手动 `mesh.position.copy(mob.position)`）再截图，否则 group 还在原点；
+Chrome 后台会节流 rAF，截图可能拿到旧帧——用 `renderer.render()` + `canvas.toDataURL()` 在同一任务内取帧最稳。

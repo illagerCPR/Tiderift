@@ -318,7 +318,7 @@ const DZ = { x: 0, y: 0, z: 1 };
 // ── ④ F8：per-mob 清理唯一 + dispose 复用 + 幂等 ──
 const mmSrc = srcOf('../src/entity/MobManager.js');
 {
-  ok(countOf(mmSrc, 'mob.mesh.material.dispose()') === 1, 'per-mob 清理：mesh material dispose 全仓唯一');
+  ok(countOf(mmSrc, 'mob.material.dispose()') === 1, 'per-mob 清理：材质 dispose 全仓唯一（B44 起材质挂在 mob 上）');
   ok(countOf(mmSrc, 'mob.healthBarSprite.material.dispose()') === 1, 'per-mob 清理：血条 material dispose 全仓唯一');
   ok(countOf(mmSrc, 'mob.healthBarTex.dispose()') === 1, 'per-mob 清理：血条 texture dispose 全仓唯一');
   ok(countOf(mmSrc, 'this.scene.remove(mob.mesh)') === 1, 'per-mob 清理：scene.remove(mesh) 全仓唯一');
@@ -332,13 +332,14 @@ const mmSrc = srcOf('../src/entity/MobManager.js');
   const scene = { remove: (o) => { removed.push(o); } };
   const mm = Object.create(MobManager.prototype);
   mm.scene = scene;
-  const mesh = { material: { dispose: () => disposed.push('meshMat') } };
+  const mesh = {};
+  const mobMat = { dispose: () => disposed.push('meshMat') };
   const sprite = { material: { dispose: () => disposed.push('barMat') } };
   const barTex = { dispose: () => disposed.push('barTex') };
-  const mob = { mesh, healthBarSprite: sprite, healthBarTex: barTex, healthBarCanvas: {}, healthBarCtx: {} };
+  const mob = { mesh, material: mobMat, healthBarSprite: sprite, healthBarTex: barTex, healthBarCanvas: {}, healthBarCtx: {} };
   mm.mobs = [mob];
   mm._bosses = [mob];
-  mm.mobGeometries = new Map([['zombie', { dispose: () => disposed.push('geo') }]]);
+  mm.mobRigs = new Map([['zombie', { parts: [{ geo: { dispose: () => disposed.push('geo') } }] }]]);
   mm.mobMaterials = new Map([['zombie', { map: { dispose: () => disposed.push('skinTex') }, dispose: () => disposed.push('mat') }]]);
   mm.mobTextures = new Map([['zombie', {}]]);
   mm.droppedItems = [];
@@ -355,7 +356,7 @@ const mmSrc = srcOf('../src/entity/MobManager.js');
   ok(mob.healthBarSprite === null && mob.healthBarTex === null && mob.healthBarCanvas === null && mob.healthBarCtx === null,
     'F8 语义增强：_removeMobResources 置空血条字段（旧 dispose 未置空）');
   ok(mm.mobs.length === 0 && mm._bosses.length === 0, 'dispose()：清空 mobs 与 Boss 登记表');
-  ok(mm.mobGeometries.size === 0 && mm.mobMaterials.size === 0, 'dispose()：清空 type 级共享资源表');
+  ok(mm.mobRigs.size === 0 && mm.mobMaterials.size === 0, 'dispose()：清空 type 级共享资源表');
 
   const removedBefore = removed.length;
   const disposedBefore = disposed.length;

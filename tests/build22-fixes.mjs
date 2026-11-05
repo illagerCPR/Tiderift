@@ -167,8 +167,8 @@ function buildRig(model) {
   ok(srcOf('../src/render/FirstPersonHand.js').includes('applyEntityLight(this.game.world'),
     'FirstPersonHand 第一人称手臂接入体素光染色');
   const mm = srcOf('../src/entity/MobManager.js');
-  ok(mm.includes('applyEntityLight(this.world, sky, mob.mesh.position, mob.mesh)'),
-    'MobManager 改走共享公式（单一来源）');
+  ok(mm.includes('applyEntityLight(this.world, sky, mob.mesh.position, mob.meshes)'),
+    'MobManager 改走共享公式（单一来源；B44 起按部件数组染色）');
   ok(!mm.includes('const v = 0.55 + 0.45 * l'), 'MobManager 内联旧公式已移除（防漂移）');
   ok(!mm.includes('mm.emissive.setRGB(0, 0, 0)'), 'MobManager 常态清零 emissive 已移除（辉光每帧重写）');
   ok(!srcOf('../src/render/HeldItemMesh.js').includes('entityLight'), 'HeldItemMesh 不参与实体染色（共享材质防串色）');
