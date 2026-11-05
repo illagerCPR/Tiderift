@@ -113,14 +113,15 @@ function noOverlap(a, b) {
     velocity: new THREE.Vector3(),
     yaw: 0, pitch: 0.5, flying: false,
   };
-  model.update(0.016, player, true, false);
+  // B44：动作器会叠加 idle 呼吸的 headExtra，用 dt=0 让 B44 层贡献为 0，只验 pitch 符号
+  model.update(0, player, true, false);
   ok(model.joints.head && Math.abs(model.joints.head.pivot.rotation.x - 0.5) < 1e-9,
     '修复 A：抬头 pitch=0.5 → 头部 pivot rotation.x=+0.5（仰头，原 -0.5 为反向低头）');
   model.dispose();
 
   const rp = srcOf('../src/entity/RemotePlayer.js');
-  ok(rp.includes('this.joints.head.pivot.rotation.x = this.pitch;'),
-    '修复 A：RemotePlayer 头部俯仰同符号翻正（联机两端一致）');
+  ok(rp.includes('applyHumanoidPose(this.joints, pose, this.pitch)'),
+    '修复 A：RemotePlayer 头部俯仰同符号翻正（联机两端一致，B44 起经 applyHumanoidPose）');
   ok(!rp.includes('rotation.x = -this.pitch'), '修复 A：旧负号已移除');
 }
 

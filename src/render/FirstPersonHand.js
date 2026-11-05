@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { buildHeldItemTemplate } from './HeldItemMesh.js';
 import { loadActiveSkin, buildPartBox } from '../entity/PlayerSkin.js';
 import { applyEntityLight } from './entityLight.js';
+import { HandPose, HAND_BASE, HAND_BASE_ROT } from './fpHandPose.js';
 
 // 手臂盒几何常量（Build 41 收敛，测试与实现同源）：宽=4px 臂宽、长=12px 臂长、厚=4px；
 // 绕 X 转 90° 后长轴指向 -Z（手在远端），再叠 ARM_PITCH 抬角还原原有观感。
@@ -27,9 +28,9 @@ export class FirstPersonHand {
     this.group = new THREE.Group();
     // 右下角（B41：原 y=-0.38/z=-0.55 时手臂 95% 落在 75° 视锥外，只露一条边——
     // 用户看到的"肩膀"就是那条边。上抬并后移后手臂进入视野，观感与原版接近）
-    this.basePos = new THREE.Vector3(0.42, -0.30, -0.60);
+    this.basePos = new THREE.Vector3(HAND_BASE.x, HAND_BASE.y, HAND_BASE.z);
     this.group.position.copy(this.basePos);
-    this.group.rotation.set(0, -0.35, 0.05);
+    this.group.rotation.set(HAND_BASE_ROT.x, HAND_BASE_ROT.y, HAND_BASE_ROT.z);
     this.camera.add(this.group);
 
     // 空手手臂（肤色盒，从右下伸向前方）；尺寸与 applySkin 贴皮肤后保持一致（Build 22/41）
@@ -50,10 +51,7 @@ export class FirstPersonHand {
 
     this.currentName = undefined; // undefined=未初始化；null=空手
     this._buildSeq = 0;           // 异步构建序号（防旧结果覆盖新选择）
-    this.swingT = 1;              // 挥动进度 0..1（1=结束）
-    this.miningPeriod = 0.3;      // 阶段11：挖掘挥动周期（秒）——由 Game 按方块硬度/工具速度写入
-    this.bobPhase = 0;
-    this._autoSwingCd = 0;        // 按住左键的自动挥动冷却
+    this.pose = new HandPose();   // B44：姿态解算（bob/挥动/换手/落地/游泳/拉弓）
     this.bowDraw = null;          // Idea-2A：拉弓蓄力姿态（null=未拉弓；0..1=蓄力进度）
     this.visible = false;         // 默认隐藏（主菜单不显示第一人称手臂），Game.start 里 setVisible(true)
     this.group.visible = false;
@@ -64,6 +62,10 @@ export class FirstPersonHand {
     this.visible = v;
     this.group.visible = v;
   }
+
+  // 阶段11：挖掘挥动周期（由 Game 按方块硬度/工具速度写入；纯解算在 HandPose 里）
+  get miningPeriod() { return this.pose.miningPeriod; }
+  set miningPeriod(v) { this.pose.miningPeriod = Number(v) || 0.3; }
 
   // Build 21 M1：按当前皮肤设置给手臂贴右臂 UV（原版第一人称效果，含内置默认皮肤）。
   // SkinScreen 保存后可重复调用（loadActiveSkin 读最新 prefs）。
@@ -102,6 +104,7 @@ export class FirstPersonHand {
   async setItem(name) {
     if (name === this.currentName) return;
     this.currentName = name;
+    this.pose.equip(); // B44：换手抬起动画
     const seq = ++this._buildSeq;
     this.itemGroup.clear(); // 模板几何/材质来自共享缓存，clone 不持有独立资源，无需 dispose
     if (!name) return;
@@ -116,52 +119,29 @@ export class FirstPersonHand {
 
   // 触发一次挥动（放置/食用/命中等瞬时机点调用；按住左键的连续挖掘由 update 自动驱动）
   swing() {
-    if (this.swingT >= 1) this.swingT = 0;
+    this.pose.swing();
   }
 
-  update(dt, moving, sprinting) {
+  // ctx: { moving, sprinting }（其余状态由本类直接读 game.player；B44 起新增跳跃/下落/游泳/换手/落地）
+  update(dt, ctx = {}) {
     if (!this.visible) return;
     // Build 22：体素光染色——火把/荧石照亮第一人称手臂（按玩家眼睛所在格，与怪物同一公式）
     if (this.game.world && this.game.player) {
       applyEntityLight(this.game.world, this.game.sky, this.game.player.position, this.armMesh);
     }
-    // 走路 bob（移动时幅度更大、频率更高）；视频设置可关
-    const bobOn = !(this.game.settings && this.game.settings.viewBobbing === false);
-    this.bobPhase += dt * (moving ? (sprinting ? 11 : 8) : 2.5);
-    const amp = bobOn ? (moving ? 0.016 : 0.004) : 0;
-    const bobY = Math.sin(this.bobPhase * 2) * amp;
-    const bobX = Math.cos(this.bobPhase) * amp * 1.4;
-
-    // 挥动动画：swingT 0→1，正弦包络
-    // 阶段11：挥速随挖掘周期缩放（单次挥动时长 ≈ 周期，连续挖掘节奏贴合实际挖穿耗时）
-    const period = Math.min(1.0, Math.max(0.2, this.miningPeriod));
-    const swingRate = 3.2 * (0.3 / period);
-    // 硬块（长周期）挥得更深更有力
-    const swAmp = 0.85 + 0.35 * Math.min(1, Math.max(0, (period - 0.25) / 0.75));
-    let swDown = 0, swRot = 0;
-    if (this.swingT < 1) {
-      this.swingT = Math.min(1, this.swingT + dt * swingRate);
-      swDown = Math.sin(this.swingT * Math.PI) * swAmp;
-      swRot = Math.sin(Math.min(1, this.swingT * 1.6) * Math.PI * 0.5) * 0.9 * swAmp;
-    }
-    // 按住左键（挖掘/攻击中）自动连续挥动（周期跟随 miningPeriod）
-    const mining = this.game.controls.mouseLeft && !(this.game.inventoryScreen && this.game.inventoryScreen.visible);
-    if (mining) {
-      this._autoSwingCd -= dt;
-      if (this._autoSwingCd <= 0) { this._autoSwingCd = period; this.swing(); }
-    } else {
-      this._autoSwingCd = 0;
-    }
-
-    // 拉弓蓄力（Idea-2A）：手持物向中心回拉 + 略抬，满蓄轻微颤动
-    const draw = this.bowDraw == null ? 0 : this.bowDraw;
-    const tremble = (this.bowDraw != null && this.bowDraw >= 1) ? Math.sin(this.bobPhase * 12) * 0.0022 : 0;
-
-    this.group.position.set(
-      this.basePos.x + bobX - draw * 0.12,
-      this.basePos.y + bobY - swDown * 0.10 + draw * 0.04 + tremble,
-      this.basePos.z - swDown * 0.16 + draw * 0.14
-    );
-    this.group.rotation.set(-swRot * 0.85 - draw * 0.15, -0.35 + swRot * 0.3 + draw * 0.25, 0.05);
+    const p = this.game.player;
+    const st = this.pose.update(dt, {
+      moving: !!ctx.moving,
+      sprinting: !!ctx.sprinting,
+      onGround: p ? p.onGround : true,
+      inWater: !!(p && p.bodyInWater),
+      flying: !!(p && p.flying),
+      vy: p ? p.velocity.y : 0,
+      mining: this.game.controls.mouseLeft && !(this.game.inventoryScreen && this.game.inventoryScreen.visible),
+      bobOn: !(this.game.settings && this.game.settings.viewBobbing === false),
+      bowDraw: this.bowDraw,
+    });
+    this.group.position.set(st.x, st.y, st.z);
+    this.group.rotation.set(st.rx, st.ry, st.rz);
   }
 }

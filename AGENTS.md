@@ -170,6 +170,15 @@ agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - `cheatsEnabled` 持久化字段：存档数据 `data.cheatsEnabled` 由 `SaveSystem.save` 在 `game.cheatsEnabled` 上读取，`listSaves()` 返回项含 `cheatsEnabled`；`MenuScreen` 单人页"启用命令"复选框 → `selectedCheats` 状态 → `onStart(mode,seed,loadData,slot,cheatsEnabled)` 第 5 参数 → `Game.start(mode,seed,loadData,slot=1,cheatsEnabled=false)` 第 5 参数；加载存档时由 `loadData.cheatsEnabled` 覆盖（`Game.start` 第 145-149 行：有 loadData 走 `loadData.cheatsEnabled`，否则走函数参数）。改 API 要同步这 5 处签名。
 - **B43 单人存档导出/导入**：`src/core/SaveTransfer.js`（纯逻辑）+ `SaveSystem` 增补 `exportSlotRaw / importData / rawSize`，V1→V2 迁移抽成 `normalizeSaveData`（`load` 与导入共用单点）。文件格式 `.tidersave` = gzip(信封 JSON `{ format:'tiderift-save', fileVersion:1, build, exportedAt, slot, save }`)，`save` 原样搬运、未知字段不丢；无 `CompressionStream` 的浏览器降级导出未压缩 `.json`，导入端兼容裸存档 JSON。**红线**：`save.version` 1/2 可入（V1 自动迁移），其它拒绝；`build > BUILD` 一律拒绝（旧客户端缺新方块 ID 会崩区块网格）；解压上限 32MB（流式累计防压缩炸弹）；未知方块 ID / 未注册物品名 / 非法坐标键丢弃并计数；`__proto__`/`prototype`/`constructor` 键跳过；`QuotaExceededError` 转 `'quota'` 不回抛；`createObjectURL` 必回收。UI 只在**主菜单单人页**（槽位「导出」+「⬆ 导入存档」+ 摘要选槽弹窗，覆盖已有槽需二次确认）；失败码 → 文案键映射 `SAVE_IMPORT_ERROR_KEYS`（`SaveTransfer` 导出，`tests/i18n-parity.mjs` 动态键表登记）。回归网 `tests/build43-save-transfer.mjs`。
 
+### 玩家/实体动作（B44 起）
+
+- 玩家动作统一由 `src/entity/anim/HumanoidAnimator.js`（**纯数学**模块）驱动，远端玩家与本地第三人称模型共用；**禁止再写第二份正弦摆腿**。相位按水平位移积分（`STRIDE_RATE=2.6 rad/m`）而不是时间；walk/sprint/air/swim/fly 五条权重走指数趋近，起停/起跳/入水/落地不阶跃；落地是 0.22s 包络 + `|vy|/10` 冲击；挖掘挥臂是 21 rad/s 的叠加层。
+- 两个玩家模型都多一层 `bodyRoot`（`group → bodyRoot → 关节 pivot`）：世界位姿仍在 `group`（位置 / `rotation.y`），bodyRoot 只吃 bob（position.y）与前倾/侧倾。名字牌与头顶快捷栏 sprite 挂 scene，不受 bob 影响。
+- 符号约定（改前必读，见 `docs/agent-notes/animation.md` §二）：模型朝 -Z；四肢 `rotation.x` 正 = 向前摆；`bodyPitch` 正 = 前倾（落点写 `rotation.x = -bodyPitch`）；`bodyRoll` 正 = 向右倾（`rotation.z = -bodyRoll`）；左右臂外展用 `armSpread`（`armL.z=-s`、`armR.z=+s`）。
+- 第一人称由 `src/render/fpHandPose.js` 的 `HandPose` 解算（bob / 挥动 / 换手抬起 / 起跳下沉 / 下落上抬 / 落地缓冲 / 游泳 / 冲刺侧倾 / 拉弓），`FirstPersonHand` 只把结果写到相机子节点；`hand.miningPeriod` 是转发到 pose 的访问器，`InteractionController` 的写法不变。
+- 联机：`player_state` 可选 `sprint` 0/1（服务端 `Room.onPlayerState` 清洗后透传，**不升 `PROTOCOL_VERSION`**；旧端缺省 false 向后兼容）。
+- 回归网 `tests/build44-anim-humanoid.mjs` + `tests/build44-anim-fp-hand.mjs`；浏览器截帧手法（自建平台 + `game.paused=true` 冻结帧 + 注意后台节流）见 `docs/agent-notes/animation.md` §七。
+
 ## 代码风格
 
 - 纯 vanilla JS（.js），无 TypeScript，无 JSX。
@@ -264,5 +273,6 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/blueprints.md` | B35 E 建筑蓝图与材料清单（描述式模型/RLE 规范形式/只读已加载区块的捕获/预览资源释放/材料统计口径/`blueprint_*` 房间账本与限速） | 改动 Blueprints/GhostPreview/BlueprintScreen、`blueprint_*` 协议、蓝图快照或材料统计时 |
 | `docs/agent-notes/phenomena.md` | B37 G 局部潮候与稀有景象（四维窗口与 60 秒预兆/观测累计与一次性纪念/粒子表现与开关/红线与接线点） | 改动 `Phenomena`/`PhenomenaView`、`Journal` 的 `phenomena` 桶、`tide_plaque` 方块或潮候音效时 |
 | `docs/agent-notes/ruins.md` | B35 D 可动手解开的遗迹（三种机关机制与判定口径/键与锚点推导/轮询节流与目标集扫描/`ruin_*` 房间账本与领取去重/奖励三件套与蓝图生成/结构密度调参） | 改动 Ruins.js、三种机关结构几何、`ruin_*` 协议、遗迹奖励或游记里的遗迹状态时 |
+| `docs/agent-notes/animation.md` | B44 动作系统第一轮（玩家）：HumanoidAnimator 相位=位移积分/五状态权重/落地包络/符号约定、bodyRoot 结构、第一人称 HandPose、`player_state.sprint`、截帧手法与第二轮怪物骨架计划 | 改动 `HumanoidAnimator`/`fpHandPose`/`RemotePlayer`/`LocalPlayerModel`/`FirstPersonHand`、动手臂/腿部/躯干姿态、改 `player_state` 或做怪物骨架拆分时 |
 
 历史高危 bug 快查（细节见对应主题文件）：`EntityPhysics.moveAxis` z 轴碰撞回退曾误用 `bx` 致实体瞬移（回退坐标必须取当前轴 `bc`，勿回退）；`Mob` 攻击分流用 `target.isMob` 鸭子标记而非 instanceof（HMR 双模块实例下 instanceof 失效）；`NetworkManager` 重连必须 `JOIN_ROOM { room: this.room }`（空 payload 会静默掉进 default 房，两端数据对不上）。

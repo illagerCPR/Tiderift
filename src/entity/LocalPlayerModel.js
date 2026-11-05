@@ -10,6 +10,7 @@ import { playerColorHue } from '../net/playerColor.js';
 import { buildHeldItemTemplate } from '../render/HeldItemMesh.js';
 import { applySkinToRig, loadActiveSkin, SKIN_STORAGE_KEY } from './PlayerSkin.js';
 import { applyEntityLight } from '../render/entityLight.js';
+import { HumanoidAnimator, applyHumanoidPose, applyBodyOffset } from './anim/HumanoidAnimator.js';
 
 export class LocalPlayerModel {
   constructor(scene, game) {
@@ -24,6 +25,7 @@ export class LocalPlayerModel {
     this._skinSeq = 0;            // 异步加载序号（防旧结果覆盖新）
 
     this.group = new THREE.Group();
+    this.bodyRoot = null; // B44：躯干中间节点（bob/前倾/侧倾），_buildRig 内创建
     this.parts = [];
     this.joints = {};
     this.partsByName = {}; // Build 21：全部件索引（body 无 pivot 不入 joints，皮肤双层需要）
@@ -32,10 +34,8 @@ export class LocalPlayerModel {
     this._buildRig(this.skinModel);
     this.loadSkin(); // 异步加载皮肤（失败保持纯色兜底）
 
-    // 动画状态（与 RemotePlayer 同款相位逻辑，直读本地玩家速度）
-    this._walkPhase = 0;
-    this._minePhase = 0;
-    this._mineAmp = 0;
+    // B44：动作器（与远端玩家共用同一套；本地直读玩家状态，零插值延迟）
+    this.animator = new HumanoidAnimator();
     // 手持物（右臂挂 3D 模型，随物品切换异步重建）
     this.heldItem = undefined; // undefined=未初始化；null=空手
     this.heldGroup = null;
@@ -70,6 +70,8 @@ export class LocalPlayerModel {
   // 按 model 档位构建全部部件（构造/refreshSkin 共用）
   _buildRig(model) {
     const color = this.color;
+    this.bodyRoot = new THREE.Group();
+    this.group.add(this.bodyRoot);
     for (const def of buildParts(model)) {
       const [minX, minY, minZ, maxX, maxY, maxZ] = def.box;
       const geo = new THREE.BoxGeometry(maxX - minX, maxY - minY, maxZ - minZ);
@@ -83,11 +85,11 @@ export class LocalPlayerModel {
         pivot.position.set(def.pivot[0], def.pivot[1], def.pivot[2]);
         mesh.position.set((minX + maxX) / 2 - def.pivot[0], (minY + maxY) / 2 - def.pivot[1], (minZ + maxZ) / 2 - def.pivot[2]);
         pivot.add(mesh);
-        this.group.add(pivot);
+        this.bodyRoot.add(pivot);
         this.joints[def.role] = { pivot, mesh };
       } else {
         mesh.position.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-        this.group.add(mesh);
+        this.bodyRoot.add(mesh);
       }
       this.partsByName[def.role] = mesh;
       this.parts.push(mesh);
@@ -109,34 +111,26 @@ export class LocalPlayerModel {
   // Game.update 每帧调用；visible 由 Game 按视角模式/观战/死亡决定
   update(dt, player, visible, mining) {
     this.group.visible = !!visible;
-    if (!visible) return;
+    // B44：动作器始终推进（隐藏期间也保持相位/权重连续），切回第三人称时不从陈旧姿态起跳
+    const speed = Math.hypot(player.velocity.x, player.velocity.z);
+    const pose = this.animator.update(dt, {
+      speed,
+      vy: player.velocity.y,
+      sprinting: !!(this.game.controls && this.game.controls.isSprinting()),
+      onGround: player.onGround,
+      inWater: !!player.bodyInWater,
+      flying: player.flying,
+      mine: mining,
+    });
+    if (!this.group.visible) return;
     this.group.position.copy(player.position);
     this.group.rotation.y = player.yaw;
     // Build 22：体素光染色——火把/荧石照亮玩家本体（base+overlay，与怪物同一公式）
     if (this.game.world) {
       applyEntityLight(this.game.world, this.game.sky, this.group.position, this.parts, this.overlayMeshes);
     }
-    // Build 21 修复 A：原为 -player.pitch——抬头时模型反向低头，翻正符号
-    if (this.joints.head) this.joints.head.pivot.rotation.x = player.pitch;
-
-    // 行走摆臂：水平速度驱动（飞行/静止缓慢归位）；挖掘挥臂叠加在右臂上
-    const speed = Math.hypot(player.velocity.x, player.velocity.z);
-    const moving = speed > 0.6 && !player.flying;
-    this._walkPhase += dt * (moving ? 4 + Math.min(8, speed * 0.8) : 2);
-    const swing = moving ? Math.min(0.9, speed * 0.09) : 0;
-    const s = Math.sin(this._walkPhase) * swing;
-    const s2 = Math.sin(this._walkPhase + Math.PI) * swing;
-    if (this.joints.armL) this.joints.armL.pivot.rotation.x = s;
-    const mineTarget = (mining && !player.flying) ? 1 : 0;
-    this._mineAmp += (mineTarget - this._mineAmp) * Math.min(1, dt * 10);
-    if (this._mineAmp > 0.01) {
-      this._minePhase += dt * 21;
-      if (this._minePhase > Math.PI * 2) this._minePhase -= Math.PI * 2;
-    }
-    const mineSw = Math.sin(this._minePhase) * 0.8 * this._mineAmp;
-    if (this.joints.armR) this.joints.armR.pivot.rotation.x = s2 - mineSw;
-    if (this.joints.legL) this.joints.legL.pivot.rotation.x = s2;
-    if (this.joints.legR) this.joints.legR.pivot.rotation.x = s;
+    applyHumanoidPose(this.joints, pose, player.pitch);
+    applyBodyOffset(this.bodyRoot, pose);
 
     // 手持物同步（物品变化时重建）
     const sel = this.game.inventory ? this.game.inventory.getSelected() : null;

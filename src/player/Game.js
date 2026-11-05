@@ -1847,9 +1847,10 @@ export class Game {
       const selName = sel ? sel.name : null;
       if (selName !== this.hand.currentName) this.hand.setItem(selName);
     }
-    this.hand.update(dt,
-      Math.hypot(this.player.velocity.x, this.player.velocity.z) > 0.8,
-      this.controls.isSprinting());
+    this.hand.update(dt, {
+      moving: Math.hypot(this.player.velocity.x, this.player.velocity.z) > 0.8,
+      sprinting: this.controls.isSprinting(),
+    });
 
     // 怪物系统
     if (this.mobManager) {

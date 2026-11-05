@@ -1988,6 +1988,7 @@ export class Room {
     p.yaw = safeNum(msg.yaw, p.yaw); p.pitch = safeNum(msg.pitch, p.pitch);
     player.onGround = !!msg.onGround; player.flying = !!msg.flying; player.inWater = !!msg.inWater;
     player.mining = !!msg.mine; // 阶段11：挖掘中标志（瞬时状态，不进 joinInfo）
+    player.sprint = !!msg.sprint; // B44：冲刺状态（可选字段，旧客户端缺省 false）
     // 阶段6：手持物品同步——广播当前快捷栏槽位与物品名（远端模型据此渲染手持物）
     if (msg.selected !== undefined) player.selected = safeInt(msg.selected, player.selected);
     if (typeof msg.held === 'string') player.heldItem = msg.held.slice(0, 32);
@@ -2000,6 +2001,7 @@ export class Room {
       id: player.id, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch,
       onGround: player.onGround, flying: player.flying, inWater: player.inWater,
       selected: player.selected, held: player.heldItem, mine: player.mining ? 1 : 0,
+      sprint: player.sprint ? 1 : 0, // B44：冲刺状态（远端动作器据此区分走/跑）
       ts: Date.now(), // 阶段5：服务器时间戳，客户端做时间对齐的缓冲插值
     };
     if (typeof player.rtt === 'number') state.rtt = player.rtt;

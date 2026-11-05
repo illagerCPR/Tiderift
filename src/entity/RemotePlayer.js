@@ -10,6 +10,7 @@ import { buildHeldItemTemplate } from '../render/HeldItemMesh.js';
 import { RemoteHotbarSprite } from '../render/RemoteHotbarSprite.js';
 import { applySkinToRig, loadImageFromURL, normalizeSkin } from './PlayerSkin.js';
 import { applyEntityLight } from '../render/entityLight.js';
+import { HumanoidAnimator, applyHumanoidPose, applyBodyOffset } from './anim/HumanoidAnimator.js';
 
 // 简化方块人部件（局部坐标原点在脚 y=0，单位：格；1px = 1/16 格）
 // Build 21 M1：尺寸对齐原版（head 8³ / body 8×12×4 / arm 4×12×4 / leg 4×12×4 px），
@@ -47,6 +48,9 @@ export class RemotePlayer {
     const color = playerColor(id);
 
     this.group = new THREE.Group();
+    // B44：躯干中间节点——bob（上下浮动）、前倾、侧倾作用在它上面，世界位姿仍由 group 管
+    this.bodyRoot = new THREE.Group();
+    this.group.add(this.bodyRoot);
     this.parts = [];     // 普通 mesh 列表（渲染 / 受击红光）
     this.joints = {};    // role -> { pivot: Group, mesh: Mesh }
     this.partsByName = {}; // Build 21：全部件索引（body 无 pivot 不入 joints，皮肤双层需要）
@@ -67,11 +71,11 @@ export class RemotePlayer {
         pivot.position.set(def.pivot[0], def.pivot[1], def.pivot[2]);
         mesh.position.set((minX + maxX) / 2 - def.pivot[0], (minY + maxY) / 2 - def.pivot[1], (minZ + maxZ) / 2 - def.pivot[2]);
         pivot.add(mesh);
-        this.group.add(pivot);
+        this.bodyRoot.add(pivot);
         this.joints[def.role] = { pivot, mesh };
       } else {
         mesh.position.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-        this.group.add(mesh);
+        this.bodyRoot.add(mesh);
       }
       this.partsByName[def.role] = mesh;
       this.parts.push(mesh);
@@ -107,13 +111,13 @@ export class RemotePlayer {
     this._heldSeq = 0;        // 异步重建手持模型的序号（防旧结果覆盖新）
     this.selectedSlot = 0;    // 阶段10：远端玩家当前选中的快捷栏槽位
     this.hotbar = null;       // 阶段10：远端玩家完整快捷栏快照（[{name,count}|null ×9] 或 null）
-    // 行走动画状态：摆动相位 + 估算水平速度（由缓冲段位移算出）
-    this._walkPhase = 0;
-    this._speed = 0;
-    // 阶段11：挖掘挥臂（player_state 的 mine 标志驱动，叠加在行走摆臂上）
+    // B44：程序化动作器（与本地第三人称模型共用；相位按位移积分，状态走权重过渡）
+    this.animator = new HumanoidAnimator();
+    this._speed = 0;      // 缓冲段估算的水平速度（驱动步态）
+    this._vy = 0;         // 缓冲段估算的竖直速度（驱动起跳/下落姿态）
+    this._sprint = false; // 远端自报冲刺状态（player_state.sprint，可选字段）
+    // 阶段11→B44：挖掘挥臂（player_state 的 mine 标志驱动，由动作器叠加）
     this.mining = false;
-    this._minePhase = 0;
-    this._mineAmp = 0; // 0..1 挥臂强度（进出挖掘状态平滑过渡，防关节跳变）
   }
 
   _makeNameSprite(name) {
@@ -156,6 +160,7 @@ export class RemotePlayer {
       x: s.x, y: s.y, z: s.z,
       yaw: s.yaw || 0, pitch: s.pitch || 0,
       flying: !!s.flying, inWater: !!s.inWater, onGround: !!s.onGround,
+      sprint: !!s.sprint, // B44：冲刺状态（旧服务器缺省 false，远端退化为普通步态）
     });
     if (this._buffer.length > 40) this._buffer.shift();
     // 阶段6/10：手持物品变化时更新右臂挂载的 3D 模型；selected 槽位随状态更新
@@ -262,7 +267,8 @@ export class RemotePlayer {
     this.group.visible = true;
     if (this.nameSprite) this.nameSprite.visible = true;
     this._buffer.length = 0; // 重生=瞬移，丢弃旧样本避免轨迹回拉
-    this.mining = false; this._mineAmp = 0; this._minePhase = 0; // 阶段11：复位挖掘挥臂
+    this.mining = false;
+    this.animator.reset(); // B44：动作器复位（相位/权重/落地包络一并清空）
     this._target.set(s.x, s.y, s.z);
     this._targetYaw = s.yaw || this.yaw;
     this._targetPitch = s.pitch || this.pitch;
@@ -313,9 +319,11 @@ export class RemotePlayer {
       while (dy < -Math.PI) dy += Math.PI * 2;
       this._targetYaw = a.yaw + dy * f;
       this._targetPitch = a.pitch + (b.pitch - a.pitch) * f;
-      // 移动速度（当前段位移/时间）驱动走路动画；缓冲耗尽时自然归 0（静止停靠）
+      // 移动速度（当前段位移/时间）驱动走路动画；竖直速度供动作器判断起跳/下落
       this._speed = span > 0.001 ? Math.hypot(b.x - a.x, b.z - a.z) / span : 0;
+      this._vy = span > 0.001 ? (b.y - a.y) / span : 0;
       this.flying = b.flying; this.inWater = b.inWater; this.onGround = b.onGround;
+      this._sprint = !!b.sprint;
 
       // 阶段6/10 自适应插值延迟：
       // ① RTT 直测可用（应用层 ping/pong 平滑值）→ 以 RTT 为主信号：目标延迟 ≈ 单向延迟(RTT/2) + 状态包缓冲
@@ -342,34 +350,18 @@ export class RemotePlayer {
     this.pitch = this._targetPitch;
     this.group.rotation.y = this.yaw;
 
-    // 头部俯仰（绕颈部 pivot）。Build 21 修复 A：原为 -pitch——抬头时模型反向低头，
-    // 翻正符号（pitch 正=抬头 → 头顶向后仰）
-    if (this.joints.head) {
-      this.joints.head.pivot.rotation.x = this.pitch;
-    }
-
-    // 行走摆动动画：水平速度驱动腿/手臂相位，飞行/水中/静止不摆动
-    const moving = this._speed > 0.6 && !this.flying;
-    if (moving) {
-      this._walkPhase += dt * (4 + Math.min(8, this._speed * 0.8));
-    } else {
-      this._walkPhase += dt * 2; // 缓慢归位
-    }
-    const swing = moving ? Math.min(0.9, this._speed * 0.09) : 0;
-    const s = Math.sin(this._walkPhase) * swing;
-    const s2 = Math.sin(this._walkPhase + Math.PI) * swing;
-    if (this.joints.armL) this.joints.armL.pivot.rotation.x = s;
-    // 阶段11：挖掘挥臂——右臂在行走摆臂之上叠加固定节奏（~0.3s）的敲击动作，飞行时不挥
-    const mineTarget = (this.mining && !this.flying) ? 1 : 0;
-    this._mineAmp += (mineTarget - this._mineAmp) * Math.min(1, dt * 10);
-    if (this._mineAmp > 0.01) {
-      this._minePhase += dt * 21; // 2π/21 ≈ 0.3s 一个敲击周期
-      if (this._minePhase > Math.PI * 2) this._minePhase -= Math.PI * 2;
-    }
-    const mineSw = Math.sin(this._minePhase) * 0.8 * this._mineAmp;
-    if (this.joints.armR) this.joints.armR.pivot.rotation.x = s2 - mineSw;
-    if (this.joints.legL) this.joints.legL.pivot.rotation.x = s2;
-    if (this.joints.legR) this.joints.legR.pivot.rotation.x = s;
+    // B44：动作器接管头部俯仰/四肢摆动/躯干姿态（相位=位移积分，起停与落地走权重/包络过渡）
+    const pose = this.animator.update(dt, {
+      speed: this._speed,
+      vy: this._vy,
+      sprinting: this._sprint,
+      onGround: this.onGround,
+      inWater: this.inWater,
+      flying: this.flying,
+      mine: this.mining,
+    });
+    applyHumanoidPose(this.joints, pose, this.pitch);
+    applyBodyOffset(this.bodyRoot, pose);
 
     // 昵称标签跟随（阶段11：头顶快捷栏 sprite 一并跟随）
     if (this.nameSprite) {

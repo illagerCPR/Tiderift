@@ -33,3 +33,6 @@ Thumbs.db
 *.swp
 *.swo
 *:Zone.Identifier
+
+# 浏览器手测截图（B44 起）
+.playwright-anim/

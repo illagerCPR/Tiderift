@@ -1336,6 +1336,7 @@ export class NetworkManager {
       selected: this.game.inventory.hotbarSelected,
       held: sel ? sel.name : null,
       mine: this.game._miningActive ? 1 : 0, // 阶段11：挖掘中标志（远端播放挥臂）
+      sprint: this.game.controls && this.game.controls.isSprinting() ? 1 : 0, // B44：冲刺状态（远端步态区分走/跑）
     };
     // B38 L1：延迟随状态上报——只在取整后的值变化时附带，避免 20Hz 每包多十来个字节；
     // 未测得（null）时省略，服务器沿用上一次的值。
