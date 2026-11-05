@@ -3,8 +3,28 @@
 //（全维度方块/容器账本分桶）；V1 旧档读取时自动迁移进主世界桶
 const SAVE_PREFIX = 'project-mc-save-';
 const LEGACY_KEY = 'project-mc-save';
-const SAVE_VERSION = 2;
+export const SAVE_VERSION = 2;
 export const MAX_SAVE_SLOTS = 6;
+
+// 存档对象规范化：V1 → V2 迁移 + 缺字段回落；版本不受支持返回 null。
+// 单点收口——localStorage 加载与「导入存档」共用同一条迁移路径。
+export function normalizeSaveData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const out = { ...data };
+  if (!Array.isArray(out.blueprints)) out.blueprints = [];
+  if (!out.ruins || typeof out.ruins !== 'object' || Array.isArray(out.ruins)) out.ruins = null; // 旧档缺字段 → reset(null) 回落空账本
+  if (out.version === 1) {
+    // V1 → V2 迁移：旧平铺字段归入主世界桶（内存中升级，不回写）
+    out.version = SAVE_VERSION;
+    out.dimension = 'overworld';
+    out.dimensionBlocks = { overworld: out.modifiedBlocks || {} };
+    out.dimensionContainers = { overworld: out.containers || {} };
+    out.dimensionFurnaces = {}; // V1 无熔炉状态
+  } else if (out.version !== SAVE_VERSION) {
+    return null;
+  }
+  return out;
+}
 
 // Map<dim, Map> -> { dim: { "x,y,z": value } }
 function serializeDimBuckets(store) {
@@ -71,25 +91,45 @@ export class SaveSystem {
     try {
       const raw = localStorage.getItem(SAVE_PREFIX + slot);
       if (!raw) return null;
-      const data = JSON.parse(raw);
-      if (!Array.isArray(data.blueprints)) data.blueprints = [];
-      if (!data.ruins || typeof data.ruins !== 'object' || Array.isArray(data.ruins)) data.ruins = null; // 旧档缺字段 → reset(null) 回落空账本
-      if (data.version === 1) {
-        // V1 → V2 迁移：旧平铺字段归入主世界桶（内存中升级，不回写）
-        data.version = SAVE_VERSION;
-        data.dimension = 'overworld';
-        data.dimensionBlocks = { overworld: data.modifiedBlocks || {} };
-        data.dimensionContainers = { overworld: data.containers || {} };
-        data.dimensionFurnaces = {}; // V1 无熔炉状态
-      } else if (data.version !== SAVE_VERSION) {
-        console.warn(`存档槽 ${slot} 版本不匹配`);
-        return null;
-      }
+      const data = normalizeSaveData(JSON.parse(raw));
+      if (!data) console.warn(`存档槽 ${slot} 版本不匹配`);
       return data;
     } catch (e) {
       console.error('加载失败:', e);
       return null;
     }
+  }
+
+  // Build 43：导出——读原文 → 解析 → 规范化（V1 升 V2）；不可读/版本不支持返回 null
+  static exportSlotRaw(slot) {
+    try {
+      const raw = localStorage.getItem(SAVE_PREFIX + slot);
+      if (!raw) return null;
+      return normalizeSaveData(JSON.parse(raw));
+    } catch (e) {
+      console.error('导出失败:', e);
+      return null;
+    }
+  }
+
+  // Build 43：导入——把已净化的存档写回槽位（slot 字段改写为目标槽）
+  // 成功返回 true；容量不足返回 'quota'；其它失败返回 'write-failed'
+  static importData(slot, data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return 'write-failed';
+    try {
+      localStorage.setItem(SAVE_PREFIX + slot, JSON.stringify({ ...data, slot }));
+      return true;
+    } catch (e) {
+      if (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)) return 'quota';
+      console.error('导入失败:', e);
+      return 'write-failed';
+    }
+  }
+
+  // Build 43：槽位原文长度（字符数），供容量预检与摘要
+  static rawSize(slot) {
+    const raw = localStorage.getItem(SAVE_PREFIX + slot);
+    return raw ? raw.length : 0;
   }
 
   static hasSave(slot) {

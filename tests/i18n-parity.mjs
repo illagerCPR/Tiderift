@@ -31,6 +31,7 @@ import { WAYMARK_STAGES } from '../src/core/Waymarks.js';
 import { BiomeNames } from '../src/world/biomes.js';
 import { TerrainGenerator } from '../src/world/terrain.js';
 import { AetherGenerator } from '../src/world/dimensions/aether.js';
+import { SAVE_IMPORT_ERROR_KEYS } from '../src/core/SaveTransfer.js';
 import { NetherGenerator } from '../src/world/dimensions/nether.js';
 import { EndGenerator } from '../src/world/dimensions/end.js';
 import { ok, finish } from './harness.mjs';
@@ -75,6 +76,8 @@ for (const [, label, desc] of BEACON_EFFECTS) { dynamicKeys.add(label); dynamicK
 addAll(Object.values(CATEGORY_LABEL_KEYS));
 // B34-B：航标三阶段的标题与说明走 t(def.title)/t(def.hint) 动态路径
 for (const def of WAYMARK_STAGES) { dynamicKeys.add(def.title); dynamicKeys.add(def.hint); }
+// B43：存档导入失败码文案走 t(SAVE_IMPORT_ERROR_KEYS[code]) 动态路径
+addAll(Object.values(SAVE_IMPORT_ERROR_KEYS));
 
 const master = new Set([...staticKeys, ...dynamicKeys]);
 ok(master.size > 100, 'master key count sane (got ' + master.size + ')');

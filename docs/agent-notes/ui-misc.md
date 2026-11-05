@@ -240,3 +240,28 @@
 - **溢出裁顶（经典 flex 陷阱）**：容器是 `display:flex; justify-content:center; overflow-y:auto`——内容高于视口时，flex 居中会**同时裁掉上下两端且滚不回顶部**。改为 `justify-content:flex-start` + 面板 `margin:auto 0`：有剩余空间时自动边距居中，溢出时退化为置顶可滚。顺带纵向紧凑一档（行 padding 10→8、网格 gap 8→7、组间距 16→12、标题 16→12），800px 高视口整页放得下。
 - **自动跳跃行**：`Settings.autoJump`（默认 true）→ `applySettings` 写 `game.physics.autoJump`；行在「音频与操作」组首位，点击翻转并即存。物理侧语义见 `docs/agent-notes/survival-items.md` 的 B42 节。
 - 回归：`tests/build42-panel-settings.mjs` ②/④段（设置读写 + 更名与溢出参数绊线 + 10 包键退休断言）。
+
+## Build 43 批次（2026-11-05 交付）—— 单人存档导出 / 导入（.tidersave）
+
+### 数据层（`src/core/SaveTransfer.js` + `SaveSystem` 增补）
+
+- 文件 = **gzip(信封 JSON)**：`{ format:'tiderift-save', fileVersion:1, app, build, exportedAt, slot, save }`；`save` 即 localStorage 内同一形状，**原样搬运**（未知字段不丢，跨版本最稳）。
+- 识别顺序：前两字节 `1f 8b` → gzip 解压；否则按 UTF-8 文本解析。信封认 `format`；无信封但顶层有 `version` + `seed`/`gamemode` 认**裸存档**（兼容手工 `.json`）；都不是 → `not-a-save`。
+- **V1→V2 迁移抽成 `normalizeSaveData`**：`SaveSystem.load` 与导入共用单点，别再写第二份。
+- **跨版本拒绝**：`save.version` 1/2 可入（V1 自动迁移）；`build > BUILD` 一律拒绝——旧客户端没有新方块 ID，区块网格 `BlockRegistry.getById` 拿到 undefined 会抛。裸档无 build 视作 0。
+- **解压上限 32MB**（`DecompressionStream` + reader 累计，超限 `cancel()` 并抛 `too-large`）：防的是压缩炸弹，不是文件大小。
+- **净化**：只修已知字段、保留未知字段；物品名必须在 `ItemRegistry` 或 `BlockRegistry`（方块名也是合法背包名）；数量按 `item.stack` 钳位、`<=0` 丢弃；坐标键正则 + ID 0..255 且已注册（**id 0=空气必须保留**，它是挖空记录）；维度白名单；`__proto__`/`prototype`/`constructor` 跳过且用 `Object.create(null)` 构造。
+- `SaveSystem.importData` 改写 `slot` 字段并 catch `QuotaExceededError` → 返回 `'quota'`（不抛）。
+- 无 `CompressionStream` 时 `buildSaveFile` 自动降级为未压缩 `.json`；导入端两种都认。
+
+### UI（`MenuScreen` 单人页）
+
+- 槽位行 `[导出][删除]`；页内 `[⬆ 导入存档]` + 隐藏 `input[type=file]`；导入弹窗显示摘要与 6 个槽位按钮（空/覆盖），覆盖已有槽走 `confirm` 二次确认。
+- **槽位点击守卫改成 `e.target.closest('button')`**：原实现只排除 `.del-btn`，新增导出按钮会顺带触发开局。
+- 导出用 `a[download]` + `URL.createObjectURL`，**必须 `revokeObjectURL`**（对象 URL 泄漏由 `leak-guards` 盯）。
+- 失败码 → 文案键 `SAVE_IMPORT_ERROR_KEYS`（由 `SaveTransfer` 导出）；`tests/i18n-parity.mjs` 动态键表登记，否则覆盖审计红。
+
+### 验证
+
+- 回归：`tests/build43-save-transfer.mjs`（gzip 往返 / magic 三分支 / 裸档兼容 / V1 迁移 / 版本与跨版本拒绝 / 六类脏数据净化 / 原型污染 / 解压炸弹 / 文件名 / `SaveSystem` 读写与配额 / 菜单接线 / i18n 10 包 / BUILD 钉值）。
+- 浏览器手测（Linux + `playwright-cli` + 系统 Chrome，WebGL 可用）：真实存档导出下载 → 上传导入到空槽 → 覆盖确认（取消 / 接受）→ 更新版本文件拒绝 → 垃圾文件提示。

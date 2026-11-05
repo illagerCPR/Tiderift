@@ -48,6 +48,7 @@ PURE_NODE_SUITES=(
     build41-skin-candidates    # B41 按用户名取皮肤候选链回归（纯 node：Pages 不再试 3001/镜像顺序/去重/编码/混合内容约束）
     build41-soul-camera        # B41 灵魂出窍回归（纯 node：位姿分离/相机跟随/穿墙/退出复原/门控与区块锚点绊线）
     build42-panel-settings     # B42 命令面板布局 + 自动跳跃设置 + 设置更名（纯 node：物理开关/AI 不受影响/布局与 i18n 绊线）
+    build43-save-transfer      # B43 单人存档导出/导入（纯 node：gzip 信封/裸档兼容/V1 迁移/净化/防炸弹/容量/菜单接线/i18n）
     end-dragon                 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
     end-gateway                # 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
     end-city                   # 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）

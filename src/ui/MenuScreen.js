@@ -1,5 +1,9 @@
 // MenuScreen.js -- 主菜单（主页 / 单人游戏 / 局域网游戏 三页导航）+ 石质按钮
 import { SaveSystem } from '../core/SaveSystem.js';
+import {
+  buildSaveFile, decodeSaveFile, sanitizeSaveData, summarize, formatBytes,
+  droppedCount, SaveTransferError, SAVE_IMPORT_ERROR_KEYS,
+} from '../core/SaveTransfer.js';
 import { BIOME_SCALES, DEFAULT_BIOME_SCALE, safeBiomeScale } from '../world/biomes.js';
 import { ensureStoneStyles } from './StoneStyle.js';
 import { VERSION_LABEL } from '../version.js';
@@ -25,6 +29,12 @@ const MODE_COLOR = {
   spectator: { bg: '#4a4a8a', border: '#2a2a5a' }
 };
 const DIM_LABEL = { overworld: '主世界', nether: '下界', end: '末地', aether: '天域' };
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 
 // ---------- 石质按钮 ----------
 // Build 4：样式提取到共享模块 StoneStyle.js（全界面统一 .cw-stone-btn），此处仅注入
@@ -72,6 +82,12 @@ export class MenuScreen {
         this._probeLan();
         return;
       }
+      // Build 43：导入存档 —— 触发隐藏的文件选择器
+      if (btn.id === 'import-save-btn') {
+        const input = this.el.querySelector('#import-file');
+        if (input) input.click();
+        return;
+      }
       // Build 24：LAN 默认服务器设置——显式保存（输入框 change 只探测不落盘）
       if (btn.id === 'lan-default-btn') {
         const input = this.el.querySelector('#lan-host-input');
@@ -100,6 +116,11 @@ export class MenuScreen {
     // Build 24：LAN 默认服务器设置——IP 输入框变更只即时探测（保存走「设置为默认」按钮；
     // change 冒泡 + 事件委托同样免重绑）
     this.el.addEventListener('change', (e) => {
+      // Build 43：选择存档文件后读取/解析（异步，失败走行内提示）
+      if (e.target && e.target.id === 'import-file') {
+        this._importFromFile(e.target);
+        return;
+      }
       if (e.target && e.target.id === 'lan-host-input') {
         const host = normalizeLanHost(e.target.value);
         if (host != null) {
@@ -233,6 +254,8 @@ export class MenuScreen {
               <div style="font-size:11px; color:#bbb;">${time} · ${t('种子 {seed}', { seed: s.seed })}${s.cheatsEnabled ? ` · ${t('命令已启用')}` : ''}</div>
               ${s.finaleDone ? `<div style="font-size:12px; color:#ffd98a; letter-spacing:1px; text-shadow: 0 0 8px rgba(255,200,90,0.4);">✦ ${t('已通关 · 潮归其位')} ✦</div>` : ''}
             </div>
+            <button class="cw-stone-btn" data-export="${s.slot}" style="
+              color:#fff; cursor:pointer; padding:4px 10px; font-size:12px;">${t('导出')}</button>
             <button class="del-btn cw-stone-btn danger" data-del="${s.slot}" style="
               color:#fff; cursor:pointer; padding:4px 10px; font-size:12px;">${t('删除')}</button>
           </div>`;
@@ -274,6 +297,11 @@ export class MenuScreen {
       <div style="font-size:12px; color:#aaa; margin-bottom:14px;">${t('选择存档继续，或点击空槽新建世界')}</div>
       <div style="display:flex; flex-direction:column; margin-bottom:16px;">
         ${this._slotsHtml()}
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; width:460px; margin-bottom:14px;">
+        <button id="import-save-btn" class="cw-stone-btn" style="padding:8px 16px; font-size:13px;">${t('⬆ 导入存档')}</button>
+        <input type="file" id="import-file" accept=".tidersave,.json,application/gzip,application/json" style="display:none" />
+        <span id="single-hint" style="font-size:12px; color:#9cf;"></span>
       </div>
       <div style="font-size:12px; color:#aaa; margin-bottom:6px;">${t('—— 新建游戏设置（点击空槽时使用）——')}</div>
       <div id="mc-seed" style="margin-bottom: 10px;">
@@ -321,10 +349,10 @@ export class MenuScreen {
       });
     }
 
-    // 槽点击：继续或新建
+    // 槽点击：继续或新建（槽内按钮点击不触发开局）
     this.el.querySelectorAll('.slot').forEach(slotEl => {
       slotEl.addEventListener('click', (e) => {
-        if (e.target.classList.contains('del-btn')) return;
+        if (e.target.closest('button')) return;
         const slot = parseInt(slotEl.dataset.slot);
         if (SaveSystem.hasSave(slot)) {
           const data = SaveSystem.load(slot);
@@ -347,6 +375,123 @@ export class MenuScreen {
           this.render();
         }
       });
+    });
+
+    // Build 43：槽位导出（生成 gzip 单文件并触发下载）
+    this.el.querySelectorAll('[data-export]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._exportSlot(parseInt(btn.dataset.export, 10));
+      });
+    });
+  }
+
+  // ---------- Build 43：存档导出 / 导入 ----------
+  _setSingleHint(text, color = '#9cf') {
+    const el = this.el.querySelector('#single-hint');
+    if (el) { el.textContent = text; el.style.color = color; }
+  }
+
+  // 导出：原始存档 → 规范化 → gzip 信封 → 触发浏览器下载
+  async _exportSlot(slot) {
+    const data = SaveSystem.exportSlotRaw(slot);
+    if (!data) {
+      this._setSingleHint(t('导出失败：存档不可读'), '#f88');
+      return;
+    }
+    try {
+      const file = await buildSaveFile(data, { slot });
+      const blob = new Blob([file.bytes], { type: file.mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // 下载触发后回收对象 URL（延迟给浏览器读取时间）
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this._setSingleHint(t('已导出：{name}', { name: file.fileName }), '#7fe27f');
+    } catch (e) {
+      console.error('导出失败:', e);
+      this._setSingleHint(t('导出失败'), '#f88');
+    }
+  }
+
+  // 导入：文件 → 解压/解析 → 净化 → 摘要弹窗
+  async _importFromFile(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    this._setSingleHint(t('读取存档中…'), '#9cf');
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const parsed = await decodeSaveFile(bytes);
+      const { data, dropped } = sanitizeSaveData(parsed.save);
+      this._setSingleHint('');
+      this._showImportDialog(data, dropped, file.name, file.size);
+    } catch (e) {
+      const code = e instanceof SaveTransferError ? e.code : 'unreadable';
+      this._setSingleHint(t(SAVE_IMPORT_ERROR_KEYS[code] || SAVE_IMPORT_ERROR_KEYS.unreadable), '#f88');
+    }
+  }
+
+  _showImportDialog(data, dropped, fileName, fileSize) {
+    const summary = summarize(data);
+    const saves = SaveSystem.listSaves();
+    const modeLabel = t(MODE_LABEL[summary.gamemode] || summary.gamemode);
+    const dimLabel = t(DIM_LABEL[summary.dimension] || summary.dimension);
+    const time = summary.timestamp
+      ? new Date(summary.timestamp).toLocaleString(getLocale(), { hour12: false })
+      : t('未知');
+    const cleaned = droppedCount(dropped);
+
+    const slotBtns = saves.map((s) => {
+      const base = 'padding:8px 12px; font-size:13px; min-width:130px;';
+      return s.empty
+        ? `<button class="cw-stone-btn" data-target="${s.slot}" style="${base}">${t('槽 {n}（空）', { n: s.slot })}</button>`
+        : `<button class="cw-stone-btn" data-target="${s.slot}" style="${base} border-color:#8a4a4a;">${t('槽 {n}（覆盖）', { n: s.slot })}</button>`;
+    }).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'save-import-dialog';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:95; background:rgba(0,0,0,0.62); display:flex; align-items:center; justify-content:center;';
+    overlay.innerHTML = `
+      <div style="width:560px; max-width:92vw; max-height:88vh; overflow-y:auto; background:rgba(24,28,34,0.97); border:2px solid #666; padding:18px 22px; color:#eee; font-family:'Segoe UI','Microsoft YaHei',sans-serif;">
+        <div style="font-size:19px; font-weight:bold; margin-bottom:10px;">${t('导入存档')}</div>
+        <div style="font-size:12px; color:#bbb; line-height:1.8; margin-bottom:12px; word-break:break-all;">
+          ${t('文件：{name}', { name: escapeHtml(fileName) })}<br/>
+          ${t('存档摘要：{mode} · {dim} · {time}', { mode: modeLabel, dim: dimLabel, time })}<br/>
+          ${t('种子 {seed}', { seed: summary.seed })} · ${formatBytes(fileSize)} · ${t('方块 {n}', { n: summary.blocks })}
+          ${cleaned > 0 ? `<br/><span style="color:#fc5;">${t('已清理 {n} 条异常数据', { n: cleaned })}</span>` : ''}
+        </div>
+        <div style="font-size:13px; margin-bottom:6px; color:#ddd;">${t('选择导入到哪个存档槽')}</div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">${slotBtns}</div>
+        <div id="import-dialog-hint" style="font-size:12px; color:#f88; min-height:16px; margin-bottom:8px;"></div>
+        <div style="text-align:right;">
+          <button id="import-cancel" class="cw-stone-btn" style="padding:8px 18px; font-size:13px;">${t('取消')}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const hintEl = overlay.querySelector('#import-dialog-hint');
+
+    overlay.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.id === 'import-cancel') { overlay.remove(); return; }
+      if (!btn.dataset.target) return;
+      const slot = parseInt(btn.dataset.target, 10);
+      const existing = saves.find((s) => s.slot === slot);
+      if (existing && !existing.empty && !confirm(t('导入将覆盖槽 {n} 的存档，确定继续吗？', { n: slot }))) return;
+      const res = SaveSystem.importData(slot, data);
+      if (res === true) {
+        overlay.remove();
+        this.render();
+        this._setSingleHint(t('已导入到槽 {n}', { n: slot }), '#7fe27f');
+      } else {
+        hintEl.textContent = t(SAVE_IMPORT_ERROR_KEYS[res] || SAVE_IMPORT_ERROR_KEYS['write-failed']);
+      }
     });
   }
 
