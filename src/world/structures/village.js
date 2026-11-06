@@ -5,7 +5,7 @@ import { Biomes } from '../biomes.js';
 import { blockId } from './StructureManager.js';
 import { fillBox, wallsBox, clearBox, floorBox, foundation } from './StructureKit.js';
 import { steleStack } from '../steles.js';
-import { doorId } from '../../core/blockShape.js';
+import { doorId, bedId } from '../../core/blockShape.js';
 
 const CLEAR_TOP = 7;   // 建筑足迹上方清空高度（容纳树冠）
 const ROAD_LEN = 28;   // 道路臂长（自井心）
@@ -44,7 +44,7 @@ export function solveVillage(rng, ax, groundY, az, gen) {
     glass: blockId('glass'), door: blockId('oak_door'), torch: blockId('torch'),
     hay: blockId('hay_block'), water: blockId('water'), cobble: blockId('cobblestone'),
     log: blockId('oak_log'), pumpkin: blockId('pumpkin'),
-    bed: blockId('white_bed'), craft: blockId('crafting_table'),
+    craft: blockId('crafting_table'),
     furnace: blockId('furnace'), wool: blockId('white_wool'), chest: blockId('chest'),
     farmland: blockId('farmland'),
   };
@@ -164,7 +164,12 @@ export function solveVillage(rng, ax, groundY, az, gen) {
     // 屋内陈设（贴后墙，按 kind 变化）
     const bz = z1 - 1;
     setAt(x0 + 1, groundY + 1, bz, ID.torch);
-    if (kind === 'bed' || kind === 'big') setAt(x1 - 1, groundY + 1, bz, ID.bed);
+    // B48：床 = 头尾双格（此前只写一格床尾，看着像单人沙发）。床头贴后墙、床尾朝屋内，
+    // 坐标写死 → 不消耗 rng，旧 seed 的村庄布局与其它陈设顺序逐格不变
+    if (kind === 'bed' || kind === 'big') {
+      setAt(x1 - 1, groundY + 1, bz, bedId('head', 's'));
+      setAt(x1 - 1, groundY + 1, bz - 1, bedId('foot', 's'));
+    }
     if (kind === 'craft' || kind === 'big') {
       setAt(x0 + 1, groundY + 1, z0 + 1, ID.craft);
       setAt(x0 + 2, groundY + 1, z0 + 1, ID.furnace);

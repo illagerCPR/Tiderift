@@ -58,6 +58,7 @@ export class EntityPhysics {
             if (id === 0) continue;
             const def = BlockRegistry.getById(id);
             if (!def || !def.solid) continue;
+            if (def.passable) continue; // B48：开门态门板只画不挡（村民/僵尸/玩家同一口径）
             // B27 形制方块（门/床）：碰撞收缩到格内 AABB
             const box = def.shape ? cellBox(def, bx, by, bz) : null;
             const bX0 = box ? box[0] : bx, bY0 = box ? box[1] : by, bZ0 = box ? box[2] : bz;

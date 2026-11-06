@@ -59,6 +59,7 @@ PURE_NODE_SUITES=(
     build47-mob-death          # B47 类原版死亡动画（纯 node：90° 侧倒 sqrt 缓动/单帧推进/躺平姿态语义/去缩放自旋淡出）
     build47-fly-lean           # B47 创造飞行前倾过渡（纯 node：起步与停止阻尼/帧率无关/模式切换连续/旧直映写法绊线）
     build47-grass-path-tex     # B47 草径改形"发黄的草方块"（纯 node：黄化草色/草唇 2~4px/与草方块与土区分/注册零漂移）
+    build48-bed-door           # B48 村庄双格床 + 开门可通行（纯 node：床头尾配对/开门 passable 窗口≥0.38/关门挡人/小台阶不受自动跳跃开关）
     end-dragon                 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
     end-gateway                # 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
     end-city                   # 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）

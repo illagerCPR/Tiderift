@@ -14,6 +14,7 @@ const WATER_EXIT_VY_GATE = -0.6; // 助推门限：下沉趋势（潜游/坠水�
 export const GLIDE_GRAVITY = -9;  // 鞘翅滑翔重力（约为落体的 1/3.5；Game._updateGliding 升力上限也引用）
 const GLIDE_MAX_FALL = -3.9;    // 滑翔下沉速度上限（m/s，原版平飞下沉口径）
 const GLIDE_WALL_CRASH_SPEED = 8; // 滑翔撞墙的最小水平冲击速度（低于此仅停下不受伤）
+const SMALL_STEP = 0.6;         // B48：原版步高——≤ 此值的小台阶恒可踏越，不受「自动跳跃」开关门控
 
 export class Physics {
   constructor(world) {
@@ -123,6 +124,8 @@ export class Physics {
           if (id === 0) continue;
           const def = BlockRegistry.getById(id);
           if (!def || !def.solid) continue;
+          // B48：开门态门板只画不挡（passable）——3/16 门板会把 1 格门洞的通行窗口压到 0.2125
+          if (def.passable) continue;
           // B27 形制方块（门/床）：碰撞收缩到格内 AABB（cellBox 仅 shape 方块分配）
           const box = def.shape ? cellBox(def, bx, by, bz) : null;
           const bX0 = box ? box[0] : bx, bY0 = box ? box[1] : by, bZ0 = box ? box[2] : bz;
@@ -171,17 +174,20 @@ export class Physics {
           maxBlockTopY - entity.position.y > 0 &&
           maxBlockTopY - entity.position.y <= 1.0 + 0.01) {
         const targetY = maxBlockTopY + 0.0001;
+        // B48：≤ 原版步高（0.6）的小台阶恒可踏越，不受「自动跳跃」开关门控——
+        // 草径顶面 15/16、床面 9/16 都属于这一档；否则关掉自动跳跃连村屋门槛都进不去。
+        const smallStep = maxBlockTopY - entity.position.y <= SMALL_STEP + 0.01;
         if (entity.bodyInWater && !entity.flying) {
           // 水中：岸沿可越且顶部有空间、且无下沉意图（潜游/坠水掠墙不打断）→ 上浮助推
           if (entity.velocity.y > WATER_EXIT_VY_GATE &&
               this._yClearAt(entity, half, height, targetY)) {
             entity.velocity.y = Math.max(entity.velocity.y, WATER_EXIT_BOOST);
           }
-        } else if ((entity.isMob || this.autoJump) &&
+        } else if ((smallStep || entity.isMob || this.autoJump) &&
                    this._yClearAt(entity, half, height, targetY)) {
           // 陆上：抬升 y 到阻挡方块顶面，保留水平移动
-          // B42：玩家关闭"自动跳跃"后不再踏越，走下面的碰撞回退（需手动跳）；
-          //      水中助推分支不受本开关影响（上岸是生存必需，不是自动跳跃）
+          // B42：玩家关闭"自动跳跃"后整格台阶不再踏越，走下面的碰撞回退（需手动跳）；
+          //      水中助推与 ≤0.6 的小台阶不受本开关影响
           entity.position.y = targetY;
           return;
         }
@@ -244,6 +250,7 @@ export class Physics {
           if (id === 0) continue;
           const def = BlockRegistry.getById(id);
           if (!def || !def.solid) continue;
+          if (def.passable) continue; // B48：开门态门板不挡抬升（否则 1/16 门槛都迈不上去）
           // B27：形制方块按格内盒判定（床 9/16 顶上不算阻挡，auto-jump 才能直接走上床）
           const box = def.shape ? cellBox(def, bx, by, bz) : null;
           if (box) {

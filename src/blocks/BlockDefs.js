@@ -1547,6 +1547,10 @@ function regDoorFamily(base, hardness, extra = {}) {
           textures: base,
           part: `door_${half}`, facing, open, baseBlock: base,
           shape: open ? doorOpenShape(facing) : doorClosedShape(facing),
+          // B48：开门态不参与碰撞——1 格门洞里 3/16 门板会把 0.6 宽玩家的通行窗口压到 0.2125，
+          // 实战几乎过不去（原版玩家靠瞄准硬挤，本作手感更差）。solid 保持 true，
+          // 渲染/剔除/AO/体素光/准星选取一律不变，只有 Physics 侧跳过 passable。
+          passable: open,
           ...(extra.def || {}),
         }, { [base]: extra.texSvg });
       }

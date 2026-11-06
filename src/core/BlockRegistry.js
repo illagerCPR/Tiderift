@@ -62,6 +62,8 @@ function register(def) {
     ambientParticles: def.ambientParticles ?? false,
     // B36 F-1：可放置朝向家族的朝向语义反转（漏斗出料口背对玩家）；缺省 = 正面朝玩家
     facingAway: def.facingAway ?? false,
+    // B48：只跳过碰撞的方块（开门态门板）。solid 仍为 true → 渲染/剔除/光照/选取不变
+    passable: def.passable ?? false,
     color: def.color || null
   };
   blocks.set(id, block);
