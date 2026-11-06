@@ -64,6 +64,8 @@ function register(def) {
     facingAway: def.facingAway ?? false,
     // B48：只跳过碰撞的方块（开门态门板）。solid 仍为 true → 渲染/剔除/光照/选取不变
     passable: def.passable ?? false,
+    // B48：爆炸抗性（≥ Explosion.BLAST_PROOF_RESIST 免疫；黑曜石 1200）
+    blastResist: def.blastResist ?? 0,
     color: def.color || null
   };
   blocks.set(id, block);

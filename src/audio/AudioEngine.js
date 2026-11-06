@@ -193,6 +193,27 @@ class AudioEngine {
     this._tone({ dur: 0.09, from: 520, to: 880, type: 'sine', gain: 0.22 });
   }
 
+  // —— B48 TNT ——
+
+  // 引信点燃：高频"嘶"一声 + 一点低频闷响（24 格距离衰减）
+  fuseLight(dist = 0) {
+    if (!this.ctx) return;
+    const att = Math.max(0, 1 - dist / 24);
+    if (att <= 0) return;
+    this._noise({ dur: 0.5, filter: 'highpass', freq: 3200, q: 0.8, gain: 0.16 * att, rate: 1.1 });
+    this._tone({ dur: 0.18, from: 140, to: 90, type: 'triangle', gain: 0.08 * att });
+  }
+
+  // 爆炸：低频轰鸣（95→28Hz 下滑）+ 低通噪声主体 + 开场的锐利高频（24 格距离衰减）
+  explosion(dist = 0) {
+    if (!this.ctx) return;
+    const att = Math.max(0, 1 - dist / 24);
+    if (att <= 0) return;
+    this._tone({ dur: 1.1, from: 95, to: 28, type: 'sine', gain: 0.55 * att, attack: 0.005 });
+    this._noise({ dur: 1.2, filter: 'lowpass', freq: 420, q: 1.2, gain: 0.6 * att, attack: 0.004 });
+    this._noise({ when: 0.02, dur: 0.35, filter: 'highpass', freq: 1800, q: 0.7, gain: 0.28 * att });
+  }
+
   // —— 怪物语音（A-②）：按类型预设合成，距离衰减，引擎全局限频 ——
 
   // 全局限频门（key + 最小间隔秒）：群怪同屏时叫声不至于糊成一团

@@ -1190,6 +1190,8 @@ export class NetworkManager {
         cs.hide();
       }
     }
+    // B48：远端点燃态落地 → 本端登记同一条 4s 引信（点燃/取消都由这个入口收口）
+    if (this.game.tnt) this.game.tnt.onRemoteBlockChange(x, y, z, id);
   }
 
   // 绑定世界：World.setBlock 钩子统一上报（挖掘/放置/爆炸/活塞都走这一入口，含防回环）
@@ -1197,7 +1199,11 @@ export class NetworkManager {
     world.onLocalBlockChange = (x, y, z, id) => {
       if (this._applyingRemote) return; // 远端落地不回环
       // B26：流体模拟产生的改动走批量合并通道；玩家操作保持单条即时
-      if (world.fluidSim && world.fluidSim.writing) { this.queueFluidBlock(x, y, z, id); return; }
+      // B48：TNT 爆炸一次会清掉上百格，同走合批——否则瞬间打满 rateLimits.block(900/min) 被丢包
+      if ((world.fluidSim && world.fluidSim.writing) || world._batchBlockWrites) {
+        this.queueFluidBlock(x, y, z, id);
+        return;
+      }
       this.sendBlock(x, y, z, id);
     };
   }

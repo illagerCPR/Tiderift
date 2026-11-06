@@ -11,6 +11,8 @@ export class Player {
     this.camera = camera;
     this.position = new THREE.Vector3(0, 100, 0);
     this.velocity = new THREE.Vector3();
+    // B48：外部冲量通道（爆炸击退）。地面移动每帧用输入覆写 velocity.x/z，冲量必须单独叠加再衰减
+    this.knockback = new THREE.Vector3();
     this.yaw = 0;
     this.pitch = 0;
     this.onGround = false;

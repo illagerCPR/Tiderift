@@ -20,6 +20,7 @@ import { PortalSystem } from './PortalSystem.js';
 import { SoulView } from './SoulView.js';
 import { AetherFinale } from './AetherFinale.js';
 import { InteractionController } from './InteractionController.js';
+import { TntSystem } from './TntSystem.js';
 import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
@@ -394,6 +395,7 @@ export class Game {
     if (this.chatBox) { this.chatBox.dispose(); this.chatBox = null; }
     this.raycast = null;
     this.redstone = null;
+    if (this.tnt) { this.tnt.dispose(); this.tnt = null; }
     if (this.physics) this.physics.world = null;
     this.world = null;
   }
@@ -493,16 +495,10 @@ export class Game {
     // 死亡屏的统一入口仍由 updateSurvival 末段处理，这里不重设 onDeath
     this.raycast = new Raycast(this.world);
     this.redstone = new RedstoneSystem(this.world);
-    this.redstone.onExplosion = (x, y, z, radius) => {
-      const dx = this.player.position.x - x;
-      const dy = this.player.position.y + 1 - y;
-      const dz = this.player.position.z - z;
-      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-      if (dist < radius * 1.5) {
-        const dmg = Math.max(0, (radius * 1.5 - dist) * 8);
-        this.player.hurt(dmg, 'explosion', true);
-      }
-    };
+    // B48：TNT 引信/爆炸/表现（新建型：随世界销毁）。红石只管"通电"这一件事，
+    // 点燃后的一切（引信、破坏、伤害、特效、联机批量写）都收口在 TntSystem。
+    this.tnt = new TntSystem(this);
+    this.redstone.onTntPowered = (x, y, z) => this.tnt.prime(x, y, z);
     
     // 恢复修改的方块/容器：V2 按维度分桶装入；V1 旧档字段直接进当前维度桶（迁移）
     if (loadData && (loadData.dimensionBlocks || loadData.dimensionContainers)) {
@@ -546,10 +542,7 @@ export class Game {
     // 粒子系统（新建型：每次 start 重建，_disposeWorld 释放）
     this.particles = new ParticleSystem(this.renderer.scene, atlasTexture, atlasUV, 0.12);
     this.fireParticles = new ParticleSystem(this.renderer.scene, atlasTexture, atlasUV, 0.09);
-    // 爆炸销毁方块时的碎屑粒子出口（TNT / 苦力怕爆炸共用）
-    this.redstone.onBlockDestroyed = (x, y, z, def) => {
-      if (this.particles) this.particles.burstBlockBreak(x + BLOCK_CENTER, y, z + BLOCK_CENTER, def, this.world, 10);
-    };
+    // 爆炸销毁方块时的碎屑粒子出口（苦力怕/床爆炸；TNT 的碎屑由 TntSystem 自己出，带块数上限）
     this.mobManager.onBlockDestroyed = (x, y, z, def) => {
       if (this.particles) this.particles.burstBlockBreak(x + BLOCK_CENTER, y, z + BLOCK_CENTER, def, this.world, 8);
     };
@@ -1660,6 +1653,18 @@ export class Game {
         }
       }
       
+      // B48：外部冲量（爆炸击退）叠加在输入速度之上再衰减——输入每帧覆写 velocity.x/z，
+      // 所以冲量必须走独立通道，否则爆炸瞬间就被下一帧的 move 覆盖掉（表现为"推不动"）
+      const kb = this.player.knockback;
+      if (kb && (kb.x !== 0 || kb.z !== 0)) {
+        this.player.velocity.x += kb.x;
+        this.player.velocity.z += kb.z;
+        const decay = Math.pow(0.02, dt); // 帧率无关：0.5s 衰减到 14%
+        kb.x *= decay; kb.z *= decay;
+        if (Math.abs(kb.x) < 0.05) kb.x = 0;
+        if (Math.abs(kb.z) < 0.05) kb.z = 0;
+      }
+
       this.physics.collide(this.player, dt);
       // 气流抬升（批次 B）：物理重力落地后追加升力（净加速 +13 m/s²，钳 +6 m/s）
       if (this._inUpdraft && !this.controls.isSneaking() &&
@@ -1870,6 +1875,8 @@ export class Game {
     if (this.redstone) {
       this.redstone.update(dt);
     }
+    // B48：TNT 引信推进（到期即爆炸；引信是运行期状态，区块未加载时冻结）
+    if (this.tnt) this.tnt.update(dt);
 
     // 联机网络更新：本地状态上报 + 远端玩家插值
     if (this.networkMode && this.net) {

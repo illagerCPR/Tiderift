@@ -29,7 +29,8 @@ export class RedstoneSystem {
     this.pendingUpdates = new Map(); // 待处理坐标："x,y,z" -> [x,y,z]（BFS 复用入队坐标，免逐键反解析）
     this.buttonTimers = new Map(); // "x,y,z" -> 剩余激活时间
     this.onStateChange = null;    // 红石源状态回调 (x,y,z,on) => void，由 Game 注入（联机广播）
-    this.onBlockDestroyed = null; // TNT 爆炸销毁方块回调 (x,y,z,def)，由 Game 注入（碎屑粒子）
+    // B48：TNT 通电回调 (x,y,z) => void，由 Game 注入 → TntSystem.prime（引信/爆炸/表现都归 TntSystem）
+    this.onTntPowered = null;
   }
 
   key(x, y, z) { return posKey(x, y, z); }
@@ -182,7 +183,8 @@ export class RedstoneSystem {
       } else if (def.name === TNT) {
         const power = this.getPower(x, y, z);
         if (power > 0) {
-          this.detonateTNT(x, y, z);
+          // B48：通电只"点燃"（交给 TntSystem 走 4s 引信），不再当帧爆炸
+          if (this.onTntPowered) this.onTntPowered(x, y, z);
         }
       } else if (def.part === 'door_lower' || def.part === 'door_upper' || def.part === 'trapdoor') {
         // B27：门/活板门状态家族（状态 = ID 家族，任意半格/朝向/开合态都响应）
@@ -268,39 +270,6 @@ export class RedstoneSystem {
     this.world.setBlock(x, yLower, z, lid);
     this.world.setBlock(x, yLower + 1, z, uid);
     return true;
-  }
-
-  // TNT 爆炸
-  detonateTNT(x, y, z) {
-    // 移除 TNT 方块
-    this.world.setBlock(x, y, z, 0);
-    // 爆炸半径 4，破坏周围方块
-    const radius = 4;
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dz = -radius; dz <= radius; dz++) {
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist > radius) continue;
-          const bx = x + dx, by = y + dy, bz = z + dz;
-          const bid = this.world.getBlock(bx, by, bz);
-          if (bid === 0) continue;
-          const def = BlockRegistry.getById(bid);
-          if (!def || def.hardness < 0) continue;
-          // 连锁引爆其他 TNT
-          if (def.name === TNT) {
-            this.scheduleUpdate(bx, by, bz);
-            this.poweredBlocks.set(this.key(bx, by, bz), true);
-          } else {
-            this.world.setBlock(bx, by, bz, 0);
-            if (this.onBlockDestroyed) this.onBlockDestroyed(bx, by, bz, def); // 碎屑粒子出口（Game 注入）
-          }
-        }
-      }
-    }
-    // 通知 Game 执行爆炸特效和伤害
-    if (this.onExplosion) {
-      this.onExplosion(x + 0.5, y + 0.5, z + 0.5, radius);
-    }
   }
 
   // 检查方块是否被充能

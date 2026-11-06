@@ -134,6 +134,12 @@ export class World {
                 c.dirty = true;
               }
             }
+            // ④ B48 点燃态 TNT 不落盘：陈旧账本/联机快照里的 tnt_primed 归一化回 tnt（引信只是运行期状态）
+            if (sDef && sDef.name === 'tnt_primed') {
+              const tid = BlockRegistry.getId('tnt');
+              if (tid) { c.set(x, y, z, tid); c.dirty = true; }
+              continue;
+            }
             if (this.onCropBlockChange && isCropId(id)) {
               this.onCropBlockChange(baseX + x, y, baseZ + z, 0, id);
               continue;

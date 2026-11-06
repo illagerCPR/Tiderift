@@ -454,6 +454,16 @@ export class InteractionController {
             return CLICK_CONSUMED;
           }
         }
+        // B48 打火石点燃 TNT（原版主激活方式）：比传送门点火先判，手持打火石点 TNT 不再尝试点门
+        if (sel && sel.name === 'flint_and_steel' && targetDef && targetDef.name === 'tnt') {
+          if (g.tnt && g.tnt.prime(hit.block.x, hit.block.y, hit.block.z)) {
+            g.hand.swing();
+            audio.fuseLight(g.player.position.distanceTo(
+              new THREE.Vector3(hit.block.x + 0.5, hit.block.y + 0.5, hit.block.z + 0.5)));
+            g.controls.mouseRight = false;
+            return CLICK_CONSUMED;
+          }
+        }
         // 传送门点火：打火石右键黑曜石框→下界门 / 萤石框→天域门（迭代 M2）
         if (sel && sel.name === 'flint_and_steel' && targetDef) {
           if (g._tryLightPortal(hit, targetDef)) {

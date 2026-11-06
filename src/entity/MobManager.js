@@ -17,6 +17,7 @@ import { DROP_HALF, makeShadowMesh, makeCountSprite, updateCountSprite, attachDr
 import { applyEntityLight } from '../render/entityLight.js';
 import { raySphereHit } from '../player/Raycast.js';
 import { BLOCK_CENTER } from '../player/constants.js';
+import { blastDamage, blastKnockback, blastDir } from '../core/Explosion.js';
 
 const MAX_MOBS = 20;
 const MAX_PASSIVE = 12; // 被动动物上限（不含村民——村庄系统单独管理）
@@ -519,6 +520,46 @@ export class MobManager {
         this.spawnedEndCities.delete(m.home.x + ',' + m.home.z);
       }
     }
+  }
+
+  // B48 TNT：半径内怪物按距离衰减扣血 + 击退（各端本地结算，口径同 attackMob 的扣血/血条/音效，
+  // 但不走无敌帧、不触发末影人瞬移与中立激怒——爆炸不是"被谁打了一拳"）。返回命中数。
+  damageMobsInRadius(cx, cy, cz) {
+    if (!this.mobs || this.mobs.length === 0) return 0;
+    let hits = 0;
+    for (const mob of this.mobs) {
+      if (!mob || mob.dead || mob.dyingAnim) continue;
+      const dyBody = mob.position.y + mob.height * 0.5;
+      const dx = mob.position.x - cx, dy = dyBody - cy, dz = mob.position.z - cz;
+      const d = Math.hypot(dx, dy, dz);
+      const dmg = blastDamage(d);
+      if (!(dmg > 0)) continue;
+      hits++;
+      mob.health = Math.max(0, mob.health - dmg);
+      mob.playerHitAt = Date.now(); // 玩家击杀判定（5 秒内死亡 → XP 归属玩家）
+      if (mob.health <= 0) mob.dead = true;
+      mob.hitFlash = HIT_FLASH_DURATION;
+      const sndDist = this._playerPos ? this._playerPos.distanceTo(mob.position) : 10;
+      audio.mobHurt(mob.typeName, sndDist);
+      if (mob.dead) audio.mobDeath(mob.typeName, sndDist);
+      if (mob.healthBarSprite) {
+        mob.healthBarFadeTimer = HEALTH_BAR_FADE;
+        mob.healthBarSprite.visible = true;
+        if (mob.healthBarSprite.material) mob.healthBarSprite.material.opacity = 1;
+        this._updateHealthBar(mob);
+      }
+      // 击退：水平走既有 knockback 通道（chase/wander 每帧叠加），竖直直接给一记上抛；Boss 免疫
+      const kb = blastKnockback(d);
+      if (!(mob.type && mob.type.boss) && kb.h > 0) {
+        const dir = blastDir(dx, dy, dz);
+        if (dir) {
+          mob.knockback.x += dir.x * kb.h;
+          mob.knockback.z += dir.z * kb.h;
+        }
+        mob.velocity.y = Math.max(mob.velocity.y, kb.v);
+      }
+    }
+    return hits;
   }
 
   // 其它端攻击：本端同步扣血 + 受击反馈 + 位置校正（减少各端 AI 漂移）

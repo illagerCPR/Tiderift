@@ -950,7 +950,8 @@ reg('packed_ice', { hardness: 0.5 }, { packed_ice: iceTex(19, [138, 172, 222]) }
 reg('blue_ice', { hardness: 0.5 }, { blue_ice: iceTex(20, [110, 150, 222]) });
 reg('snow_block', { hardness: 0.2 }, { snow_block: noiseTex([246, 250, 252], 21, { dark: 0.97, light: 1.03, dProb: 0.1, lProb: 0.1 }) });
 reg('snow_layer', { transparent: true, hardness: 0.1 }, { snow_layer: noiseTex([246, 250, 252], 22, { dark: 0.97, light: 1.03, dProb: 0.1, lProb: 0.1 }) });
-reg('obsidian', { hardness: 12, tool: 'pickaxe', minTier: 4 }, { obsidian: obsidianTex(23) });
+// B48：黑曜石爆炸免疫（原版 blast resistance 1200）——爆炸只留坑、炸不掉它
+reg('obsidian', { hardness: 12, tool: 'pickaxe', minTier: 4, blastResist: 1200 }, { obsidian: obsidianTex(23) });
 
 // --- 矿石 ---
 reg('coal_ore', { hardness: 3, tool: 'pickaxe', minTier: 1 }, { coal_ore: oreTex([125, 125, 125], [42, 42, 42], 31) });
@@ -2602,6 +2603,51 @@ reg('grass_path', {
 }, {
   grass_path_top: grassPathTopTex(261),
   grass_path_side: grassPathSideTex(262),
+});
+
+// ── Build 48 点燃态 TNT（**文件末尾追加**，方块 ID 零漂移，取 223）──────────────────
+// 点燃 = tnt → tnt_primed（走既有 block_set 同步，各端本地跑同一条 4s 引信；见 player/TntSystem.js）。
+// 视觉：整块提亮的 TNT（红底 → 浅红），引信的白色脉冲由 TntSystem 的白光罩叠加，不写第二套方块状态。
+// baseBlock='tnt' → 挖掉仍掉 TNT 物品、且被 isTechnicalBlock 判为技术方块（不进创造栏）。
+function tntPrimedSidePx(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const f = 0.92 + hash2(x, y, seed) * 0.16;
+      let c = [226, 138, 124];
+      if (y <= 1 || y >= 14) c = [188, 104, 94];
+      px[y * 16 + x] = rgb(c, f);
+    }
+  }
+  fillRect(px, 0, 6, 15, 9, 'rgb(252,248,241)');
+  const ink = 'rgb(96,86,80)';
+  fillRect(px, 3, 7, 5, 7, ink); fillRect(px, 4, 8, 4, 9, ink);   // T
+  fillRect(px, 7, 7, 7, 9, ink); fillRect(px, 9, 7, 9, 9, ink); fillRect(px, 8, 8, 8, 8, ink); // N
+  fillRect(px, 11, 7, 13, 7, ink); fillRect(px, 12, 8, 12, 9, ink); // T
+  return pixelSvg(px);
+}
+
+function tntPrimedTopPx(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      px[y * 16 + x] = rgb([200, 126, 114], 0.92 + hash2(x, y, seed) * 0.16);
+    }
+  }
+  fillRect(px, 6, 6, 9, 9, rgb([238, 234, 228]));
+  fillRect(px, 7, 7, 8, 8, rgb([206, 196, 186]));
+  setPx(px, 7, 7, 'rgb(255, 245, 224)');
+  return pixelSvg(px);
+}
+
+reg('tnt_primed', {
+  displayName: 'TNT（已点燃）', hardness: 0, transparent: false, baseBlock: 'tnt',
+  icon: 'tnt_primed_side',
+  textures: { top: 'tnt_primed_top', side: 'tnt_primed_side', bottom: 'tnt_primed_bottom' },
+}, {
+  tnt_primed_top: tntPrimedTopPx(263),
+  tnt_primed_side: tntPrimedSidePx(264),
+  tnt_primed_bottom: noiseTex([188, 108, 98], 265, { dark: 0.9, light: 1.1 }),
 });
 
 export const BlockSVGDefinitions = svgMap;
