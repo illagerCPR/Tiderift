@@ -134,6 +134,7 @@ export class FirstPersonHand {
     this.pose.equip(); // B44：换手抬起动画
     const seq = ++this._buildSeq;
     this.itemGroup.clear(); // 模板几何/材质来自共享缓存，clone 不持有独立资源，无需 dispose
+    this._syncArmVisible(); // B49：手持物品即藏空手臂（不等异步建模，切手当帧生效）
     if (!name) return;
     const tpl = await buildHeldItemTemplate(name);
     if (seq !== this._buildSeq) return; // 期间又切换了物品，丢弃旧结果
@@ -141,7 +142,24 @@ export class FirstPersonHand {
       const m = tpl.clone();
       m.scale.set(0.20, 0.20, 0.20);
       this.itemGroup.add(m);
+    } else {
+      this.armMesh.visible = true; // 模板构建失败（未注册物品）：回退显示手臂，别让第一人称空成一片
     }
+  }
+
+  // B49：手持物品时隐藏空手臂——物品模型自己占位，手臂与方块/物品叠在一起会穿模；
+  // 空手仍显示皮肤手臂。只切 armMesh.visible，袖子（armOverlay）是它的子节点随之隐藏。
+  _syncArmVisible() {
+    if (this.armMesh) this.armMesh.visible = !this.currentName;
+  }
+
+  // B49/阶段10：换存档复位手持内容——currentName 回到"未初始化"，下一帧由 Game 按快捷栏重新建模；
+  // _buildSeq 自增丢弃上一存档在途的异步构建（否则旧世界的物品会被塞进新世界的手里）。
+  resetForWorld() {
+    this.currentName = undefined;
+    this._buildSeq++;
+    this.itemGroup.clear();
+    this.armMesh.visible = true; // 待下一帧按实际手持物判定
   }
 
   // 触发一次挥动（放置/食用/命中等瞬时机点调用；按住左键的连续挖掘由 update 自动驱动）
@@ -152,6 +170,7 @@ export class FirstPersonHand {
   // ctx: { moving, sprinting }（其余状态由本类直接读 game.player；B44 起新增跳跃/下落/游泳/换手/落地）
   update(dt, ctx = {}) {
     if (!this.visible) return;
+    this._syncArmVisible(); // B49：每帧自愈（currentName 是唯一真相，别处改状态也不会漏）
     // Build 22：体素光染色——火把/荧石照亮第一人称手臂（按玩家眼睛所在格，与怪物同一公式）
     // B46：二层袖子共用同一套染色（两个材质各自快照基色）
     if (this.game.world && this.game.player) {

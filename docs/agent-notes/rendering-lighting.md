@@ -125,3 +125,10 @@
   - 端盖 pz/nz：整条 4×12 压进 0.16 方盖。
 - **修法**：几何改 `BoxGeometry(0.16, 0.42, 0.16)`（长轴 Y，与原版模型同构）→ 用 `PlayerSkin.buildPartBox('armR', model, {w, h: 0.42, d: 0.16})` 按 `FACE_MAP` 逐面写入（与第三人称**完全同源**，slim 用 0.12/3px）→ 整块绕 X 转 `π/2 + 0.55`：手（bottom 面）落远端、肩（top）落近端、臂正面（front）朝上。**别再用"六面同贴 front"的写法**，回归 `tests/build41-fp-arm-uv.mjs` 直接从顶点 `position`+`uv` 反推（六面区域/长轴/旋转后手在远端/正面朝上/负控）。
 - **顺带两条**：① 手臂原本 95% 落在 75° 视锥外（B22 把截面从 0.25 缩到 0.16 后位置没跟着调），`basePos` 抬到 `(0.42, -0.30, -0.60)` 才真正进入视野——用户看到的"肩膀"就是原先那条边；② 手持物挂点从 `z=-0.10`（手掌外 0.2 格）移到 `z=0.12` 掌前，缩放 0.30 → 0.20 与手臂比例对齐。
+
+### 渲染统计（B49，`Renderer.info`）
+
+- `THREE.WebGLRenderer.info` 默认 `autoReset = true`：**每次 `render()` 前清零**。本管线一帧可能跑多遍（反射 RT → 太阳掩码两遍 → composer 多 pass），照默认读到的只有最后一遍（≈1 个全屏 quad）。
+- 现在：`Renderer` 构造里 `info.autoReset = false`，`Game.loop()` 帧首调 `resetStats()`，帧末（render 之后）读 `stats` 即为**整帧所有 pass 的累计**（含 `update()` 里触发的 shadow pass）。
+- 读数入口收敛成两个成员：`Renderer.resetStats()` 与 `get stats()`；调试屏只认这两个，别在别处直接摸 `renderer.renderer.info`。
+- 面板上的 `calls/tris` 数量级参考（1280×720、swiftshader、完整档关闭）：约 200~380 draws / 410k~800k tris。

@@ -284,3 +284,44 @@
 ### 浏览器目测
 
 - 背包「生存物品栏」页签 → 在 `inventory.armor[0..1]` 放铁头盔/铁胸甲 → 两层截图：有物品槽无轮廓、空槽仍有轮廓（`.playwright-anim/24-armor-before.png` / `25-armor-after.png`）。
+
+## Build 49 批次（2026-11-06 交付）—— F3 调试信息屏（无背景框）
+
+### 需求与形态
+
+- 用户原话：「debug信息：按F3显示在屏幕上的技术性信息（不能有背景框）」。
+- 拆成两层（与全仓"纯逻辑可 node 测"的口径一致）：
+  - `src/core/DebugInfo.js`（纯逻辑，无 DOM / 无 three）：朝向推导 `facingFromYaw`、区块列 `chunkOf/localOf`、方块坐标 `blockOf`、游戏内时钟 `formatClock`、大数字 `formatK`、定点小数 `fixed`、帧率计 `FpsMeter`、行组装 `buildDebugLines(ctx)`。
+  - `src/ui/DebugScreen.js`：只做"采集 `game` 状态 → 调 `buildDebugLines` → 写 `textContent`"，以及开关/节流。
+- **无背景框是硬约束**：面板样式只有文字 + `text-shadow` 描边，**不得出现 `background`/`border`**——`tests/build49-debug-hand.mjs` 对 DebugScreen 源码直接做这两条绊线（改成 `background: rgba(0,0,0,.45)` 立刻红）。
+- **标签恒英文，不进 i18n**：F3 是技术面板，字段会随调试需要不断增加，每加一行翻 10 个语言包不现实；原版 F3 也只在标签层做本地化。数值里"玩家看得懂的那部分"（生物群系 / 维度 / 方块名）仍走既有 `t()`，与 InfoBar 完全同源。
+- 刷新节流 10Hz（`REFRESH_MS=100`）：数字不疯狂跳动，DOM 每秒只写 10 次；**帧率计量仍按帧推进**（`FpsMeter.push` 在 update 首行，EMA α=0.1，>1s 的间隔丢弃——后台节流/断点恢复不会把读数拖垮）。
+
+### 接线与生命周期
+
+- 键位：`Game.setupKeyBindings` 的 `e.code === 'F3'` 分支——`running` 时 `preventDefault()`（Chrome 的 F3 是"查找下一个"），`e.repeat` 早退，暂停时也允许开关。
+- 刷新点：`Game.loop()` 里 `renderer.render()` **之后**（渲染统计才是本帧累计值）；暂停时 `update(dt)` 不跑但 loop 照跑 → 面板仍然刷新（看到的是冻结的世界数据 + 活的帧率）。
+- 生命周期：**构造器共享型**（与 InfoBar/Hud 同组，零 Three 资源），`Game.stop()` 撤下（`returnToMenu` 经它收口）；换存档不再单独复位。
+- 与 InfoBar 同角落：`debugScreen.onToggle = (on) => on ? infoBar.hide() : (running && infoBar.show())` ——打开时常规信息栏让位，关掉后恢复（回菜单时 `running` 已 false，不会把信息栏留在菜单上）。
+
+### 数据来源（加字段先看这张表，别新开采样路径）
+
+| 行 | 来源 |
+|---|---|
+| 帧率/帧耗时 | `FpsMeter`（loop 的 `now`） |
+| XYZ / 速度 / 朝向 | `player.position/velocity/yaw/pitch`（灵魂出窍时用 `soulView.position` 并标注 `[soul]`） |
+| Block / Chunk / Local | `DebugInfo.chunkOf/localOf/blockOf`（负数同样按格下取整，与 `World.getBlock` 的 `Math.floor` 同口径） |
+| 群系 / 维度 | `world.generator.getBiome + biomeNames`、`world.dimDef.name`，都过 `t()` |
+| 时钟 | `sky.time`（0=半夜 0.5=正午）→ `formatClock` |
+| 天光/方块光 | `world.getSkyLight / getBlockLightAt`（玩家脚部格） |
+| 准星 | `Game.selectedBlock`（`updateRaycast` 的产物）→ `BlockRegistry.getById` 取 `name/hardness` |
+| 区块/实体 | `world.chunks`（数量 + 逐个 `dirty` 计数）、`mobManager.mobs/droppedItems`、`remotePlayers.size` |
+| 渲染 | `renderer.stats`（见 rendering-lighting.md 的 B49 节，**必须帧首清零**） |
+| 内存 | `performance.memory`（仅 Chromium 系有；缺失时整行省略） |
+| 联机 | `net.isHost / rttMs / rttJitterMs`，单机输出 `Net: single-player` |
+
+### 验收坑
+
+- 截图会让 rAF 卡顿，**面板上的 FPS 会掉到个位数**（本次验收截到 13 fps）——那是 Playwright 截屏的副作用，别据此判性能。
+- 想截到"有准星目标"的一帧：先 `player.pitch` 压到约 `-0.85`（1.62m 眼高 → 约 2.1m 外的方块），并**站在开阔陆地**上；贴着崖壁/树冠时相机可能已经嵌进方块，只会看到巨大的方块内壁。
+- 浏览器验收截图：`.playwright-anim/43-b49-f3-debug.png`（全屏）、`44-b49-f3-closeup.png`（面板近景）、`45/46-b49-hand-empty/item.png`（空手有手臂 / 手持方块无手臂）、`47-b49-f3-item-full.png`、`48-b49-f3-off.png`。

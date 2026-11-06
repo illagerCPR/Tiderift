@@ -202,3 +202,15 @@ Chrome 后台会节流 rAF，截图可能拿到旧帧——用 `renderer.render(
   - `damp` 让过渡**帧率无关**（30fps 与 120fps 跑 0.5s 相差 <1e-6）——不要按帧数写死 lerp 系数。
   - 只在 `flying` 时累积（`_flyLean` 的 target 非飞行时为 0），地面高速行走不会吃到飞行前倾。
 - 回归 `tests/build47-fly-lean.mjs`：悬停基准 / 起步首帧增量 / 0.1·0.5·1s 三点 / 停止过渡 / 帧率无关 / 地面切飞行连续 / `reset()` 清零 / 旧"速度直映"表达式绊线。
+
+### 12.3 手持物品隐藏手臂（B49）
+
+- 用户口径：「手持物品时应该隐藏手臂」——物品模型自己占位，手臂与方块/物品叠在一起会穿模。
+- 判据单一化：**`hand.currentName` 是唯一真相**，`_syncArmVisible()` 是唯一入口（`armMesh.visible = !this.currentName`）。
+  - `setItem(name)` 在**异步建模之前**就切一次（切手当帧生效，不等 `buildHeldItemTemplate`）；
+  - `update()` 每帧再同步一次（自愈：别处改了状态、或模板构建失败回退 `visible = true` 之后都不会漏）；
+  - `resetForWorld()` 换存档复位（`currentName = undefined` + `_buildSeq++` 丢弃在途构建 + 手臂回可见）。
+- **只切 `armMesh.visible`**：B46 的二层皮肤（袖子）是 `armMesh` 的子节点，跟着一起隐藏；**不要**去动 `armOverlay.visible`（那会留下"半只袖子"的状态残留）。
+- 物品挂点在 `itemGroup`（`group` 的子节点，`z=0.12`），与 `armMesh`（`z=0.30`）互不隶属 → 藏手臂不影响物品显示、挥动、拉弓姿态。
+- 排查假象：物品挂点比手臂**更靠近相机**（0.12 vs 0.30），贴着崖壁/树冠时只看得见物品、看不见手臂——不是"手臂没渲染"。验收要在开阔地，并且**先确认空手时手臂可见**再对比手持态。
+- 回归 `tests/build49-debug-hand.mjs` 第 ④ 组：真 `FirstPersonHand` + 假 game —— 空手/未初始化可见、手持隐藏、换回空手恢复、袖子随藏、`resetForWorld` 三项复位。

@@ -13,6 +13,9 @@ export class Renderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // B49：渲染统计改为手动清零（默认 autoReset=true 会在每次 render() 前清空，本管线一帧
+    // 可能有反射/太阳掩码/后处理多遍 → 只剩最后一遍的数字；Game.loop 帧首调 resetStats()）
+    this.renderer.info.autoReset = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
@@ -55,6 +58,15 @@ export class Renderer {
   render() {
     this.postfx.render(this.scene, this.camera);
   }
+
+  // B49：帧首清零渲染统计（Game.loop 调用）。此后本帧所有 pass 的绘制次数/三角面累加，
+  // 帧末读 stats 即为整帧总量。
+  resetStats() {
+    this.renderer.info.reset();
+  }
+
+  // B49：渲染统计（THREE.WebGLRenderer.info；调试屏读 render / memory 两组）
+  get stats() { return this.renderer.info; }
 
   get domElement() { return this.renderer.domElement; }
 }

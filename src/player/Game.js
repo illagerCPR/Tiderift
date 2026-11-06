@@ -29,6 +29,7 @@ import { PLAYER_EYE_HEIGHT, BLOCK_CENTER, MOVE_SPEED_FLYING, MOVE_SPEED_SURVIVAL
 import { Hotbar, setSvgMaps } from '../ui/Hotbar.js';
 import { Hud } from '../ui/Hud.js';
 import { InfoBar } from '../ui/InfoBar.js';
+import { DebugScreen } from '../ui/DebugScreen.js';
 import { InventoryScreen } from '../ui/InventoryScreen.js';
 import { ChestScreen } from '../ui/ChestScreen.js';
 import { BeaconScreen } from '../ui/BeaconScreen.js';
@@ -106,6 +107,13 @@ export class Game {
     this.inventory = new Inventory();
     this.hud = new Hud();
     this.infoBar = new InfoBar();
+    // B49：F3 调试信息屏（构造器共享型：无 Three 资源，只有一块文本 DOM）。
+    // 与常规信息栏同角落 → 打开时让位（关掉后若还在游戏内再恢复）。
+    this.debugScreen = new DebugScreen();
+    this.debugScreen.onToggle = (on) => {
+      if (on) { this.infoBar.hide(); return; }
+      if (this.running) this.infoBar.show();
+    };
     this.sleepOverlay = new SleepOverlay(); // B27 睡眠黑屏过渡（无状态表现层，跨存档复用）
     // 视频设置：加载并实时套用（FOV/亮度/云/灵敏度/AO 等，主菜单期即可生效）
     this.settings = loadSettings();
@@ -424,8 +432,7 @@ export class Game {
     this._specSmoothYaw = 0;
     this._specSmoothPitch = 0;
     // 阶段10：重置第一人称手持物（跨存档共享实例，物品由下方物品栏初始化后同步）
-    this.hand.currentName = undefined;
-    this.hand.itemGroup.clear();
+    this.hand.resetForWorld();
     this.hand.setVisible(true);
     // 显示加载界面
     const loadingEl = document.getElementById('loading');
@@ -917,6 +924,14 @@ export class Game {
           if (this.hotbar) { this.hotbar.update(); this.hotbar.flashName(); }
         }
       }
+      // B49：F3 = 调试信息屏（技术读数，无背景框）；再按关闭。浏览器 F3 是"查找下一个"，
+      // 游戏内一律吞掉默认行为。暂停时也允许开关（面板在 loop 里刷新，暂停仍看得到架框数据）。
+      if (e.code === 'F3') {
+        if (this.running) e.preventDefault();
+        if (!this.running || e.repeat) return;
+        this.debugScreen.toggle();
+        return;
+      }
       // Build 20 ⑤：F5 = 第一/二/三人称视角循环（0 第一人称 → 1 第三人称背后 →
       // 2 第三人称正面）；观战模式下 F5 仍为切换观战目标（死亡观战键位不变）。
       // 未运行时早退不 preventDefault——启动失败页保留浏览器 F5 刷新语义。
@@ -1002,9 +1017,12 @@ export class Game {
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
     this.frame++;
+    this.renderer.resetStats(); // B49：帧首清零渲染统计（多 pass 累计，调试屏读本帧总量）
     if (!this.paused) this.update(dt);
     else if (this._bowCharging) this._cancelBowCharge(); // 暂停/死亡：蓄力作废（防恢复后误射）
     this.renderer.render();
+    // B49：F3 调试屏在 render 之后刷新——渲染统计取的是刚刚这一帧的累计值
+    if (this.debugScreen && this.debugScreen.visible) this.debugScreen.update(this, now);
     requestAnimationFrame(() => this.loop(token));
   };
 
@@ -3140,6 +3158,8 @@ export class Game {
 
   stop() {
     this.running = false;
+    // B49：停止游戏即撤下 F3 调试屏（面板在 loop 里刷新，停跑后留着就是一块冻住的文本）
+    if (this.debugScreen) this.debugScreen.hide();
   }
 
   // 返回主菜单，save=true 时保存存档到当前槽位

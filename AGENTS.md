@@ -71,6 +71,15 @@ agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - 主循环受 `this.paused` 门控：暂停 / 死亡 / 物品栏打开时 `loop()` 仍渲染但跳过 `update()`。
 - `game.onExit = () => menu.show()` 由 `main.js` 注册；`game.start(mode, seed, loadData, slot)` 启动，`game.returnToMenu(save=true)` 关闭所有 UI 并触发 `onExit`。`controls.enabled` 是 UI 进入/退出的统一开关，新加 UI 必须在 show/hide 中维护它。
 
+### 调试信息（F3，B49）
+
+- **F3 开关屏幕技术读数**：`src/core/DebugInfo.js`（纯逻辑：朝向/区块列/时钟/`FpsMeter`/行组装，node 可测）+ `src/ui/DebugScreen.js`（采集 `game` 状态 + 写 DOM，10Hz 文本节流、帧率按帧推进）。
+- **无背景框**是用户硬约束：面板样式只有文字 + `text-shadow`，**不得出现 `background`/`border`**——`tests/build49-debug-hand.mjs` 对源码直接做这两条绊线。
+- 标签恒英文（技术面板不进 i18n，字段会持续增加；原版 F3 亦如此），数值里的群系/维度/方块名仍走 `t()`，与 InfoBar 同源。
+- 刷新点在 `Game.loop()` 的 `renderer.render()` **之后**（读到的是本帧渲染统计），帧首先 `renderer.resetStats()`；暂停时 loop 照跑 → 面板仍刷新，读到的是冻结的世界状态 + 活的帧率。
+- 与 InfoBar 同角落：`debugScreen.onToggle` 打开时让位、关掉后恢复；`Game.stop()` 撤下面板（回菜单不残留）。
+- 渲染统计口径见 `docs/agent-notes/rendering-lighting.md` 的 B49 节（`info.autoReset=false`，否则反射/掩码/后处理多 pass 只剩最后一遍）。
+
 ### 存档切换时的状态清理（高陷阱，曾引发多个 bug）
 
 `Game` 构造时一次性创建的子系统（Renderer/scene、Sky、Player、Physics、Inventory、Hud、InfoBar、highlight、breakMesh）**跨存档共享实例**，不会在 `start()` 中重建。其余（World、MobManager、RedstoneSystem、Hotbar、InventoryScreen、PauseMenu、DeathScreen）每次 `start()` 新建。若新增状态性子系统，必须决定它属于哪一组，否则会泄漏上一存档的状态：
@@ -197,7 +206,8 @@ agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - **B46 第一人称二层皮肤**：第三人称早有 overlay 壳（hat/jacket/sleeve/pant），第一人称手臂此前只有 base 层 → 袖子在第一人称消失。现 `FirstPersonHand._buildArmOverlay` 用 `PlayerSkin.buildPartBox(..., 'overlay')`（同一套面表、只换 UV 区域）建同尺寸盒，外扩比例走共享纯函数 `overlayScaleFactor(px)=(px+0.5)/px`（第三人称同源），作为 `armMesh` 子节点随手臂动；材质 `transparent + alphaTest 0.01 + DoubleSide`，与 base 共用一张贴图，换肤时旧几何/材质/贴图各释放一次。默认皮肤第二层全透明 → 默认外观无袖子属原版语义。
 - **B47 类原版死亡动画**：怪物死亡改为原版"侧倒躺平 → 到点消失"——`src/entity/anim/DeathPose.js`（纯数学）给 `deathTilt/stepDeathAnim/makeDeathAnim`，曲线复刻 `LivingEntityRenderer`（`sqrt(min(1,(tick-1)/20*1.6))`，90°，20 tick = 1s，约 0.675s 触地）。`MobManager` 的 `dyingAnim` 分支**只写 `mob.bodyRoot.rotation.z`**（bodyRoot 在脚部、怪物朝 +Z → 以脚为支点侧躺）；旧的 `scale.setScalar` 缩小 / `rotation.y += dt*8` 自旋 / `opacity` 渐隐三件套已删，别加回来。红光余辉仍走 `emissive`（前 0.5s 衰减）。
 - **B47 飞行前倾过渡**：`HumanoidAnimator` 的 `_flyLean`（`damp` + `FLY_LEAN_RATE=6`，速度按 `FLY_LEAN_REF=8` 归一化）替代旧的 `clamp(speed*0.03)` 直映——创造飞行 0↔12m/s 是输入直给，直映会让身体秒趴/秒起；实测单帧 ≤0.021rad、1s 到 0.32rad。仅 `flying` 时累积，地面高速不吃。
-- 回归网 `tests/build44-anim-humanoid.mjs` + `tests/build44-anim-fp-hand.mjs` + `tests/build44-mob-rig.mjs` + `tests/build47-mob-death.mjs` + `tests/build47-fly-lean.mjs`；浏览器截帧手法（自建平台 + `game.paused=true` 冻结帧 + 注意后台节流）见 `docs/agent-notes/animation.md` §七 / §九 / §十二。
+- **B49 手持物品隐藏手臂**：`FirstPersonHand.currentName` 是唯一真相，`_syncArmVisible()` 单入口（`armMesh.visible = !currentName`）——`setItem` 在异步建模**之前**先切（切手当帧生效）、`update` 每帧自愈、`resetForWorld` 换存档复位（`currentName=undefined` + `_buildSeq++` 丢弃在途构建）。只切 `armMesh.visible`：B46 袖子是它的子节点随之隐藏（**别去动 `armOverlay.visible`**），`itemGroup` 不受影响。模板构建失败回退显示手臂。
+- 回归网 `tests/build44-anim-humanoid.mjs` + `tests/build44-anim-fp-hand.mjs` + `tests/build44-mob-rig.mjs` + `tests/build47-mob-death.mjs` + `tests/build47-fly-lean.mjs` + `tests/build49-debug-hand.mjs`（F3 调试屏 + 手持隐藏手臂）；浏览器截帧手法（自建平台 + `game.paused=true` 冻结帧 + 注意后台节流）见 `docs/agent-notes/animation.md` §七 / §九 / §十二。
 
 ## 代码风格
 
@@ -284,9 +294,9 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 | `docs/agent-notes/dimensions-portals.md` | 维度基建/下界/末地/天域/联机同步、传送门、下界优化、末地完善（龙/末地城）、天域叙事基石（批次 A）、天域群风与众生（批次 B）、天域守誓巨像（批次 C）、天域复潮（批次 D） | 维度、传送门、下界/末地、换维联机、天域内容注册/i18n 审计/气流与免摔落/Boss AI/复潮档案 |
 | `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验）、B30 水中上岸助推 + 氧气原版口径、B42 自动跳跃设置门控（只对玩家/怪物恒开/水中助推不受控）、B48 开门 `passable` 可通行 + 小台阶 0.6 + TNT 激活/引信/爆炸/表现 | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞、开门通行、游泳/氧气、自动跳跃与台阶抬升、TNT |
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
-| `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口）、B39 U-1 实体方块贪心合并（判据/`aUvTile`/`fract` 图集平铺/`uAtlasSpan`）、B40 贪心合并 u/v 轴写反导致贴图拉伸的修复与 Worker 质量开关下发、B41 皮肤六面纠偏 + legacy 64×32 镜像补位 + 第一人称手臂长轴/UV/朝向 | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、皮肤 UV、UI 图标链、区块几何与 UV |
+| `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口）、B39 U-1 实体方块贪心合并（判据/`aUvTile`/`fract` 图集平铺/`uAtlasSpan`）、B40 贪心合并 u/v 轴写反导致贴图拉伸的修复与 Worker 质量开关下发、B41 皮肤六面纠偏 + legacy 64×32 镜像补位 + 第一人称手臂长轴/UV/朝向、B49 渲染统计口径（`info.autoReset=false` + 帧首 `resetStats()`，多 pass 累计） | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、皮肤 UV、UI 图标链、区块几何与 UV |
 | `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关、B30 轮 5 服务端打磨（落盘节流/回放打包/协议版本/限速扩档/皮肤代理加固/心跳活读/入口防御）、B36 F-1 漏斗与容器搬运（服务器权威节拍`flowSweep`/两条同步路径分界 `container_deny`/漏斗索引两端同构/64 上限与 `flowEnabled``flowIntervalMs`）、B36 F-2 熔炉进出料与生产链（熔炉账本与快照/`FURNACE_SET` 权威进度/客户端只显示/漏斗进出料路由/挖毁散落）、B38 L1 玩家列表数据通道（`player_state.rtt` 透传 + `_roster` 名单）、B38 L2 消息速率统计（`server/stats.js` + `sendTo` 单漏斗 + `/api/stats` + 面板折线）、B38 L3 私聊与队伍（`CHAT.ch` 分流 + `TEAM_*`/`TEAMS` 会话级队伍）、B48 TNT 联机口径（`tnt_primed` 走 block_set / 引信各端本地 / 爆炸改动走 `BLOCK_SET_BATCH`） | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关、落盘与回放、握手版本、容器与漏斗搬运、消息速率统计 |
-| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控、B30 轮 8 步 8 鼠标交互域迁出（InteractionController + 点击消费协议）、B41 灵魂出窍相机（位姿 override/lookTarget/区块锚点与身体区块常驻）与皮肤来源链（crossOrigin/镜像候选）、B42 命令面板三段式布局与设置面板更名/自动跳跃行、B43 单人存档导出/导入（gzip 信封/净化红线/跨版本拒绝/菜单接线）、B45 盔甲槽空槽纹样（有物品即隐藏、`slotBackdrop` 单一入口） | 菜单/设置（原视频设置）、粒子、UI 界面、作弊面板、命令面板布局、灵魂出窍、皮肤面板、音频、更名引用面、创造物品栏、鼠标交互域（点击消费协议）、存档导出/导入、物品栏槽位底纹 |
+| `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控、B30 轮 8 步 8 鼠标交互域迁出（InteractionController + 点击消费协议）、B41 灵魂出窍相机（位姿 override/lookTarget/区块锚点与身体区块常驻）与皮肤来源链（crossOrigin/镜像候选）、B42 命令面板三段式布局与设置面板更名/自动跳跃行、B43 单人存档导出/导入（gzip 信封/净化红线/跨版本拒绝/菜单接线）、B45 盔甲槽空槽纹样（有物品即隐藏、`slotBackdrop` 单一入口）、B49 F3 调试信息屏（无背景框/标签恒英文/10Hz 节流/InfoBar 让位/渲染统计帧首清零） | 菜单/设置（原视频设置）、粒子、UI 界面、作弊面板、命令面板布局、灵魂出窍、皮肤面板、音频、更名引用面、创造物品栏、鼠标交互域（点击消费协议）、存档导出/导入、物品栏槽位底纹 |
 | `docs/agent-notes/journal.md` | B34 A 四界游记（探索揭图/遗迹发现/碑文回看/个人与房间共享标记） | 改动 Journal/JournalScreen/N 键、共享标记协议、房间账本或 `roomSnapshot` 时 |
 | `docs/agent-notes/waymarks.md` | B34 B 旧航路修复（三阶段航标修复/航标芯方块/下一座航路导航/房间权威进度） | 改动 Waymarks/WaymarkScreen、航标协议、`StructureManager.waymarkTowerAt`/`nextTowerFrom` 或修复流程时 |
 | `docs/agent-notes/races.md` | B34 C 御风竞速与自建赛道（标桩赛道定义/顺序检查点判定/个人与房间最佳/取消规则/房间账本） | 改动 RaceTracks/RaceRun/RaceScreen/RaceHud、`race_*` 协议、赛道账本、`PauseMenu`/`DeathScreen` 的取消收口时 |
