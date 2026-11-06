@@ -76,3 +76,16 @@
 - **i18n / 分类**：`src/i18n/names.js` 十一语（简体列 = displayName「草径」）；`ItemCategories` 归 `nature`；`getBlockCount()` 222 → 223。
 - **回归网** `tests/build46-grass-path.mjs`：注册/ID 零漂移/形制 AABB（`cellBox` 世界坐标）/创造分类/十一语 + 真 `TerrainGenerator` 扫出平原与沙漠两座村庄，逐格断言四条道路臂 120 个采样点全是 grass_path、旧材质零残留；铲子分支源码绊线（工具判定 / 空气守卫 / 写入 grass_path / 锄地分支保持原样）。
 - **冒烟锚点（字符串 seed '20250903'，与菜单一致）**：平原村庄 `(-1704, 232)` groundY 71；沙漠村庄 `(792, -4088)` groundY 69。窗口内道路在 `groundY` 层，玩家落到 `groundY + 0.9375`（实测 feet=71.94 / 69.94，可用来确认形制高度真的生效）。扫描用 `gen.structureManager.ensureRecord('village', cx, cz)`（cell=20，±14 cell 内约 0.15s）。
+
+### B48 批次备忘（防回退）—— 村庄床改头尾双格
+
+- **成因**：`buildHouse` 只写了一个方块，而且写的是 `ID.bed = blockId('white_bed')`——`white_bed` 恰好是
+  「床尾·朝北」本名（`bedId('foot','n')`），所以生成出来永远是 1 格床尾、没有床头，看着像张单人榻。
+- **修法**：床头 `bedId('head','s')` 贴后墙（`z1-1`）、床尾 `bedId('foot','s')` 在它前一格（`z1-2`），
+  床沿 z 向躺、头朝门方向。**坐标写死、不消耗 rng**——村庄布局对旧 seed 逐格不变（只多出 1 格床头条），
+  `structure-determinism` / `loot-determinism` 不受影响。
+- **位置校验**：床尾格 `z1-2` 与箱子/羊毛角的 `z0+1` 不重合（房深 5/6 都成立）；床格不能被后续陈设覆盖，
+  回归网对 `blocks` 数组做「同格最后写入者必须是床」的断言。
+- **回归 `tests/build48-bed-door.mjs`**：3 个 seed 的每个 `bed_foot` 必须有同朝向、同 `baseBlock` 的相邻
+  `bed_head`，头尾数量相等、床格未被覆盖。
+- 旧存档里的村庄区块重生成时自动变成双格床（结构块不进账本）；玩家自己放的床本来就是两格，不受影响。

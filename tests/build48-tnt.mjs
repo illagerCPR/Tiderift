@@ -302,5 +302,17 @@ function makeGame(world) {
   ok(ts.includes('world._batchBlockWrites = true') && ts.includes('world._batchBlockWrites = false'),
     '爆炸：批量写开关成对出现（finally 复位）');
   ok(!ts.includes('sendBlock(') && !ts.includes('this.game.net'), 'TNT 不自己发协议消息（只写方块，同步交给 NetworkManager）');
+
+  // 表现层绊线（轮 3）
+  ok(ts.includes('blastFx(cx, cy, cz)') && ts.includes('audio.explosion(dist)'), '爆炸有表现入口与音效');
+  ok(ts.includes('_spawnFireball') && ts.includes('AdditiveBlending') && ts.includes('_updateBalls'), '火球 sprite：加法混合 + 生命周期回收');
+  ok(ts.includes('g.hud.flashBlast(near)') && ts.includes('g.addCameraShake(near)'), '白闪与镜头震动按距离触发');
+  ok(ts.includes("ps.spawn(") && ts.includes('densityScale'), '火花/浓烟按视频密度缩放');
+  ok(ts.includes("typeof document === 'undefined'"), '无 document 环境（node 测试）跳过纹理创建');
+  const hud = srcOf('../src/ui/Hud.js');
+  ok(hud.includes('flashBlast(intensity = 0)') && hud.includes('this.blastOverlay'), 'HUD：爆炸白闪层');
+  ok(gm.includes('addCameraShake(strength = 1)') && gm.includes('cam.position.x += Math.sin(st * 61.0) * amp'),
+    'Game：镜头震动只偏移相机位置');
+  ok(gm.includes('this._shake = 0;') && gm.includes('this._shakeT = 0;'), 'Game：震动状态在构造与换世界时归零');
 }
 finish('build48-tnt');

@@ -158,8 +158,23 @@ agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 ### 红石系统
 
 - `src/core/RedstoneSystem.js`：信号传播与方块交互。
-- 支持：lever（拉杆切换）、button（1秒后自动关闭）、redstone_wire（信号传播）、redstone_torch/block（恒定电源）、piston/sticky_piston（推出/收回活塞头）、redstone_lamp（充能指示）、TNT（引爆）、door/trapdoor（切换状态）。
+- 支持：lever（拉杆切换）、button（1秒后自动关闭）、redstone_wire（信号传播）、redstone_torch/block（恒定电源）、piston/sticky_piston（推出/收回活塞头）、redstone_lamp（充能指示）、TNT（**B48 起只点燃，不当帧爆炸**）、door/trapdoor（切换状态）。
+- **B48 TNT**：红石分支只回调 `onTntPowered`（`Game` 接到 `TntSystem.prime`），引信/破坏/伤害/表现为 `src/player/TntSystem.js` + 纯数学 `src/core/Explosion.js`；旧的 `RedstoneSystem.detonateTNT` 已删，别再往里塞爆炸逻辑。
 - 右键点击 lever/button 时调用 `redstone.onBlockInteract()`（右键路径 B30 轮 8 步 8 起在 `InteractionController.js`，Game 侧同名门面）；放置/破坏方块时调用 `redstone.onBlockChange()`；`update()` 中每帧调用 `redstone.update(dt)`。
+
+### TNT 与爆炸（B48）
+
+- **激活**：打火石右键 TNT（`InteractionController` 里排在传送门点火之前）、红石通电、爆炸连锁（0.3~0.8s 错峰）。点燃 = 方块换 `tnt_primed`，引信是各端本地的 4.0s 计时（`TntSystem.fuses`），**不新增协议**；点燃态写方块用 `recordMod=false`（不落存档），读档由 `World._finalizeChunk` 归一化回 `tnt`。
+- **引信坑**：`update` 必须先快照本轮的引信键——连锁点燃会在爆炸里新增引信，不快照的话新点燃的会在同一帧吃掉整帧 dt（大 dt 下当场自爆）。区块未加载时**冻结**（不推进也不取消），方块被挖/替换即取消。
+- **爆炸**：`Explosion.js` 纯函数给衰减/伤害/击退/抗性；半径 4 破坏方块（`hardness<0` 与 `blastResist>=1200` 免疫），伤害 `26*(1-d/8)`、击退 14/7。玩家走 `player.hurt` + `Player.knockback` 冲量通道（地面移动每帧覆写 velocity，直接加 velocity 会被清掉），怪物走 `MobManager.damageMobsInRadius`。
+- **联机**：一次爆炸要清上百格，`TntSystem.explode` 期间置 `world._batchBlockWrites`，`NetworkManager.bindWorld` 把它汇进既有 `BLOCK_SET_BATCH`（避开 `rateLimits.block=900/min`）；远端 `applyRemoteBlock` 末尾通知 `TntSystem.onRemoteBlockChange`。
+- **表现**：引信白光罩（不触发区块重建）+ 火球 sprite + 火花/烟（按 densityScale）+ `Hud.flashBlast` 白闪 + `Game.addCameraShake` 镜头震动（只偏移相机位置，下一帧 `updateCamera` 覆盖）+ `audio.explosion/fuseLight`。
+
+### 门/床与通行（B27/B48）
+
+- **开门可通行**：16 个 `_open` 门态带 `passable: true`（`BlockRegistry` 白名单透传），`Physics.moveAxis`/`_yClearAt`/`EntityPhysics.moveAxis` 跳过它。**别把 `solid` 改成 false**——`solid` 同时驱动面剔除/AO/体素光/准星选取。1 格门洞的可用横向窗口因此从 0.2125 变成 0.4。
+- **小台阶**：`SMALL_STEP = 0.6`（原版步高）——抬升 ≤0.6 恒可踏越，0.6~1.0 的整格台阶才受「自动跳跃」开关门控；否则关掉该设置连村屋 1/16 门槛都进不去。
+- **村庄床是头尾双格**：`village.js` 写 `bedId('head','s')` + `bedId('foot','s')`（旧版只写一格 `white_bed`=床尾朝北，看着像单人榻）。坐标写死、零 rng 消耗。
 
 ### 存档系统（多槽位）
 
@@ -265,12 +280,12 @@ LAN 联机阶段 0-11 已全部完成（`https://github.com/illagerCPR/Tiderift.
 |---|---|---|
 | `docs/agent-notes/world-ledger.md` | B30 审查轮 6（F7 modifiedBlocks 分桶索引、F12 红石/流体待处理队列键化） | 改动 World.setBlock/applyModifications、modifiedBlocks 账本、RedstoneSystem/FluidSim 待处理队列时 |
 | `docs/agent-notes/fluid-sim.md` | B26 流体模拟（M1 可流动水/岩浆 + M3 联机批量/相遇固化 + M2 部分水位） | 流体、FluidSim、方块注册白名单、水面渲染高度 |
-| `docs/agent-notes/worldgen-structures.md` | 自然建筑/村庄/要塞、T5 战利品箱与村民交易、W 水面/洞穴、生物群系规模、群系扩展、B25 树让位/村庄麦田/全景禁结构、B46 草径方块（形制 15/16/transparent/图标取顶面）与两种村庄变体路面、B47 草径改形（黄化草方块：顶面黄化草/侧面 2~4px 黄草唇/共用草色常量） | 地形生成、结构、群系、loot/容器/交易、村庄路面与草径方块贴图 |
+| `docs/agent-notes/worldgen-structures.md` | 自然建筑/村庄/要塞、T5 战利品箱与村民交易、W 水面/洞穴、生物群系规模、群系扩展、B25 树让位/村庄麦田/全景禁结构、B46 草径方块（形制 15/16/transparent/图标取顶面）与两种村庄变体路面、B47 草径改形（黄化草方块：顶面黄化草/侧面 2~4px 黄草唇/共用草色常量）、B48 村庄床改头尾双格 | 地形生成、结构、群系、loot/容器/交易、村庄路面与草径方块贴图 |
 | `docs/agent-notes/dimensions-portals.md` | 维度基建/下界/末地/天域/联机同步、传送门、下界优化、末地完善（龙/末地城）、天域叙事基石（批次 A）、天域群风与众生（批次 B）、天域守誓巨像（批次 C）、天域复潮（批次 D） | 维度、传送门、下界/末地、换维联机、天域内容注册/i18n 审计/气流与免摔落/Boss AI/复潮档案 |
-| `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验）、B30 水中上岸助推 + 氧气原版口径、B42 自动跳跃设置门控（只对玩家/怪物恒开/水中助推不受控） | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞、游泳/氧气、自动跳跃与台阶抬升 |
+| `docs/agent-notes/survival-items.md` | P0 燧石/打火石/黑曜石、P1 挖掘/盔甲/经验、P2 床/掷眼、P3 桶/弓/耕种、B27 床/门/活板门形制（状态 ID 家族/shape AABB/睡眠体验）、B30 水中上岸助推 + 氧气原版口径、B42 自动跳跃设置门控（只对玩家/怪物恒开/水中助推不受控）、B48 开门 `passable` 可通行 + 小台阶 0.6 + TNT 激活/引信/爆炸/表现 | 生存机制、工具/盔甲/食物、合成/掉落、门/床形制与碰撞、开门通行、游泳/氧气、自动跳跃与台阶抬升、TNT |
 | `docs/agent-notes/mobs-entities.md` | 怪物系统总备忘、受击反馈、被动动物/末影人、阶段 7 建模、阶段 8 朝向贴图 | 怪物/生物/AI/建模、实体物理 |
 | `docs/agent-notes/rendering-lighting.md` | 光照视觉增强（反射/云影/泛光/体积光）、阶段 9 材质重绘、Idea-3B-② 网格 Worker、B28 方块材质（定向面/多面纠偏/状态家族）、B29 方块图标等轴三面（BlockIcon 统一入口）、B39 U-1 实体方块贪心合并（判据/`aUvTile`/`fract` 图集平铺/`uAtlasSpan`）、B40 贪心合并 u/v 轴写反导致贴图拉伸的修复与 Worker 质量开关下发、B41 皮肤六面纠偏 + legacy 64×32 镜像补位 + 第一人称手臂长轴/UV/朝向 | 渲染、光照视觉、材质、后处理、网格构建、方块贴图、皮肤 UV、UI 图标链、区块几何与 UV |
-| `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关、B30 轮 5 服务端打磨（落盘节流/回放打包/协议版本/限速扩档/皮肤代理加固/心跳活读/入口防御）、B36 F-1 漏斗与容器搬运（服务器权威节拍`flowSweep`/两条同步路径分界 `container_deny`/漏斗索引两端同构/64 上限与 `flowEnabled``flowIntervalMs`）、B36 F-2 熔炉进出料与生产链（熔炉账本与快照/`FURNACE_SET` 权威进度/客户端只显示/漏斗进出料路由/挖毁散落）、B38 L1 玩家列表数据通道（`player_state.rtt` 透传 + `_roster` 名单）、B38 L2 消息速率统计（`server/stats.js` + `sendTo` 单漏斗 + `/api/stats` + 面板折线）、B38 L3 私聊与队伍（`CHAT.ch` 分流 + `TEAM_*`/`TEAMS` 会话级队伍） | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关、落盘与回放、握手版本、容器与漏斗搬运、消息速率统计 |
+| `docs/agent-notes/multiplayer.md` | 阶段 5 插值/鉴权、阶段 6 手持物/掉落物/观战、阶段 10 3D 手持/快捷栏/归属锁/多账号、阶段 11 挥动联动/头顶快捷栏/白名单权限/抖动、Idea-3C 玩家档案、Idea-4A 房间开关、B30 轮 5 服务端打磨（落盘节流/回放打包/协议版本/限速扩档/皮肤代理加固/心跳活读/入口防御）、B36 F-1 漏斗与容器搬运（服务器权威节拍`flowSweep`/两条同步路径分界 `container_deny`/漏斗索引两端同构/64 上限与 `flowEnabled``flowIntervalMs`）、B36 F-2 熔炉进出料与生产链（熔炉账本与快照/`FURNACE_SET` 权威进度/客户端只显示/漏斗进出料路由/挖毁散落）、B38 L1 玩家列表数据通道（`player_state.rtt` 透传 + `_roster` 名单）、B38 L2 消息速率统计（`server/stats.js` + `sendTo` 单漏斗 + `/api/stats` + 面板折线）、B38 L3 私聊与队伍（`CHAT.ch` 分流 + `TEAM_*`/`TEAMS` 会话级队伍）、B48 TNT 联机口径（`tnt_primed` 走 block_set / 引信各端本地 / 爆炸改动走 `BLOCK_SET_BATCH`） | 联机协议、插值、掉落物、管理面板、玩家档案、房间开关、落盘与回放、握手版本、容器与漏斗搬运、消息速率统计 |
 | `docs/agent-notes/ui-misc.md` | CubeWorld 改造（改名/全景/粒子/物品重绘/视频设置）、JEI 伴随面板、命令面板、UI 子系统、Idea-3A 音频底座、B29 更名 Tiderift 落地 + 创造栏技术性方块过滤、B30 轮 6 光标层归一（CursorOverlay）与世界输入门控、B30 轮 8 步 8 鼠标交互域迁出（InteractionController + 点击消费协议）、B41 灵魂出窍相机（位姿 override/lookTarget/区块锚点与身体区块常驻）与皮肤来源链（crossOrigin/镜像候选）、B42 命令面板三段式布局与设置面板更名/自动跳跃行、B43 单人存档导出/导入（gzip 信封/净化红线/跨版本拒绝/菜单接线）、B45 盔甲槽空槽纹样（有物品即隐藏、`slotBackdrop` 单一入口） | 菜单/设置（原视频设置）、粒子、UI 界面、作弊面板、命令面板布局、灵魂出窍、皮肤面板、音频、更名引用面、创造物品栏、鼠标交互域（点击消费协议）、存档导出/导入、物品栏槽位底纹 |
 | `docs/agent-notes/journal.md` | B34 A 四界游记（探索揭图/遗迹发现/碑文回看/个人与房间共享标记） | 改动 Journal/JournalScreen/N 键、共享标记协议、房间账本或 `roomSnapshot` 时 |
 | `docs/agent-notes/waymarks.md` | B34 B 旧航路修复（三阶段航标修复/航标芯方块/下一座航路导航/房间权威进度） | 改动 Waymarks/WaymarkScreen、航标协议、`StructureManager.waymarkTowerAt`/`nextTowerFrom` 或修复流程时 |

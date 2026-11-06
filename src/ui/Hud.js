@@ -123,6 +123,20 @@ export class Hud {
     document.body.appendChild(this.damageOverlay);
     this.damageTimerId = 0;
 
+    // B48 爆炸白闪（TNT）：整屏一记暖白，0.18s 衰减；越近越亮、24 格外不显示
+    this.blastOverlay = document.createElement('div');
+    this.blastOverlay.style.cssText = `
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 51; opacity: 0;
+      background: radial-gradient(ellipse at center,
+        rgba(255, 248, 226, 0.95) 0%,
+        rgba(255, 214, 150, 0.75) 45%,
+        rgba(255, 170, 90, 0.25) 100%);
+      transition: opacity 0.18s ease-out;
+    `;
+    document.body.appendChild(this.blastOverlay);
+    this.blastTimerId = 0;
+
     // 水下屏幕滤镜（全屏蓝色薄纱，透明度过渡）
     this.underwaterOverlay = document.createElement('div');
     this.underwaterOverlay.style.cssText = `
@@ -391,6 +405,24 @@ export class Hud {
         if (!self.damageOverlay) return;
         self.damageOverlay.style.transition = 'opacity 0.5s ease-out';
         self.damageOverlay.style.opacity = '0';
+      });
+    });
+  }
+
+  // B48：爆炸白闪（intensity 0~1，由 TntSystem.blastFx 按距离给出；太小则不闪）
+  flashBlast(intensity = 0) {
+    if (!this.blastOverlay) return;
+    const v = Math.max(0, Math.min(1, intensity));
+    if (v <= 0.02) return;
+    if (this.blastTimerId) { clearTimeout(this.blastTimerId); this.blastTimerId = 0; }
+    this.blastOverlay.style.transition = 'none';
+    this.blastOverlay.style.opacity = String(0.15 + 0.75 * v);
+    const self = this;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!self.blastOverlay) return;
+        self.blastOverlay.style.transition = 'opacity 0.18s ease-out';
+        self.blastOverlay.style.opacity = '0';
       });
     });
   }

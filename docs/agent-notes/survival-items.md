@@ -100,3 +100,33 @@
 - **门控位置很讲究**：只加在**陆上分支**（`else if ((entity.isMob || this.autoJump) && this._yClearAt(...))` 这一句），不能加在外层 if 上——外层同时统辖**水中上岸助推**（`entity.bodyInWater` 分支），那条是生存必需（关掉自动跳跃后玩家仍必须能爬上岸）。
 - **怪物恒开**：`entity.isMob` 直接放行（`Mob.js` 构造的鸭子标记，HMR 双模块实例下 `instanceof` 不可靠）。村民/僵尸 AI 的坡坎跨越依赖这条抬升，跟着玩家设置关会卡地形。
 - **回归**：`tests/build42-panel-settings.mjs` ①段——1 格台阶（地面 y=63 顶面 64、台阶块 y=64 顶面 65）起手 x=0.7 vx=3 单帧（**x=0.6 起步单帧位移 0.05 撞不到 x=1 的台阶面，会假 FAIL**）：开 → 抬到 65.0001 且 x 保留；关 → y 不动、x 回退到 0.6999、vx 清零、仍 onGround；`isMob` → 关着也照抬；水中场景 autoJump=false 仍给 `vy ≥ 3.9` 助推。
+
+### B48 批次备忘（防回退）—— 开门可通行 / 小台阶 / TNT
+
+- **开门态门板不参与碰撞（`passable`）**：1 格门洞里，开门面板是 3/16 贴边薄板，玩家 0.6 宽只剩
+  **0.2125m 横向容差**且窗口偏心（实测门格 11.0~12.0 时可用区间 [11.4875,11.7]，x=11.15/11.3/11.85 全卡住、
+  11.5 只剩 1.25cm 余量），实战几乎过不去。修法：`BlockDefs.regDoorFamily` 给 16 个 `_open` 态加
+  `passable: open`，`BlockRegistry` 白名单透传，`Physics.moveAxis`/`_yClearAt`/`EntityPhysics.moveAxis`
+  遇到 `def.passable` 直接跳过。**`solid` 必须保持 true**——它同时驱动区块面剔除、AO、体素光阻光与准星选取，
+  置 false 会连带改掉渲染与光照。窗口随即变成 0.4（与同尺寸无门洞一致且居中）。
+- **小台阶不受自动跳跃门控**：`Physics.SMALL_STEP = 0.6`（原版步高），抬升 ≤0.6 的台阶恒可踏越，
+  0.6~1.0 的整格台阶才看 `autoJump`。成因：村屋门外草径顶面 15/16、门内木地板 1，进门要抬 1/16；
+  旧逻辑里这一步走 auto-jump，关掉设置的玩家**根本进不了村屋**（床 9/16 同理）。
+  B42 的 1 格台阶断言仍然成立（1.0 > 0.6 照样要开关）。
+- **TNT 激活**：打火石右键（`InteractionController` 里排在传送门点火之前，因为打火石对 TNT 不再是点火门）、
+  红石通电（`RedstoneSystem` 的 TNT 分支只回调 `onTntPowered`，**不再当帧爆炸**，`detonateTNT` 已删除）、
+  爆炸连锁（半径内 `tnt` 以 0.3~0.8s 错峰点燃；已点燃的只提前、不重置成整 4 秒）。
+- **引信与爆炸**：`src/player/TntSystem.js`。引信 4.0s 按 dt 推进（帧率无关）；方块被挖/替换即取消；
+  区块未加载**冻结**（不推进也不取消，回来接着烧）。**快照本轮要推进的键**——连锁点燃会在爆炸里新增引信，
+  不快照的话新点燃的会在同一帧吃掉整帧 dt（大 dt 下当场自爆，实测踩过）。
+  爆炸：半径 4 球体（`core/Explosion.js` 纯数学），跳过 `hardness<0`（基岩）与 `blastResist>=1200`（黑曜石，
+  新字段）；伤害 `26*(1-d/8)`、击退 14/7 同式衰减，玩家走 `player.hurt` + 新冲量通道，怪物走
+  `MobManager.damageMobsInRadius`（局部扣血/血条/音效，不触发末影人瞬移与中立激怒）。
+- **玩家击退必须走独立通道**：地面移动每帧用输入覆写 `velocity.x/z`，直接加 velocity 会被下一帧清掉
+  （表现为"推不动"）。`Player.knockback` + `Game.update` 在 `physics.collide` 前叠加并按 `0.02^dt` 衰减。
+- **表现**：引信白罩（`TntSystem._syncOverlay`，白立方 opacity 0.28~0.62、2→6Hz、轻微膨胀，不触发区块重建；
+  与 `tnt_primed` 的提亮贴图叠加）；爆炸 = 火球加法 sprite（0.26s 扩到 4.2 格）+ 火花/浅灰烟（按 densityScale）
+  + HUD 白闪（`Hud.flashBlast`，双 rAF 启动 transition）+ 镜头震动（`Game.addCameraShake`，只偏移相机位置，
+  下一帧 `updateCamera` 覆盖，零残留）+ `audio.explosion` 低频轰鸣 + 引信嘶声。
+- **回归**：`tests/build48-bed-door.mjs`（双格床/开门窗口≥0.38/关门挡人/小台阶/实体物理）、
+  `tests/build48-tnt.mjs`（方块表 223/衰减与免疫/4s 帧率无关/幂等/冻结/连锁错峰/红石只点燃/归一化/怪物伤害/接线）。

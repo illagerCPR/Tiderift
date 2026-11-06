@@ -162,3 +162,17 @@
 - **面板数据不做冗余副本**：`NetworkManager.teamOf(id)` 从全量 `teams` 现算；`TEAMS` 到达且面板可见时立即 `render()`，否则等 250ms 节流重绘。
 - **测试**：`server/test-stage12.mjs` 的 `[5]` 段（14 条）覆盖未组队提示与不外泄、`TEAMS` 广播、双人队伍、队伍/私聊分流、离线私聊提示、退队后收不到、队长退队解散、满 8 人后第 9 人被拒。
 
+
+### B48 · TNT 点燃与爆炸的联机口径（不升协议）
+
+- **点燃 = 方块换成 `tnt_primed`**，走既有 `BLOCK_SET` 同步（不新增消息类型、不升 `PROTOCOL_VERSION`）。
+  引信是**各端本地状态**（`src/player/TntSystem.js` 的 `fuses`），4.0s 固定时长 → 各端误差 < 一帧。
+- **点燃态不落存档**：`world.setBlock(..., primed, false)`（recordMod=false），读档/区块重载由
+  `World._finalizeChunk` 把 `tnt_primed` 归一化回 `tnt`（引信只是运行期状态）。
+- **远端点燃落地**：`NetworkManager.applyRemoteBlock` 末尾调 `game.tnt.onRemoteBlockChange(x,y,z,id)`——
+  id 是点燃态就登记引信（已有则不重置）、其它状态则取消。
+- **爆炸的方块改动必须合批**：一次爆炸要清上百格，逐条 `block_set` 会瞬间打满 `rateLimits.block=900/min`
+  被服务器丢包。`TntSystem.explode` 期间置 `world._batchBlockWrites = true`（`finally` 复位），
+  `NetworkManager.bindWorld` 把它和流体模拟一起路由进既有的 `BLOCK_SET_BATCH`（250ms 合批）。
+- **伤害分工**：玩家伤害各端本地结算（各自算自己的玩家）；怪物伤害各端本地结算（与既有苦力怕爆炸同口径，
+  不新增 mob 伤害广播）。

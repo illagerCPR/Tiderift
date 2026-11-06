@@ -155,6 +155,9 @@ export class Game {
     this.finaleInfo = null; // 终局篇 F3：WORLD_INFO 先达暂存（offered/done/坐标，start 落地）
     this.biomeScale = DEFAULT_BIOME_SCALE; // 生物群系规模档位（新建走参数/联机消息，载入走存档）
     this.paused = false;
+    // B48：爆炸镜头震动（_shake 剩余强度 0~1，_shakeT 相位；每帧只偏移相机位置）
+    this._shake = 0;
+    this._shakeT = 0;
     // 阶段10：第一人称手持物（跨存档共享相机挂点，start 时重置手持内容）
     // B41 灵魂出窍相机（独立位姿，绝不写 player 的 position/yaw/pitch）
     this.soulView = new SoulView(this);
@@ -412,6 +415,8 @@ export class Game {
     if (!networkMode) this.finaleInfo = null;
     this.paused = false;
     this.running = false;
+    this._shake = 0;                // B48：换世界清掉残留震动
+    this._shakeT = 0;
     this.soulView.exit();           // B41：换存档/换维一律先归体（幂等）
     this.spectating = false;        // 阶段4：新世界默认不观战
     this.spectateTargetId = null;
@@ -1934,6 +1939,23 @@ export class Game {
         SaveSystem.save(this);
       }
     }
+
+    // B48：爆炸镜头震动——只偏移相机位置（下一帧 updateCamera 会整体覆盖，零残留、不改朝向）
+    if (this._shake > 0) {
+      this._shake = Math.max(0, this._shake - dt * 2.8);
+      const amp = this._shake * 0.12;
+      const st = (this._shakeT += dt);
+      const cam = this.renderer.camera;
+      cam.position.x += Math.sin(st * 61.0) * amp;
+      cam.position.y += Math.cos(st * 47.0) * amp * 0.7;
+      cam.position.z += Math.sin(st * 53.0 + 1.7) * amp;
+    }
+  }
+
+  // B48：请求一次镜头震动（强度 0~1，取大不叠加；TNT 按距离给）
+  addCameraShake(strength = 1) {
+    const v = Math.max(0, Math.min(1.2, Number(strength) || 0));
+    if (v > this._shake) this._shake = v;
   }
 
   updateChunks() {

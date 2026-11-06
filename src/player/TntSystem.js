@@ -12,6 +12,7 @@ import {
   TNT_RADIUS, blastDamage, blastKnockback, blastDir, inBlastSphere, isBlastProof,
 } from '../core/Explosion.js';
 import { BLOCK_CENTER } from './constants.js';
+import { audio } from '../audio/AudioEngine.js';
 
 export const FUSE_TIME = 4.0;        // 引信时长（秒）= 原版 80 tick
 export const CHAIN_DELAY_MIN = 0.3;  // 连锁点燃延迟区间（错峰，避免同帧一起炸）
@@ -23,6 +24,8 @@ export class TntSystem {
     this.game = game;
     this.fuses = new Map();     // "x,y,z" -> 已燃烧秒数
     this.overlays = new Map();  // "x,y,z" -> 引信白光罩（可视层，见 _syncOverlay）
+    this._balls = [];           // 火球 sprite（爆炸表现，存活期 0.3s）
+    this._ballTex = null;       // 火球径向渐变纹理（懒建一次复用）
     this._geo = null;           // 共享立方几何（首个引信时懒建）
   }
 
@@ -70,6 +73,7 @@ export class TntSystem {
   }
 
   update(dt) {
+    this._updateBalls(dt);
     if (this.fuses.size === 0) return;
     const g = this.game;
     const world = g && g.world;
@@ -172,8 +176,101 @@ export class TntSystem {
     this.blastFx(cx, cy, cz);
   }
 
-  // 表现钩子：轮 3 填充（白闪/烟尘/火球/震屏/音效），轮 2 只保留引信白罩
-  blastFx() {}
+  // 表现：火球 + 火花/浓烟 + 白闪 + 镜头震动 + 低频轰鸣（距离越近越强）
+  blastFx(cx, cy, cz) {
+    const g = this.game;
+    const p = g.player ? g.player.position : null;
+    const dist = p ? Math.hypot(p.x - cx, (p.y + 1.0) - cy, p.z - cz) : Infinity;
+    const near = Math.max(0, 1 - dist / 24);
+    audio.explosion(dist);
+    if (near <= 0) return;
+    if (g.hud && g.hud.flashBlast) g.hud.flashBlast(near);
+    if (g.addCameraShake) g.addCameraShake(near);
+    this._spawnFireball(cx, cy, cz);
+
+    const ps = g.particles;
+    if (!ps) return;
+    const dens = ps.densityScale || 1;
+    const sparks = Math.max(6, Math.round(26 * dens));
+    for (let i = 0; i < sparks; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const up = Math.random();
+      const sp = 4 + Math.random() * 7;
+      const t = Math.random();
+      ps.spawn(
+        cx + (Math.random() - 0.5) * 1.2, cy + (Math.random() - 0.5) * 1.2, cz + (Math.random() - 0.5) * 1.2,
+        Math.cos(a) * sp, 2 + up * 7, Math.sin(a) * sp,
+        1.0, 0.55 + t * 0.35, 0.12 + t * 0.2,
+        0.35 + Math.random() * 0.45, -9, 0.97
+      );
+    }
+    const smokes = Math.max(8, Math.round(28 * dens));
+    for (let i = 0; i < smokes; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1 + Math.random() * 3.5;
+      const shade = 0.34 + Math.random() * 0.24; // 浅灰烟团（太深会读成飞溅的碎屑）
+      ps.spawn(
+        cx + (Math.random() - 0.5) * 1.6, cy + Math.random() * 1.4, cz + (Math.random() - 0.5) * 1.6,
+        Math.cos(a) * sp, 1.4 + Math.random() * 2.2, Math.sin(a) * sp,
+        shade, shade, shade,
+        1.1 + Math.random() * 1.1, 1.4, 0.94 // grav 正 = 上飘（烟柱）
+      );
+    }
+  }
+
+  // 火球：加法混合 sprite，0.3s 内从 1.6 格扩到 ~7 格并淡出（只在浏览器建纹理）
+  _spawnFireball(cx, cy, cz) {
+    const g = this.game;
+    const scene = g && g.renderer && g.renderer.scene;
+    if (!scene || typeof document === 'undefined') return;
+    if (!this._ballTex) this._ballTex = this._makeFireballTexture();
+    if (!this._ballTex) return;
+    const mat = new THREE.SpriteMaterial({
+      map: this._ballTex, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 1,
+    });
+    const sp = new THREE.Sprite(mat);
+    sp.position.set(cx, cy, cz);
+    sp.scale.setScalar(1.4);
+    scene.add(sp);
+    this._balls.push({ sprite: sp, mat, t: 0, dur: 0.26 });
+  }
+
+  _makeFireballTexture() {
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 64;
+      const ctx = cv.getContext('2d');
+      const grd = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+      grd.addColorStop(0, 'rgba(255,246,206,1)');
+      grd.addColorStop(0.28, 'rgba(255,198,96,0.95)');
+      grd.addColorStop(0.6, 'rgba(240,108,36,0.55)');
+      grd.addColorStop(0.85, 'rgba(150,54,16,0.18)');
+      grd.addColorStop(1, 'rgba(90,30,8,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, 64, 64);
+      return new THREE.CanvasTexture(cv);
+    } catch {
+      return null;
+    }
+  }
+
+  _updateBalls(dt) {
+    if (!this._balls.length) return;
+    const scene = this.game && this.game.renderer && this.game.renderer.scene;
+    for (let i = this._balls.length - 1; i >= 0; i--) {
+      const b = this._balls[i];
+      b.t += dt;
+      const k = Math.min(1, b.t / b.dur);
+      b.sprite.scale.setScalar(1.4 + 2.8 * k);
+      b.mat.opacity = 0.85 * Math.pow(1 - k, 2);
+      if (k >= 1) {
+        if (scene) scene.remove(b.sprite);
+        b.mat.dispose();
+        this._balls.splice(i, 1);
+      }
+    }
+  }
 
   // —— 引信白光罩（纯可视层：不写方块、不触发区块重建）——
   _syncOverlay(x, y, z, t = this.fuses.get(this.key(x, y, z)) || 0) {
@@ -220,6 +317,13 @@ export class TntSystem {
     }
     this.overlays.clear();
     this.fuses.clear();
+    const scene = this.game && this.game.renderer && this.game.renderer.scene;
+    for (const b of this._balls) {
+      if (scene) scene.remove(b.sprite);
+      b.mat.dispose();
+    }
+    this._balls.length = 0;
+    if (this._ballTex) { this._ballTex.dispose(); this._ballTex = null; }
     if (this._geo) { this._geo.dispose(); this._geo = null; }
   }
 }
