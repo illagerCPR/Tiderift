@@ -64,7 +64,13 @@
 ### B46 批次备忘（防回退）—— 草径方块 / 村庄路面
 
 - **草径是"形制方块"（顶面 15/16）**：`grass_path` 追加在 `BlockDefs.js` 文件末尾（ID 222，既有方块 ID 零漂移）；`shape = PATH_SHAPE`（`src/core/blockShape.js` 的 `PATH_HEIGHT = 15/16`），`transparent: true`。**transparent 是必须的**：形制方块只画自己的 6 个面，邻格实心方块的侧面靠 `neighborDef.transparent` 判断是否剔除——若不声明透明，15/16 的顶面与邻格满高侧面之间那 1 像素竖缝会直接透空；同时 transparent 让天光按"不遮挡"传播（与原版 path 观感一致）。碰撞走 `cellBox`（顶面 0.9375），站上去比草地低 1 像素，上台阶由既有 step 判定处理（<1 格不会顶住）。
-- **贴图键**：`grass_path_top`（踩实土 + 零星残草碎点）/ `grass_path_side`（泥土 + 1~2px 草唇，比整格草方块的 2~4px 更薄）为新 SVG；`bottom` 复用已注册的 `dirt` 键（不新增重复贴图）；**`icon: 'grass_path_top'` 必须显式给**——默认图标取 side（=泥土），物品栏里的草径会变成一块土（与 B28 耕地同款陷阱）。非满格立方 → `isIsoBlock=false`，图标走单面平铺。
+- **贴图键**：`grass_path_top` / `grass_path_side` 为新 SVG；`bottom` 复用已注册的 `dirt` 键（不新增重复贴图）；**`icon: 'grass_path_top'` 必须显式给**——默认图标取 side（=泥土），物品栏里的草径会变成一块土（与 B28 耕地同款陷阱）。非满格立方 → `isIsoBlock=false`，图标走单面平铺。
+- **B47 改形（用户要求"类似发黄的草方块这种形态"）**：草径不再是"压实土 + 残草"，改成**黄化草方块**——
+  - 顶面 = 草方块绿的黄化版（`GRASS_PATH_GRASS = [176,170,84]`，r≈g ≫ b），叠加枯草碎点（`GRASS_PATH_DRY = [150,132,62]`）做干枯层次；
+  - 侧面 = 泥土 + **2~4px 黄草唇**（与 `grassSideTex` 同款唇深与 0.62 过渡行，只是草色换成黄化版）；
+  - 两处草色**共用同一模块级常量**，不要再各写一份（否则顶面与侧面唇色漂移）；
+  - 形状（15/16 + transparent + `PATH_SHAPE`）、ID 222、图标键、村庄路面接线全部不动——本批只换像素。
+  - 回归 `tests/build47-grass-path-tex.mjs`：直接解析两张 SVG 的 rect 颜色（r≈g、蓝占比低、与 `grass_top` 的 g-r 对比、每列草唇 2~4px、泥土起点 3~5 行、草唇与顶面同色系），并守 ID/图标/transparent/贴图三键零漂移。
 - **村庄路面**：`village.js` 两种变体（平原/沙漠）的 `M.path` 都改成 `grass_path`（原为 coarse_dirt / sandstone）。`pathAt`（道路）与 `spawnAt`（村民出生景位台面）共用 `M.path`，两者一起换；地基 `M.base` 不动（平原圆石 / 沙漠砂岩）。**不消耗额外 rng**：村庄布局与旧版逐字节一致，只有路面方块 ID 变，`structure-determinism` / `loot-determinism` 不受影响。沙漠变体也铺草径是本批的明确取舍（统一"村庄路面"语义；若想沙漠保留砂岩，只改 village.js 一行）。
 - **生存获取方式**：`Game._tryFarmInteract` 在锄地分支之后新增铲子分支——手持 `tool === 'shovel'` 对 `grass_block` / `dirt` / `coarse_dirt` 右键、且上方为空气 → 写 `grass_path`（原版"铲子拍出小径"语义）。`World.setBlock` 单一漏斗 → 光照/网格/联机上报自动跟随；右键链的消费顺序不变（锄地优先级仍在铲子之前，两者工具判定互斥）。
 - **i18n / 分类**：`src/i18n/names.js` 十一语（简体列 = displayName「草径」）；`ItemCategories` 归 `nature`；`getBlockCount()` 222 → 223。

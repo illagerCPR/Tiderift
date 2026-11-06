@@ -175,3 +175,30 @@ Chrome 后台会节流 rAF，截图可能拿到旧帧——用 `renderer.render(
 - 浏览器目测（playwright + 系统 Chrome，`game.paused = true` 后 `renderer.render()` 稳定取帧）：
   用默认皮肤 + canvas 在 `(40,36,16,12)` 四侧面涂红 → 手臂可见面变红（overlay 生效）；
   只涂 `(40,36,16,6)`（另半段）→ 可见处仍是肤色 base（alphaTest 透明像素不遮挡 base，且映射与第三人称同源）。
+
+## 十二、B47 类原版死亡动画 + 飞行前倾过渡
+
+### 12.1 死亡动画（怪物）
+
+- 旧实现（B44 前的临时方案）：0.4s 内 `mesh.scale.setScalar(1-t)` + `rotation.y += dt*8` 原地自旋 + 材质 `opacity = 1-t` 渐隐 + 红光。用户 2026-11-06 要求改成"类原版"。
+- 原版口径（`LivingEntityRenderer.setupRotations`）：本地空间绕 **Z 轴**（模型前后轴）侧倒，
+  `f = sqrt(min(1, (deathTime-1)/20*1.6))`，`roll = f*90°`；`deathTime` 到 20 tick（=1s）整只移除。
+  → 约 0.675s 触地躺平（先快后慢），之后保持躺平，1s 到点直接消失（掉落物同帧弹出）。**不缩放、不自旋、不淡出**。
+- 实现：`src/entity/anim/DeathPose.js`（纯数学，node 可测）：
+  - `DEATH_ANIM_DURATION = 1.0`、`DEATH_TICKS = 20`、`DEATH_FLASH_TIME = 0.5`；
+  - `deathTilt(elapsed, total)` → 弧度（0..π/2；NaN/负数按"刚死"，+Infinity 视为躺平）；
+  - `stepDeathAnim(anim, dt)` → `{t, tilt, flash}`（就地推进 `anim = {progress, total}`；负/NaN dt 不倒退）；
+  - `makeDeathAnim()`（`MobManager` 触发死亡时建状态）。
+- 接线：`MobManager.update` 的 `dyingAnim` 分支只写 `mob.bodyRoot.rotation.z = st.tilt`——怪物模型朝 +Z、bodyRoot 在脚部，绕本地 Z 转 = **以脚为支点向侧面躺平**；`bodyRoot.rotation.x` 是 MobAnimator 的前倾通道，别抢。红光改走尸体上的 `emissive` 衰减（`st.flash`），不再动 `opacity`/`scale`。
+- **不要**改写成 `mob.mesh.rotation.z`：group 上已有 `rotation.y = displayYaw`，Euler XYZ 下等价于"绕偏航后的轴"再叠加，改动后语义容易漂移；bodyRoot 是 animator 专门留的中间节点（只吃 bob / 前倾 / 侧倾）。
+- 回归 `tests/build47-mob-death.mjs`：逐 tick 与独立 oracle 对拍、单调/钳位/NaN、单帧推进到 t=1 的帧数、红光衰减、**姿态语义**（Rz(π/2) 后身体各点 y≈0、水平偏移 = 原高度，支点不动）、以及"缩放/自旋/淡出已退场"的源码绊线。
+- 浏览器目测：`m.dyingAnim.progress = 0.35 / 0.7` 后调一次 `mobManager.update(0, ...)` + `renderer.render()` 就能取到"倒下中 / 躺平"两帧（`.playwright-anim/32~34-b47-death-*.png`）。
+
+### 12.2 创造飞行前倾过渡（玩家 / 远端玩家）
+
+- 症状：创造飞行一按 W 速度立刻 12m/s，旧写法 `p.bodyPitch += 0.10*f + clamp(speed*0.03, 0, 0.22)*f` 把速度**直接**映射成角度 → 身体瞬间前倾；松手速度归零 → 瞬间复原。
+- 修法：`HumanoidAnimator` 新增 `_flyLean`（0..1，`damp(..., FLY_LEAN_RATE = 6)`），速度先按 `FLY_LEAN_REF = 8`（巡航 12 → 满幅）归一化，前倾角改成 `(0.10 + FLY_LEAN_MAX(0.22) * _flyLean) * _fly`。
+  - 真 `Game.update` 60fps 实测：单帧最多 0.021rad（旧写法一帧 0.22）；起步 0.1s → 0.199、0.5s → 0.309、1s → 0.3195；松手 0.1s 仍 0.215、1s 回 0.1005。
+  - `damp` 让过渡**帧率无关**（30fps 与 120fps 跑 0.5s 相差 <1e-6）——不要按帧数写死 lerp 系数。
+  - 只在 `flying` 时累积（`_flyLean` 的 target 非飞行时为 0），地面高速行走不会吃到飞行前倾。
+- 回归 `tests/build47-fly-lean.mjs`：悬停基准 / 起步首帧增量 / 0.1·0.5·1s 三点 / 停止过渡 / 帧率无关 / 地面切飞行连续 / `reset()` 清零 / 旧"速度直映"表达式绊线。

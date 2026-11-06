@@ -8,6 +8,8 @@
 //      起停、起跳、落地由权重与缓冲包络过渡，没有阶跃。**不要**把权重改回布尔开关。
 //   3) 挖掘挥臂是叠加层（21 rad/s，与原阶段 11 节奏一致），行走时也能叠在上面。
 //   4) 模块只输出角度/位移，落地到 three 的 pivot/bodyRoot 由 applyHumanoidPose / applyBodyOffset 完成。
+//   5) B47：飞行前倾强度（_flyLean）也必须走 damp——创造飞行的速度是输入直给的（瞬间 0↔12m/s），
+//      直接把速度映射成角度会让身体"秒趴/秒起"；不要再写回 clamp(speed * 0.03)。
 //
 // 符号约定（模型朝 -Z，与相机 forward 一致）：
 //   armL/armR/legL/legR 是 rotation.x，**正 = 向前摆**；
@@ -20,6 +22,9 @@ export const STRIDE_RATE = 2.6;      // 弧度/米（约每 1.2m 一个完整步
 export const WALK_SPEED_REF = 4.3;   // 步行参考速度（m/s）
 export const LAND_DURATION = 0.22;   // 落地缓冲时长（秒）
 export const MINE_RATE = 21;         // 挖掘挥臂角速度（rad/s，≈0.3s 一次敲击）
+export const FLY_LEAN_REF = 8;       // 飞行前倾满幅参考速度（m/s）——创造飞行巡航 12 → 满幅
+export const FLY_LEAN_MAX = 0.22;    // 飞行前倾附加角上限（rad，叠加在 0.10 基础前倾上）
+export const FLY_LEAN_RATE = 6;      // 飞行前倾过渡速率（≈0.3s 走到 84%，≈0.5s 到位）
 
 const TAU = Math.PI * 2;
 
@@ -53,6 +58,7 @@ export class HumanoidAnimator {
     this._air = 0;        // 腾空权重 0..1
     this._swim = 0;       // 游泳权重 0..1
     this._fly = 0;        // 飞行/旁观权重 0..1
+    this._flyLean = 0;    // 飞行前倾强度 0..1（B47：速度经阻尼，起停有过渡）
     this._landT = 0;      // 落地缓冲剩余时间
     this._landImpact = 0; // 落地冲击 0.25..1（由落地前的竖直速度决定）
     this._mineAmp = 0;
@@ -72,6 +78,7 @@ export class HumanoidAnimator {
   get airWeight() { return this._air; }
   get swimWeight() { return this._swim; }
   get flyWeight() { return this._fly; }
+  get flyLean() { return this._flyLean; }
   get mineAmp() { return this._mineAmp; }
   get landing() { return this._landT > 0 ? Math.sin(Math.PI * (1 - this._landT / LAND_DURATION)) * this._landImpact : 0; }
 
@@ -106,6 +113,9 @@ export class HumanoidAnimator {
     this._air = damp(this._air, !onGround && !inWater && !flying ? 1 : 0, 10, dt);
     this._swim = damp(this._swim, inWater && !flying ? 1 : 0, 8, dt);
     this._fly = damp(this._fly, flying ? 1 : 0, 8, dt);
+    // B47 飞行前倾强度：速度是"输入直给"的（创造飞行一按 W 就 12m/s），直接映射会让
+    // 身体瞬间趴下去、松手瞬间弹回；这里再套一层指数趋近做加速/减速过渡。
+    this._flyLean = damp(this._flyLean, flying ? clamp(speed / FLY_LEAN_REF, 0, 1) : 0, FLY_LEAN_RATE, dt);
 
     // 相位：地面按位移、水中按时间（划水节奏与速度弱相关）、飞行只做轻微摆动
     if (grounded) {
@@ -180,7 +190,8 @@ export class HumanoidAnimator {
     // ── 飞行 / 旁观：身体前倾幅值随速度、手臂微展、双腿并拢 ─────────────────
     if (this._fly > 0.0001) {
       const f = this._fly;
-      p.bodyPitch += 0.10 * f + clamp(speed * 0.03, 0, 0.22) * f;
+      // B47：前倾强度走 _flyLean（已阻尼），不要再直接 clamp(speed*0.03) —— 那是秒趴/秒起的根因
+      p.bodyPitch += (0.10 + FLY_LEAN_MAX * this._flyLean) * f;
       p.armSpread += 0.22 * f;
       p.legL -= 0.08 * f;
       p.legR -= 0.08 * f;

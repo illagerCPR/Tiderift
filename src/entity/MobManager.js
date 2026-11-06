@@ -5,6 +5,7 @@ import { MobTypes, generateMobSkinSVGs, MOB_ATLAS } from './MobTextures.js';
 import { buildPartGeometryData, derivePartPivot, inferPlan, applyMobPose } from './anim/MobRig.js';
 import { MobAnimator } from './anim/MobAnimator.js';
 import { turnToward } from './anim/YawTurn.js';
+import { stepDeathAnim, makeDeathAnim } from './anim/DeathPose.js';
 import { SVGTextures } from '../render/SVGTextures.js';
 import { EntityPhysics } from './EntityPhysics.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
@@ -24,7 +25,7 @@ const DESPAWN_DISTANCE = 80;
 
 const HIT_FLASH_DURATION = 0.25;   // 怪物受击红光持续时长（秒）
 const HEALTH_BAR_FADE = 3.0;       // 怪物头顶血条淡出时长（秒）
-const DEATH_ANIM_DURATION = 0.4;   // 死亡缩放动画时长（秒）
+// 死亡动画时长唯一来源在 anim/DeathPose.js（原版 20 tick = 1s）
 const HEALTH_BAR_WIDTH = 1.0;      // 血条世界坐标宽
 
 // 下界自然生成表（纯函数便于单测）：要塞平台层烈焰人主导（仅此处生成）；
@@ -694,26 +695,21 @@ export class MobManager {
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const mob = this.mobs[i];
 
-      // 死亡动画播放阶段：跳过 AI、原地累积动画进度后销毁
+      // 死亡动画播放阶段（B47 类原版）：跳过 AI，原地朝一侧侧倒 90° 后销毁。
+      // 只转 bodyRoot.rotation.z（= 本地前后轴）→ 整只怪以脚为支点躺平，怪物模型朝 +Z，
+      // 故绕 Z 转就是"向侧面倒下"。不缩放、不自旋、不淡出——原版就是"倒下躺平 → 到点消失"。
       if (mob.dyingAnim) {
-        mob.dyingAnim.progress += dt;
-        const t = Math.min(1, mob.dyingAnim.progress / mob.dyingAnim.total);
-        if (mob.mesh) {
-          const scale = Math.max(0.05, 1 - t);
-          mob.mesh.scale.setScalar(scale);
-          mob.mesh.rotation.y += dt * 8;
-          // 渐隐 + 红光淡出（B44 起材质是 per-mob 共享实例，所有部件一起变）
-          const mm = mob.material;
-          if (mm) {
-            mm.transparent = true;
-            mm.opacity = 1 - t;
-            if (!mm.emissive) mm.emissive = new THREE.Color();
-            mm.emissive.setRGB(0.9, 0.1, 0.1);
-            mm.emissiveIntensity = (1 - t) * 0.6;
-          }
+        const st = stepDeathAnim(mob.dyingAnim, dt);
+        if (mob.bodyRoot) mob.bodyRoot.rotation.z = st.tilt;
+        // 受击红光在尸体上衰减（原版 hurtTime 余辉），之后恢复正常色
+        const mm = mob.material;
+        if (mm) {
+          if (!mm.emissive) mm.emissive = new THREE.Color();
+          mm.emissive.setRGB(0.85, 0.05, 0.05);
+          mm.emissiveIntensity = st.flash * 0.9;
         }
         if (mob.healthBarSprite) mob.healthBarSprite.visible = false;
-        if (t >= 1) {
+        if (st.t >= 1) {
           this._removeMobResources(mob);
           this._untrackBoss(mob);
           this.mobs.splice(i, 1);
@@ -835,7 +831,7 @@ export class MobManager {
             }
           }
         }
-        mob.dyingAnim = { progress: 0, total: DEATH_ANIM_DURATION };
+        mob.dyingAnim = makeDeathAnim(); // B47 类原版：倒地 1s 后整只移除
         if (mob.healthBarSprite) mob.healthBarSprite.visible = false;
       } else if (dist > DESPAWN_DISTANCE && mob.typeName !== 'villager' && !mob.type.boss) {
         // 被卸载而非死亡：直接清理（村民不在此清理——村庄绑定生物由 updateVillageSpawns

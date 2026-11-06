@@ -2554,19 +2554,22 @@ reg('tide_plaque', {
 });
 
 // ── Build 46 草径（**文件末尾追加**，方块 ID 零漂移）────────────────────────────────
-// 村庄路面材质：被脚步踩实的土 + 零星残草；顶面低 1 像素（shape=PATH_SHAPE，原版 path 语义）。
-// top = 压实土底 + 残草碎点 + 深色碎石；side = 泥土 + 1~2px 草唇（比草方块的 2~4px 更薄，踩秃的样子）；
+// 村庄路面材质（B47 改形）："发黄的草方块"——顶面是黄化草皮（草方块绿的干燥版），
+// 侧面是泥土 + 2~4px 黄草唇（与草方块同款唇深）；顶面仍低 1 像素（shape=PATH_SHAPE，原版 path 语义），
 // bottom 复用已注册的 dirt 贴图键（不新增重复贴图）。
+// 防回退：不要再改回"压实土 + 残草"的土路配色（用户 2026-11-06 要求草径读起来像草方块）。
+const GRASS_PATH_GRASS = [176, 170, 84]; // 黄化草色：草方块绿 [124,178,80] 的黄化版（r≈g ≫ b）
+const GRASS_PATH_DRY = [150, 132, 62];   // 枯草碎点（比底色更褐，做出干枯层次）
+
 function grassPathTopTex(seed) {
   const px = makeTex();
-  const soil = [120, 93, 59], moss = [88, 106, 52], pebble = [88, 71, 50];
   for (let y = 0; y < 16; y++) {
     for (let x = 0; x < 16; x++) {
       const t = hash2(x, y, seed);
-      const f = 0.9 + hash2(x, y, seed + 1) * 0.18;
-      let c = soil;
-      if (t < 0.08) c = moss;
-      else if (t > 0.88) c = pebble;
+      let f = 0.88 + hash2(x, y, seed + 1) * 0.24;
+      let c = GRASS_PATH_GRASS;
+      if (t < 0.14) { c = GRASS_PATH_DRY; f *= 0.96; }
+      else if (t > 0.88) f *= 1.14;
       px[y * 16 + x] = rgb(c, f);
     }
   }
@@ -2575,13 +2578,13 @@ function grassPathTopTex(seed) {
 
 function grassPathSideTex(seed) {
   const px = makeTex();
-  const dirt = [134, 96, 67], grass = [110, 158, 72];
+  const dirt = [134, 96, 67];
   for (let x = 0; x < 16; x++) {
-    const depth = 1 + Math.floor(hash2(x, 0, seed) * 2); // 草唇 1~2px
+    const depth = 2 + Math.floor(hash2(x, 0, seed) * 3); // 草唇 2~4px（草方块同款）
     for (let y = 0; y < 16; y++) {
-      if (y < depth) px[y * 16 + x] = rgb(grass, 0.86 + hash2(x, y, seed + 1) * 0.22);
-      else if (y === depth) px[y * 16 + x] = rgb(grass, 0.6);
-      else px[y * 16 + x] = rgb(dirt, 0.86 + hash2(x, y, seed + 2) * 0.2);
+      if (y < depth) px[y * 16 + x] = rgb(GRASS_PATH_GRASS, 0.9 + hash2(x, y, seed + 1) * 0.2);
+      else if (y === depth) px[y * 16 + x] = rgb(GRASS_PATH_GRASS, 0.62);
+      else px[y * 16 + x] = rgb(dirt, 0.9 + hash2(x, y, seed + 2) * 0.2);
     }
   }
   return pixelSvg(px);
