@@ -10,6 +10,7 @@ export const NAME_I18N = {
   grass_block: ['草方块', '草方塊', 'Grass Block', 'Bloc d\'herbe', 'Grasblock', '草ブロック', '풀 블록', 'مكعب عشب', "Дёрн", "Bloque de hierba", "Bloco de grama"],
   dirt: ['泥土', '泥土', 'Dirt', 'Terre', 'Erde', '土', '흙', 'تراب', "Земля", "Tierra", "Terra"],
   coarse_dirt: ['砂土', '砂土', 'Coarse Dirt', 'Terre stérile', 'Grobe Erde', '粗い土', '거친 흙', 'تراب خشن', "Каменистый дёрн", "Tierra estéril", "Terra sem grama"],
+  grass_path: ['草径', '草徑', 'Grass Path', 'Chemin d\'herbe', 'Grasweg', '草の道', '잔디 길', 'مسار عشبي', "Тропинка", "Camino de hierba", "Caminho de grama"],
   sand: ['沙子', '沙子', 'Sand', 'Sable', 'Sand', '砂', '모래', 'رمل', "Песок", "Arena", "Areia"],
   red_sand: ['红沙', '紅沙', 'Red Sand', 'Sable rouge', 'Roter Sand', '赤い砂', '붉은 모래', 'رمل أحمر', "Красный песок", "Arena roja", "Areia vermelha"],
   gravel: ['沙砾', '礫石', 'Gravel', 'Gravier', 'Kies', '砂利', '자갈', 'حصى', "Гравий", "Grava", "Cascalho"],

@@ -54,6 +54,8 @@ PURE_NODE_SUITES=(
     build44-mob-rig            # B44 怪物骨架（纯 node：部件几何对拍独立 oracle/pivot 规则/体型判定全表/六种动作模板/攻击受击/确定性/接线绊线）
     build45-slot-backdrop      # B45 盔甲槽空槽纹样（纯 node：空槽显示/有物品隐藏/边界/不写 background 简写/接线绊线）
     build45-mob-turn           # B45 怪物转身平滑（纯 node：角度归一/跨接缝短边/单步限速/180°用时/接线绊线）
+    build46-grass-path         # B46 草径（纯 node：尾部追加/形制 15-16/cellBox/创造分类/十一语/村庄两种变体路面/铲子铺径绊线）
+    build46-fp-arm-overlay     # B46 第一人称手臂二层皮肤（纯 node：overlay 区域/外扩比例/真手部壳与资源释放/与第三人称同源）
     end-dragon                 # 末影龙 Boss 回归（纯 node：类型注册/柱顶水晶/DragonAI 状态机/击败链路/末地门控）
     end-gateway                # 龙败奖励链回归（纯 node：折跃门注册/选址/建门/角度配对/返程喷泉门/幂等门控）
     end-city                   # 末地城结构回归（纯 node：方块/潜影贝注册/选址漏斗/落地/箱子三向/loot 保底/确定性）

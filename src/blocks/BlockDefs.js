@@ -4,7 +4,7 @@
 // 注册名 / textures key / SVG 管线保持不变，仅替换纹理生成实现。
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { SVGTextures } from '../render/SVGTextures.js';
-import { doorClosedShape, doorOpenShape, trapdoorShape, BED_SHAPE } from '../core/blockShape.js';
+import { doorClosedShape, doorOpenShape, trapdoorShape, BED_SHAPE, PATH_SHAPE } from '../core/blockShape.js';
 
 const { pixelSvg, rng } = SVGTextures;
 
@@ -2551,6 +2551,50 @@ reg('tide_plaque', {
   tide_plaque_top: pixelSvg(tidePlaqueBase(251, TIDE_LINES)),
   tide_plaque_side: pixelSvg(tidePlaqueBase(252, TIDE_LINES)),
   tide_plaque_bottom: noiseTex([34, 46, 52], 253, { dark: 0.85, light: 1.12 }),
+});
+
+// ── Build 46 草径（**文件末尾追加**，方块 ID 零漂移）────────────────────────────────
+// 村庄路面材质：被脚步踩实的土 + 零星残草；顶面低 1 像素（shape=PATH_SHAPE，原版 path 语义）。
+// top = 压实土底 + 残草碎点 + 深色碎石；side = 泥土 + 1~2px 草唇（比草方块的 2~4px 更薄，踩秃的样子）；
+// bottom 复用已注册的 dirt 贴图键（不新增重复贴图）。
+function grassPathTopTex(seed) {
+  const px = makeTex();
+  const soil = [120, 93, 59], moss = [88, 106, 52], pebble = [88, 71, 50];
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const t = hash2(x, y, seed);
+      const f = 0.9 + hash2(x, y, seed + 1) * 0.18;
+      let c = soil;
+      if (t < 0.08) c = moss;
+      else if (t > 0.88) c = pebble;
+      px[y * 16 + x] = rgb(c, f);
+    }
+  }
+  return pixelSvg(px);
+}
+
+function grassPathSideTex(seed) {
+  const px = makeTex();
+  const dirt = [134, 96, 67], grass = [110, 158, 72];
+  for (let x = 0; x < 16; x++) {
+    const depth = 1 + Math.floor(hash2(x, 0, seed) * 2); // 草唇 1~2px
+    for (let y = 0; y < 16; y++) {
+      if (y < depth) px[y * 16 + x] = rgb(grass, 0.86 + hash2(x, y, seed + 1) * 0.22);
+      else if (y === depth) px[y * 16 + x] = rgb(grass, 0.6);
+      else px[y * 16 + x] = rgb(dirt, 0.86 + hash2(x, y, seed + 2) * 0.2);
+    }
+  }
+  return pixelSvg(px);
+}
+
+reg('grass_path', {
+  displayName: '草径', tool: 'shovel', hardness: 0.55, transparent: true,
+  icon: 'grass_path_top',
+  textures: { top: 'grass_path_top', side: 'grass_path_side', bottom: 'dirt' },
+  shape: PATH_SHAPE,
+}, {
+  grass_path_top: grassPathTopTex(261),
+  grass_path_side: grassPathSideTex(262),
 });
 
 export const BlockSVGDefinitions = svgMap;

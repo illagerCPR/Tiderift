@@ -13,6 +13,7 @@ import { BlockRegistry } from './BlockRegistry.js';
 
 export const DOOR_THICK = 3 / 16; // 门板厚度（原版 3 像素）
 export const BED_HEIGHT = 9 / 16; // 床面高度（原版 9 像素）
+export const PATH_HEIGHT = 15 / 16; // B46 草径面高度（原版 path 比整格低 1 像素）
 
 // 朝向语义：'n'=-Z（北）'s'=+Z 'w'=-X（西）'e'=+X
 // 门的 facing = 关态面板贴的格边；床的 facing = foot→head 方向
@@ -49,6 +50,8 @@ export function trapdoorShape(facing, open) {
 }
 
 export const BED_SHAPE = box(0, 0, 0, 1, BED_HEIGHT, 1);
+// B46 草径：满格 footprint、顶面低 1 像素（原版 path 的"踩实下陷"观感，碰撞同高）
+export const PATH_SHAPE = box(0, 0, 0, 1, PATH_HEIGHT, 1);
 
 // 门状态 id 查询（base + half('lower'|'upper') + facing + open）
 export function doorId(base, half, facing, open) {

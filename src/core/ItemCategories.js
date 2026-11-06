@@ -34,6 +34,7 @@ const MAP = {
   brown_mushroom: 'nature', mushroom_stem: 'nature', mushroom_cap_red: 'nature', mushroom_cap_brown: 'nature',
   farmland: 'nature', tall_grass: 'nature', netherrack: 'nature', end_stone: 'nature', soul_sand: 'nature',
   magma_block: 'nature',
+  grass_path: 'nature', // B46 草径（村庄路面 / 铲子铺径）
   // ---------- 功能方块 ----------
   crafting_table: 'functional', furnace: 'functional', chest: 'functional', white_bed: 'functional',
   oak_door: 'functional', iron_door: 'functional', oak_trapdoor: 'functional', note_block: 'functional',

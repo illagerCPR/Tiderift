@@ -2682,6 +2682,16 @@ export class Game {
         return true;
       }
     }
+
+    // 铺径（B46）：铲子对草/土/砂土 → 草径（上方须空气；原版「铲子拍出小径」语义）
+    if (sel && groundDef && (groundDef.name === 'grass_block' || groundDef.name === 'dirt' || groundDef.name === 'coarse_dirt')) {
+      const item = ItemRegistry.getByName(sel.name);
+      if (item && item.tool === 'shovel' && this.world.getBlock(x, y + 1, z) === 0) {
+        this.world.setBlock(x, y, z, BlockRegistry.getId('grass_path'));
+        this.hand.swing();
+        return true;
+      }
+    }
     return false;
   }
 

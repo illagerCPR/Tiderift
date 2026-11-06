@@ -30,13 +30,14 @@ export function solveVillage(rng, ax, groundY, az, gen) {
   const plains = gen.getBiome(ax, az) === Biomes.PLAINS;
 
   // 材料表：平原=橡木木板/圆石/云杉屋顶；沙漠=砂岩/白陶瓦
+  // B46：路面两种变体统一换成草径（草径顶面低 1 像素，村庄道路有"踩实的小径"观感）
   const M = plains ? {
     wall: blockId('oak_planks'), corner: blockId('oak_log'), base: blockId('cobblestone'),
-    roof: blockId('spruce_planks'), floor: blockId('oak_planks'), path: blockId('coarse_dirt'),
+    roof: blockId('spruce_planks'), floor: blockId('oak_planks'), path: blockId('grass_path'),
     post: blockId('oak_log'),
   } : {
     wall: blockId('sandstone'), corner: blockId('sandstone'), base: blockId('sandstone'),
-    roof: blockId('white_terracotta'), floor: blockId('sandstone'), path: blockId('sandstone'),
+    roof: blockId('white_terracotta'), floor: blockId('sandstone'), path: blockId('grass_path'),
     post: blockId('sandstone'),
   };
   const ID = {

@@ -4,9 +4,11 @@
 // Build 41：手臂盒长轴改为 Y（与原版模型同构）+ 与第三人称同一套 FACE_MAP/setFaceUV 逐面写入，
 //   再整体绕 X 转 90° 让手（bottom 面）落在远端——此前长轴是 Z 却按 Y 贴图，顶面"肩在前"、
 //   侧面横截面被沿长度拉伸（用户报的"像用肩膀交互"）。
+// Build 46：补第二层皮肤（袖子）——同一部件几何写 overlay UV 区域，外扩 (px+0.5)/px 作子节点，
+//   透明像素靠 alphaTest 丢弃；参数与第三人称 overlay 壳共用 PlayerSkin.overlayScaleFactor。
 import * as THREE from 'three';
 import { buildHeldItemTemplate } from './HeldItemMesh.js';
-import { loadActiveSkin, buildPartBox } from '../entity/PlayerSkin.js';
+import { loadActiveSkin, buildPartBox, partRects, overlayScaleFactor } from '../entity/PlayerSkin.js';
 import { applyEntityLight } from './entityLight.js';
 import { HandPose, HAND_BASE, HAND_BASE_ROT } from './fpHandPose.js';
 
@@ -42,6 +44,7 @@ export class FirstPersonHand {
     this.armMesh.position.set(0, -0.07, 0.30);
     this.armMesh.rotation.x = Math.PI / 2 + ARM_PITCH;
     this.group.add(this.armMesh);
+    this.armOverlay = null; // B46：第二层皮肤（袖子）覆盖层，作为 armMesh 子节点随手臂运动
 
     // 手持物挂点（B41：挂到掌前——原 z=-0.10 在手掌外侧 0.2 格处，手臂可见后像"悬空举着"）
     this.itemGroup = new THREE.Group();
@@ -78,6 +81,7 @@ export class FirstPersonHand {
 
   applySkin(img, model = 'classic') {
     if (!this.armMesh) return;
+    this._disposeArmOverlay(); // 旧袖子的壳/材质先摘掉（贴图在下方随旧材质一起释放）
     const tex = new THREE.CanvasTexture(img);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
@@ -93,6 +97,29 @@ export class FirstPersonHand {
     this.armMesh.material = new THREE.MeshLambertMaterial({ map: tex });
     this.armMesh.position.set(0, -0.07, 0.30);
     this.armMesh.rotation.x = Math.PI / 2 + ARM_PITCH;
+    this._buildArmOverlay(tex, model, w); // B46：二层皮肤（无 overlay 内容的皮肤自动不可见）
+  }
+
+  // B46：第二层皮肤。几何与 base 同尺寸、只换 overlay UV 区域；外扩比例与第三人称共享。
+  // 透明像素由 alphaTest 丢弃（皮肤 overlay 区大面积透明，不能用透明壳直接盖）。
+  _buildArmOverlay(tex, model, w) {
+    const geo = buildPartBox('armR', model, { w, h: ARM_LEN, d: ARM_DEPTH }, 'overlay');
+    const mat = new THREE.MeshLambertMaterial({
+      map: tex, transparent: true, alphaTest: 0.01, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    const d = partRects(model).armR.dims;
+    mesh.scale.set(overlayScaleFactor(d.w), overlayScaleFactor(d.h), overlayScaleFactor(d.d));
+    this.armMesh.add(mesh);
+    this.armOverlay = mesh;
+  }
+
+  _disposeArmOverlay() {
+    if (!this.armOverlay) return;
+    if (this.armOverlay.parent) this.armOverlay.parent.remove(this.armOverlay);
+    this.armOverlay.geometry.dispose();
+    this.armOverlay.material.dispose();
+    this.armOverlay = null;
   }
 
   // 弓蓄力姿态开关（Game 蓄力通道每帧写入；松手/取消传 null 复位）
@@ -126,8 +153,9 @@ export class FirstPersonHand {
   update(dt, ctx = {}) {
     if (!this.visible) return;
     // Build 22：体素光染色——火把/荧石照亮第一人称手臂（按玩家眼睛所在格，与怪物同一公式）
+    // B46：二层袖子共用同一套染色（两个材质各自快照基色）
     if (this.game.world && this.game.player) {
-      applyEntityLight(this.game.world, this.game.sky, this.game.player.position, this.armMesh);
+      applyEntityLight(this.game.world, this.game.sky, this.game.player.position, this.armMesh, this.armOverlay);
     }
     const p = this.game.player;
     const st = this.pose.update(dt, {

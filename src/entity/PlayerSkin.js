@@ -89,14 +89,25 @@ export function setFaceUV(geo, faceIndex, rect, flipU, flipV) {
 // 构建"已按皮肤 UV 写好的部件长方体"（B41：第一人称手臂与第三人称共用同一套 FACE_MAP）。
 // partKey: partRects 的键（head/body/armR/armL/legR/legL）；model: 'classic'|'slim'
 // size: 世界尺寸 { w, h, d }（缺省按原版 16px = 1 格换算）；返回 BoxGeometry（长轴仍按原版：手臂沿 Y）。
-export function buildPartBox(partKey, model = 'classic', size = null) {
+// layer: 'base'（默认，第一层）| 'overlay'（B46 第二层——同一部件几何、不同 UV 区域，
+//        第一人称手臂的二层袖子与第三人称槽共用这一条路径，禁止各拼一套面表）。
+export function buildPartBox(partKey, model = 'classic', size = null, layer = 'base') {
   const r = partRects(model)[partKey];
   if (!r) throw new Error(`未知部件：${partKey}`);
+  const rects = layer === 'overlay' ? r.overlay : r.base;
   const s = size || { w: r.dims.w / 16, h: r.dims.h / 16, d: r.dims.d / 16 };
   const geo = new THREE.BoxGeometry(s.w, s.h, s.d);
-  for (const fm of FACE_MAP) setFaceUV(geo, fm.face, r.base[fm.sel], fm.flipU, fm.flipV);
+  for (const fm of FACE_MAP) setFaceUV(geo, fm.face, rects[fm.sel], fm.flipU, fm.flipV);
   geo.attributes.uv.needsUpdate = true;
   return geo;
+}
+
+// 第二层（overlay）外扩比例：原版第二层比第一层每边大 0.25px → 相对尺寸 (px+0.5)/px。
+// 第三人称 overlay 壳与第一人称袖子共用（B46 收敛：此前只有第三人称有，第一人称手臂裸奔）。
+export function overlayScaleFactor(px) {
+  const n = Number(px);
+  if (!(n > 0)) return 1;
+  return (n + 0.5) / n;
 }
 
 // 把整张皮肤贴到部件几何集合上（双层）。
@@ -134,7 +145,7 @@ export function applySkinToRig(rig, img, model = 'classic') {
     ovMesh.position.copy(mesh.position);
     ovMesh.rotation.copy(mesh.rotation);
     const s = rect.dims;
-    ovMesh.scale.set((s.w + 0.5) / s.w, (s.h + 0.5) / s.h, (s.d + 0.5) / s.d);
+    ovMesh.scale.set(overlayScaleFactor(s.w), overlayScaleFactor(s.h), overlayScaleFactor(s.d));
     pivot.add(ovMesh);
     rig.overlayMeshes = rig.overlayMeshes || [];
     rig.overlayMeshes.push(ovMesh);

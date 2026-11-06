@@ -158,3 +158,20 @@ Chrome 后台会节流 rAF，截图可能拿到旧帧——用 `renderer.render(
 - **纯视觉**：不动 `velocity`/攻击判定；怪物朝向本就不进联机协议，零协议改动。
 - 回归：`tests/build45-mob-turn.mjs`（归一/短边/单步限速/落位/180° 用时/单调/接线绊线）。
 - 浏览器实测（playwright，`m.update = () => {}` 冻结 AI 后直接设 `yaw=π, displayYaw=0`）：每帧 0.13 rad（dt 钳 0.05 × 2.6），24 帧 ≈1.2s 转到位、`mesh.rotation.y === displayYaw`、头部偏航在转身期间先摆到 ±1.1 再回正。
+
+## 十一、B46 第一人称手臂二层皮肤（袖子）
+
+- 问题：第三人称模型早就有第二层（hat/jacket/sleeve/pant 的 overlay 壳，`applySkinToRig` 里外扩 0.5px 的壳 mesh），
+  但第一人称 `FirstPersonHand.applySkin` 只给手臂贴 base 层 → 用户皮肤上的袖子/外套在第一人称下"消失"。
+- 做法（**不新写一套 UV 面表**）：
+  - `PlayerSkin.buildPartBox(partKey, model, size, layer)` 增第 4 参：`layer='overlay'` 时写 `partRects` 的 overlay 区域（默认 `'base'` 行为不变）。
+  - 新增导出纯函数 `overlayScaleFactor(px) = (px+0.5)/px`：第二层每边比第一层大 0.5px（原版语义）。第三人称 `applySkinToRig` 的壳 mesh 与本批第一人称袖子**共用这一个函数**（防两条路径各写一套公式漂移）；非法输入回落 1。
+  - `FirstPersonHand._buildArmOverlay(tex, model, w)`：同尺寸盒几何（overlay UV）+ `MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.01, side: DoubleSide })`，按 `partRects('classic'|'slim').armR.dims` 设 `scale` 外扩，作为 **`armMesh` 的子节点**（随手臂抬起/挥动/换手/落地一起动，不用另算变换）。Alpha 透明像素由 alphaTest 丢弃，不能靠透明壳直接盖（overlay 区大面积透明）。
+  - 换肤：`applySkin` 先 `_disposeArmOverlay()` 再 dispose 旧 base 几何/材质/贴图，然后重建两层；base 与 overlay **共用同一张 `CanvasTexture`**（只上传一次），释放时由 base 侧统一 dispose。
+  - 体素光：`applyEntityLight(..., this.armMesh, this.armOverlay)`，两个材质各自快照基色 → 火把旁袖子同样被暖光染色。
+- **皮肤数据语义**：默认皮肤（`res/default_skin/*.png`）第二层**全透明**，所以默认皮肤下袖子不可见——这是原版语义（默认 Steve 没有外套），不是 bug；验证要用带 overlay 像素的皮肤（浏览器里可直接用 canvas 在手臂 overlay 区域涂色）。
+- **参数/尺寸**：手臂盒仍是 `0.16×0.42×0.16`（classic）/ `0.12×0.42×0.16`（slim）；袖子外扩后约 `1.125×1.0417×1.125`。`alphaTest` 必须 >0（0.01），否则完全透明像素仍会写入深度、在近裁面附近出现"黑边/空洞"。
+- 回归：`tests/build46-fp-arm-overlay.mjs`（47 条）——overlay 区域钉值（classic 正面 (44,36,4,12) / slim 3 宽）、`overlayScaleFactor` 数值与非法输入、`buildPartBox(layer='overlay')` 六面 UV 全不同于 base（负控）、**真 `FirstPersonHand`** 应用皮肤后袖子壳的父子关系/缩放/材质/同贴图、重复换肤只留一层且旧几何·材质·贴图各 dispose 一次、第三人称 `applySkinToRig` 同源比例与 dispose 保持。
+- 浏览器目测（playwright + 系统 Chrome，`game.paused = true` 后 `renderer.render()` 稳定取帧）：
+  用默认皮肤 + canvas 在 `(40,36,16,12)` 四侧面涂红 → 手臂可见面变红（overlay 生效）；
+  只涂 `(40,36,16,6)`（另半段）→ 可见处仍是肤色 base（alphaTest 透明像素不遮挡 base，且映射与第三人称同源）。
