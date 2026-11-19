@@ -222,6 +222,19 @@ agent-browser（实测 0.35.2，`npm i -g agent-browser`）是本项目的**第�
 - Linux/macOS：标准 bash 语法，链式命令可用 `&&`；后台常驻进程由 `start.sh` 用 `nohup` 封装（pid 兜底在 `.run/`，日志落 `*.log`，均已 gitignore）。
 - `Read` 工具对长文件有重复返回前几行的 bug，长文件请改用 `Read` 的 offset/limit 分段，或 `Select-String`（Windows）/ `grep`（Linux）。
 
+## Docker 部署（B50 起）
+
+- **形态**：单端口一体化——镜像内同时含客户端静态站与联机服务器，同一 Node 进程同一端口（3001）提供。`GET /` = 客户端（`dist/index.html`），`GET /admin` = 管理面板，`/api/*` 与 `WS /ws` 行为不变。
+- **`HAS_STATIC` 启动时求值一次**：本地未 `npm run build` 时 `GET /` 回退管理面板——这是本地开发与跑批的行为基线，不能改。静态兜底必须排在 `/api/*` 之后，否则抢占接口路径。
+- **目录穿越防护**：`serveStatic()` 用 `path.resolve` 后做前缀比对（`target.startsWith(STATIC_DIR + sep)`），不要改成 `path.join`——`../` 会逃逸。
+- **数据目录**：`store.js`/`config.js` 支持 `TIDERIFT_DATA_DIR`（容器内 `/data`），**默认值必须保持不变**（`test-hardening-store` 断言默认目录归档位置）。世界与配置同卷，避免单独挂 `config.json` 时被 Docker 建成目录导致 `EISDIR`。
+- **前端同源推导**：`lanStatus.js` 的 `defaultLanHost()` 在 http(s) 页面返回 `location.hostname`，容器部署后玩家无需手填 IP；`DEFAULT_LAN_HOST` 常量保留供测试引用，但 `getLanHost()` 不得直接返回它。
+- **Dockerfile 必须 `COPY src ./src`**：`server/room.js`/`flow.js`/`furnace.js` 直接 `import '../src/…'`，依赖闭包 33 个文件且随功能增长，逐个列举会静默漏拷。反向也成立：`src/net/NetworkManager.js` 依赖 `server/protocol.js`，builder 阶段必须拷它。
+- **runtime 阶段零 `RUN`**：`RUN` 在目标架构执行，本地无 QEMU binfmt 时 arm64 直接 `exec format error`。所有准备放 `--platform=$BUILDPLATFORM` 的 builder/deps 阶段，runtime 只用 `COPY --chown=node:node` 落地（**漏 `--chown` 会 EACCES 读不了 src**）。
+- **健康检查用 `/admin`**：`/api/status` 在开启管理口令后返回 401，不能作探针。
+- **GHCR**：`.github/workflows/docker.yml` 在 push master / push `beta-build-*` / Release published 时构建推送，PR 只构建不推送；多架构 `linux/amd64,linux/arm64`。**首次推送后需人工在包设置确认 Public**，否则匿名拉取 401。
+- 防回退细节见 `docs/agent-notes/docker.md`。
+
 ## 局域网联机（LAN 多人，阶段 0-11 已完成）
 
 - **架构 thin-host（方案C）**：Node 服务器 = 房间管理 + 方块/掉落物账本 + 消息中继 + 时间权威；每个客户端本地自模拟世界（确定性生成 `TerrainGenerator(seed)`，不用 Math.random），只同步增量。消息键 `t`（type），`server/protocol.js` 集中定义；S2C 表见 `docs/lan-multiplayer-design.md` §7。

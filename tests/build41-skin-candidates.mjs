@@ -63,4 +63,23 @@ const urlOf = (list) => list.map((c) => c.url);
   assert('⑤ 镜像名唯一（用于提示来源）', new Set(names).size === names.length, names.join(','));
 }
 
+// ── ⑥ 同源部署（Docker 单端口）：origin 候选排第一且无混合内容 ──
+{
+  const list = buildSkinCandidates('Notch', {
+    protocol: 'http:', hostname: '192.168.1.9', origin: 'http://192.168.1.9:3001',
+  });
+  assert('⑥ 同源 origin 候选排第一', list[0].url === 'http://192.168.1.9:3001/api/skin/Notch', list[0].url);
+  const dup = urlOf(list).filter((u, i, a) => a.indexOf(u) !== i);
+  assert('⑥ 同源 origin 与本机 3001 同址时去重', dup.length === 0, dup.join(','));
+
+  const httpsList = buildSkinCandidates('Notch', {
+    protocol: 'https:', hostname: 'tiderift.example.org', origin: 'https://tiderift.example.org',
+  });
+  assert('⑥ HTTPS 同源候选为 https（无混合内容）',
+    httpsList[0].url === 'https://tiderift.example.org/api/skin/Notch', httpsList[0].url);
+
+  const noOrigin = buildSkinCandidates('Notch', { protocol: 'https:', hostname: 'illagercpr.github.io' });
+  assert('⑥ 无 origin（Pages）时不生成同源候选', noOrigin.every((c) => !c.url.includes('/api/skin/')), urlOf(noOrigin).join(','));
+}
+
 finish();

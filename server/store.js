@@ -4,7 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'world');
+// 数据根目录：默认 server/world（本地开发与测试依赖该默认值，勿改）；
+// Docker 部署用 TIDERIFT_DATA_DIR 指到挂载卷（世界与配置同卷，避免 config.json 挂载被建成目录）。
+const DEFAULT_DIR = process.env.TIDERIFT_DATA_DIR
+  ? path.join(process.env.TIDERIFT_DATA_DIR, 'world')
+  : path.join(path.dirname(fileURLToPath(import.meta.url)), 'world');
 
 // 房间名 -> 安全文件名（中文/字母/数字/连字符保留，其余替换为 _，空名回退 default）
 export function roomFileName(name) {

@@ -1,0 +1,44 @@
+# docker-compose.yml -- Tiderift 一体化部署示例
+# 用法：
+#   docker compose up -d      启动
+#   docker compose logs -f    查看日志
+#   docker compose down       停止（数据卷保留）
+#
+# 客户端与管理面板同端口：http://<主机IP>:3001/ 为游戏，http://<主机IP>:3001/admin 为管理面板。
+
+services:
+  tiderift:
+    image: ghcr.io/illagercpr/tiderift-server:latest
+    # 也可改为本地构建：注释掉 image，启用下面两行
+    # build: .
+    # image: tiderift:local
+    container_name: tiderift
+    restart: unless-stopped
+    # init 让 PID 1 正确处理 SIGTERM（服务器有优雅关闭逻辑，否则要等 10 秒超时才被 SIGKILL）
+    init: true
+    ports:
+      - "3001:3001"
+    volumes:
+      # 世界存档（/data/world）与服务器配置（/data/config.json）都落在这个卷里
+      - tiderift-data:/data
+    environment:
+      # 端口与监听地址（一般不用改）
+      PORT: "3001"
+      HOST: "0.0.0.0"
+      # 数据目录（与上面的卷对应，改这里要同步改 volumes）
+      TIDERIFT_DATA_DIR: "/data"
+      NODE_ENV: "production"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/admin').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  tiderift-data:

@@ -109,6 +109,69 @@ npm run preview        # 预览构建产物
 
 ---
 
+## Docker 部署（推荐用于长期开服）
+
+一个容器同时提供**游戏客户端**与**联机服务器**，玩家打开一个地址即可游玩，无需安装 Node。
+
+```bash
+docker run -d --name tiderift \
+  -p 3001:3001 \
+  -v tiderift-data:/data \
+  --restart unless-stopped \
+  ghcr.io/illagercpr/tiderift-server:latest
+```
+
+启动后：
+
+| 地址 | 用途 |
+|---|---|
+| `http://<主机IP>:3001/` | 游戏客户端（玩家打开即玩） |
+| `http://<主机IP>:3001/admin` | 服务器管理面板 |
+
+玩家进入主菜单 →「局域网联机」→ 填昵称与房间名 → 创建/加入房间即可。**服务器地址会自动填成当前页面所在主机**，无需手动输入 IP。
+
+### 数据持久化
+
+世界存档与服务器配置都保存在 `/data` 卷中：
+
+```
+/data/world/<房间名>.json     房间世界（方块账本、掉落物、种子、时间）
+/data/world/players/          玩家档案
+/data/config.json             服务器配置（管理面板修改后写入）
+```
+
+删除容器不会丢数据；`docker rm -v` 或删除卷才会。
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PORT` | `3001` | 监听端口 |
+| `HOST` | `0.0.0.0` | 监听地址 |
+| `TIDERIFT_DATA_DIR` | `/data` | 数据根目录（世界与配置都放这里） |
+| `TIDERIFT_STATIC_DIR` | `/app/dist` | 客户端静态文件目录 |
+
+### docker compose
+
+仓库内提供 `docker-compose.yml`：
+
+```bash
+docker compose up -d      # 启动
+docker compose logs -f    # 查看日志
+docker compose down       # 停止（数据卷保留）
+```
+
+### 自行构建
+
+```bash
+docker build -t tiderift .
+docker run -d -p 3001:3001 -v tiderift-data:/data tiderift
+```
+
+> 镜像由 GitHub Actions 在每次 push `master` 与发布 Release 时自动构建，支持 `linux/amd64` 与 `linux/arm64`。
+
+---
+
 ## 操作说明
 
 | 键位 | 功能 |

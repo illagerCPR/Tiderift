@@ -235,6 +235,7 @@ export class SkinScreen {
       netUrl: (g && g.networkMode && g.net && g.net._url) ? g.net._url : null,
       protocol: location.protocol,
       hostname: location.hostname,
+      origin: location.origin,
     });
     for (const cand of candidates) {
       try {

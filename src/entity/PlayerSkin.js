@@ -294,12 +294,16 @@ function localServerWorthTrying(protocol, hostname) {
 }
 
 // 按用户名取皮肤的候选链（纯函数，node 可测）：[{ kind:'proxy'|'local'|'mirror', url, name }]
-//   ctx = { netUrl?: 'ws://host:3001/ws', protocol: 'https:', hostname: 'example.org' }
-// 顺序：联机代理 → 本机 3001（仅本地/http）→ 第三方镜像 → 由调用方兜底提示上传。
+//   ctx = { netUrl?: 'ws://host:3001/ws', protocol: 'https:', hostname: 'example.org', origin?: 'https://host' }
+// 顺序：同源代理（Docker 单端口部署）→ 联机代理 → 本机 3001（仅本地/http）→ 第三方镜像 → 由调用方兜底提示上传。
 export function buildSkinCandidates(username, ctx = {}) {
   const enc = encodeURIComponent(username);
   const out = [];
-  const { netUrl, protocol = 'https:', hostname = '' } = ctx;
+  const { netUrl, protocol = 'https:', hostname = '', origin } = ctx;
+  // 同源部署：页面与服务器同端口，/api/skin/ 直接可用且无混合内容问题（优先级最高）
+  if (origin && (protocol === 'http:' || protocol === 'https:')) {
+    out.push({ kind: 'proxy', name: 'Mojang API', url: `${origin}/api/skin/${enc}` });
+  }
   if (netUrl) {
     const base = String(netUrl).replace(/^ws/, 'http').replace(/\/ws$/, '');
     out.push({ kind: 'proxy', name: 'Mojang API', url: `${base}/api/skin/${enc}` });

@@ -1,0 +1,37 @@
+# 依赖（镜像内重新安装）
+node_modules
+server/node_modules
+
+# 构建产物（镜像内重新构建）
+dist
+
+# 版本控制与工具链
+.git
+.gitignore
+.github
+.nvmrc
+
+# 测试与文档（不进镜像）
+tests
+docs
+*.md
+!README.md
+
+# 服务器运行时数据（绝不进镜像）
+server/world
+server/config.json
+server/test-*.mjs
+server/run-all-tests.sh
+
+# 日志与本地缓存
+*.log
+.run
+.playwright-cli
+.playwright-anim
+.dsh-meow
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea
+.vscode

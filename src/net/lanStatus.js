@@ -9,6 +9,20 @@ export const LAN_PORT = 3001;
 export const LAN_HOST_KEY = 'project-mc-lan-host';
 export const DEFAULT_LAN_HOST = '127.0.0.1';
 
+// 同源部署（Docker 单端口：客户端与服务器同端口）时的默认主机名。
+// 页面由 http(s) 提供时，服务器就在同一个 host 上——直接用 location.hostname，
+// 玩家打开 http://<服务器IP>:3001/ 即可联机，无需手填 IP。
+// 无 location（node 测试）或 file: 协议时回退 127.0.0.1。
+export function defaultLanHost() {
+  try {
+    const loc = typeof location !== 'undefined' ? location : null;
+    if (loc && (loc.protocol === 'http:' || loc.protocol === 'https:') && loc.hostname) {
+      return loc.hostname;
+    }
+  } catch (e) { /* 无 location 走默认 */ }
+  return DEFAULT_LAN_HOST;
+}
+
 // 归一化用户输入：去 scheme（ws:// http:// wss:// https://）、去端口、去尾斜杠与路径。
 // 空/非法输入返回 null（调用方回退显示当前已存值）；合法返回裸主机名（IPv4/域名/IPv6 原样保留）。
 export function normalizeLanHost(raw) {
@@ -29,7 +43,7 @@ export function lanWsUrl(host = DEFAULT_LAN_HOST) {
   return `ws://${host}:${LAN_PORT}/ws`;
 }
 
-// 当前持久化的 LAN 主机名（localStorage 不可用/未存时回退默认）
+// 当前持久化的 LAN 主机名（localStorage 不可用/未存时回退同源推导，再回退 127.0.0.1）
 export function getLanHost() {
   try {
     const raw = localStorage.getItem(LAN_HOST_KEY);
@@ -38,7 +52,7 @@ export function getLanHost() {
       if (n) return n;
     }
   } catch (e) { /* 无 localStorage（node/隐私模式）走默认 */ }
-  return DEFAULT_LAN_HOST;
+  return defaultLanHost();
 }
 
 // 归一化并持久化；非法输入返回 null（调用方保持原值），合法返回归一化结果

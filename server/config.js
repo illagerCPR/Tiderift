@@ -9,7 +9,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileAtomic } from './store.js';
 
-const CONFIG_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config.json');
+// 配置文件路径：默认 server/config.json（本地开发与测试依赖该默认值，勿改）；
+// Docker 部署用 TIDERIFT_DATA_DIR 指到挂载卷，与世界数据同卷持久化。
+const CONFIG_PATH = process.env.TIDERIFT_DATA_DIR
+  ? path.join(process.env.TIDERIFT_DATA_DIR, 'config.json')
+  : path.join(path.dirname(fileURLToPath(import.meta.url)), 'config.json');
 
 // 默认配置（字段说明见 README / 管理面板）
 const DEFAULTS = {

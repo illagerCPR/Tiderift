@@ -9,7 +9,7 @@
 import { readFileSync } from 'fs';
 import http from 'node:http';
 import {
-  normalizeLanHost, lanWsUrl, probeLanServer, LAN_PORT, LAN_HOST_KEY, DEFAULT_LAN_HOST,
+  normalizeLanHost, lanWsUrl, probeLanServer, LAN_PORT, LAN_HOST_KEY, DEFAULT_LAN_HOST, defaultLanHost,
 } from '../src/net/lanStatus.js';
 import { ok, finish } from './harness.mjs';
 
@@ -51,6 +51,19 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
   ok(normalizeLanHost(null) === null, '非字符串 → null');
   ok(lanWsUrl('192.168.1.5') === 'ws://192.168.1.5:3001/ws', 'lanWsUrl 组装');
   ok(lanWsUrl() === `ws://${DEFAULT_LAN_HOST}:${LAN_PORT}/ws`, '默认主机 127.0.0.1:3001');
+  // 同源推导（Docker 单端口部署）：node 无 location → 回退 127.0.0.1
+  ok(defaultLanHost() === DEFAULT_LAN_HOST, '无 location（node）时 defaultLanHost 回退 127.0.0.1');
+  {
+    // 模拟浏览器同源页面：http://192.168.1.9:3001/ → 默认主机即该 host
+    const prev = globalThis.location;
+    globalThis.location = { protocol: 'http:', hostname: '192.168.1.9' };
+    ok(defaultLanHost() === '192.168.1.9', 'http 页面同源推导出 location.hostname');
+    globalThis.location = { protocol: 'https:', hostname: 'tiderift.example.org' };
+    ok(defaultLanHost() === 'tiderift.example.org', 'https 页面同样同源推导');
+    globalThis.location = { protocol: 'file:', hostname: '' };
+    ok(defaultLanHost() === DEFAULT_LAN_HOST, 'file: 协议回退 127.0.0.1');
+    if (prev === undefined) delete globalThis.location; else globalThis.location = prev;
+  }
 
   // probeLanServer 真实探测：本机临时端口起 http 服务（在线）→ 关闭（离线）
   const server = http.createServer((req, res) => { res.writeHead(401); res.end('no'); }); // 401 也算在线

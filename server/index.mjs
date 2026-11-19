@@ -19,6 +19,33 @@ import { tierOf, createConnectionLimiters, RateLimiter } from './ratelimit.js';
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// 静态客户端目录（Docker 部署时由镜像内置 dist；本地开发未构建时不存在 → 回退管理面板）
+// 环境变量 TIDERIFT_STATIC_DIR 可覆盖，默认取仓库根的 dist/
+const STATIC_DIR = process.env.TIDERIFT_STATIC_DIR
+  || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+const STATIC_INDEX = path.join(STATIC_DIR, 'index.html');
+const HAS_STATIC = fs.existsSync(STATIC_INDEX);
+
+// 静态资源 MIME 表（只覆盖构建产物实际会用到的类型）
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.map': 'application/json; charset=utf-8',
+};
+
 // 服务器配置（管理面板可改，落盘 config.json，重启保留）
 const serverConfig = config.loadConfig();
 const BOOT_TIME = Math.floor(Date.now() / 1000);
@@ -174,6 +201,46 @@ const adminHtml = (() => {
     return fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'admin.html'), 'utf8');
   } catch { return '<h1>管理面板文件缺失</h1>'; }
 })();
+
+// 静态文件服务：把 URL 路径解析到 STATIC_DIR 内，越界（目录穿越）一律拒绝。
+// 返回 true 表示已响应；false 表示未命中（调用方继续走 404）。
+// 安全要点：path.resolve 后必须仍以 STATIC_DIR + sep 开头，否则 ../ 可逃逸到仓库外。
+function serveStatic(res, urlPath) {
+  if (!HAS_STATIC) return false;
+  let rel;
+  try {
+    rel = decodeURIComponent(urlPath);
+  } catch {
+    return false; // 非法百分号编码
+  }
+  if (rel.includes('\0')) return false;
+  const target = path.resolve(STATIC_DIR, '.' + (rel.startsWith('/') ? rel : '/' + rel));
+  const rootWithSep = STATIC_DIR.endsWith(path.sep) ? STATIC_DIR : STATIC_DIR + path.sep;
+  if (target !== STATIC_DIR && !target.startsWith(rootWithSep)) return false; // 穿越拦截
+  let stat;
+  try {
+    stat = fs.statSync(target);
+  } catch {
+    return false;
+  }
+  if (!stat.isFile()) return false;
+  const ext = path.extname(target).toLowerCase();
+  const type = MIME_TYPES[ext] || 'application/octet-stream';
+  // 带内容哈希的 assets/ 可长缓存；其余（index.html 等）每次校验，避免发版后拿到旧壳
+  const immutable = rel.startsWith('/assets/');
+  const headers = {
+    'Content-Type': type,
+    'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+  };
+  try {
+    const body = fs.readFileSync(target);
+    res.writeHead(200, { ...headers, 'Content-Length': body.length });
+    res.end(body);
+  } catch {
+    return false;
+  }
+  return true;
+}
 
 // Build 21 M3：皮肤代理缓存（用户名小写 → {ts, payload}；5 分钟 TTL，规避 Mojang 限速）
 const skinCache = new Map();
@@ -396,8 +463,16 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
-  // 管理面板页面
+  // 管理面板页面（Docker 部署后前端占用 /，管理面板固定走 /admin）
+  if (req.method === 'GET' && p === '/admin') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(adminHtml);
+    return;
+  }
+
+  // 根路径：有构建产物则服务前端（同源部署，玩家打开即玩）；否则回退管理面板（本地开发/跑批行为不变）
   if (req.method === 'GET' && p === '/') {
+    if (HAS_STATIC && serveStatic(res, '/index.html')) return;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(adminHtml);
     return;
@@ -716,6 +791,9 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  // 静态资源兜底（/assets/*、favicon 等）：必须在 /api/* 与 /ws 之后，避免抢占接口路径
+  if (req.method === 'GET' && serveStatic(res, p)) return;
+
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('404 Not Found');
 }
@@ -973,7 +1051,13 @@ wss.on('connection', (ws, req) => {
 server.listen(PORT, HOST, () => {
   console.log(`Project-MC LAN server 监听 http://${HOST}:${PORT} (WebSocket: /ws)`);
   console.log('局域网内其它电脑用 ws://<本机IP>:' + PORT + '/ws 加入');
-  console.log(`管理面板: http://127.0.0.1:${PORT}/ （房间/玩家/配置/世界管理）`);
+  if (HAS_STATIC) {
+    console.log(`客户端: http://127.0.0.1:${PORT}/ （静态目录 ${STATIC_DIR}）`);
+    console.log(`管理面板: http://127.0.0.1:${PORT}/admin （房间/玩家/配置/世界管理）`);
+  } else {
+    console.log(`管理面板: http://127.0.0.1:${PORT}/ （房间/玩家/配置/世界管理）`);
+    console.log(`未找到客户端构建产物（${STATIC_INDEX}），/ 回退为管理面板；如需同源部署请先 npm run build`);
+  }
   console.log(`已加载磁盘房间存档: ${store.loadRooms().length} 个`);
   console.log(`配置: 掉落物过期 ${serverConfig.dropTtlMs}ms 心跳 ${serverConfig.heartbeatMs}ms 每房上限 ${serverConfig.maxPlayersPerRoom}人 管理口令 ${serverConfig.adminToken ? '已开启' : '未开启(局域网信任)'}${serverConfig.adminTokenExpires > 0 ? ` (${new Date(serverConfig.adminTokenExpires * 1000).toLocaleString()} 过期)` : ''}`);
 });
