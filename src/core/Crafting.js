@@ -178,6 +178,25 @@ addShaped('drive_shaft', 4, [['iron_ingot'], ['stone'], ['iron_ingot']], ['indus
 addShaped('crusher', 1, ['stone','iron_ingot','stone','stone','drive_shaft','stone','stone','iron_ingot','stone'], ['industry']);
 addShaped('tide_boiler', 1, ['iron_ingot','iron_ingot','iron_ingot','iron_ingot','furnace','iron_ingot','stone','bucket','stone'], ['industry']);
 
+// ── B51 R4 四潮回响（内容归属 magic：关闭魔法的世界没有这些配方）──────────────
+// 回响尘：星髓研磨出的潮的记忆；仪台 = 石英环 + 回响尘心；两个焦点各取一潮材料。
+addShapeless('echo_dust', 2, ['star_marrow'], ['magic']);
+addShaped('resonance_table', 1, [
+  'quartz', 'stone_bricks', 'quartz',
+  'stone_bricks', 'echo_dust', 'stone_bricks',
+  'quartz', 'stone_bricks', 'quartz',
+], ['magic']);
+addShaped('gale_focus', 1, [
+  null, 'feather', null,
+  'feather', 'echo_dust', 'feather',
+  null, 'feather', null,
+], ['magic']);
+addShaped('ember_focus', 1, [
+  null, 'blaze_powder', null,
+  'blaze_powder', 'echo_dust', 'blaze_powder',
+  null, 'blaze_powder', null,
+], ['magic']);
+
 // 匹配函数：输入是 grid 二维数组（每行一个数组），返回匹配结果或 null
 // manifest 缺省 = 双关（fail-closed）：带归属需求的配方不会在未声明清单的世界里命中
 export function matchRecipe(grid, manifest) {

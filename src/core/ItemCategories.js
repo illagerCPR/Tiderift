@@ -43,6 +43,8 @@ const MAP = {
   end_portal_frame_eye: 'functional', end_portal: 'functional', nether_portal: 'functional',
   aether_portal: 'functional', end_gateway: 'functional',
   // ---------- 红石 ----------
+  // B51 R4 四潮回响（魔法内容）
+  resonance_table: 'functional', echo_dust: 'materials', gale_focus: 'tools', ember_focus: 'tools',
   // B51 R3 潮工（工业内容；关闭工业的世界连创造栏都不出现）
   tide_boiler: 'functional', drive_shaft: 'functional', crusher: 'functional',
   redstone_wire: 'redstone', redstone_torch: 'redstone', redstone_torch_item: 'redstone',

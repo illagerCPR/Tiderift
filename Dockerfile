@@ -46,7 +46,7 @@ ENV NODE_ENV=production \
 COPY --chown=node:node server/package.json ./server/
 COPY --chown=node:node server/index.mjs server/room.js server/store.js server/config.js \
      server/protocol.js server/ratelimit.js server/stats.js \
-     server/flow.js server/furnace.js server/industry.js server/client-sim.mjs \
+     server/flow.js server/furnace.js server/industry.js server/magic.js server/client-sim.mjs \
      server/admin.html ./server/
 # 服务器与客户端共享的纯逻辑模块（room.js/flow.js/furnace.js 直接 import ../src/…：
 # 维度表、地形生成器、结构表、方块注册表等，共 33 个文件且随功能增长）

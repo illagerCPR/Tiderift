@@ -5,6 +5,11 @@
 // ru/es/pt 列（Build 9）：Незер/Энд/Эфир、Nether/End/Éter、Редстоун/Redstone；自创词 Висп/Fuego fatuo/Fogo-fátuo 全书统一。
 export const NAME_I18N = {
   // ---------- 方块（来源：BlockCN + BlockDefs 内联 displayName） ----------
+  // B51 R4 四潮回响（魔法内容）
+  resonance_table: ['回响仪台', '回響儀台', 'Resonance Table', 'Table de résonance', 'Resonanztisch', '残響の調律台', '공명 조율대', 'طاولة الصدى', "Стол отзвука", 'Mesa de resonancia', 'Mesa de ressonância'],
+  echo_dust: ['回响尘', '回響塵', 'Echo Dust', 'Poussière d\'écho', 'Echostaub', '残響の塵', '메아리 가루', 'غبار الصدى', "Пыль отзвука", 'Polvo de eco', 'Pó de eco'],
+  gale_focus: ['风潮焦点', '風潮焦點', 'Gale Focus', 'Focalisateur de bourrasque', 'Sturmfokus', '風潮の焦点', '바람潮 초점', 'بؤرة عاصفة', "Фокус шквала", 'Foco de vendaval', 'Foco de vendaval'],
+  ember_focus: ['坠潮焦点', '墜潮焦點', 'Ember Focus', 'Focalisateur de braise', 'Glutbrand-Fokus', '墜潮の焦点', '불씨潮 초점', 'بؤرة جمر', "Фокус углей", 'Foco de ascua', 'Foco de brasa'],
   // B51 R3 潮工三件套（工业内容）
   tide_boiler: ['潮压锅炉', '潮壓鍋爐', 'Tide Boiler', 'Chaudière de marée', 'Tide-Druckkessel', '潮圧ボイラー', '조류압 보일러', 'مرجل المدّ', "Котёл приливного давления", 'Caldera de marea', 'Caldeira de maré'],
   drive_shaft: ['传动轴', '傳動軸', 'Drive Shaft', 'Arbre de transmission', 'Antriebswelle', '伝動軸', '전동축', 'ناقل الحركة', "Вал передачи", 'Eje de transmisión', 'Eixo de transmissão'],

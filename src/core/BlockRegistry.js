@@ -73,6 +73,8 @@ function register(def) {
     requiresExtras: normalizeRequires(def.requiresExtras),
     // B51 R3：工业机器身份（'boiler'|'shaft'|'crusher'；朝向/状态变体不改变它）
     industryKind: def.industryKind || null,
+    // B51 R4：魔法装置身份（'table' = 回响仪台）
+    magicKind: def.magicKind || null,
     color: def.color || null
   };
   blocks.set(id, block);

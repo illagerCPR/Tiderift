@@ -95,6 +95,7 @@ PURE_NODE_SUITES=(
     extra-content-unit         # B51 R1 额外内容基石（纯 node：清单规范化/旧形态回落/未知 schema 拒绝/归属元数据/配方与结构闸口/World 清单同源/无全局串状态）
     docker-image-files         # 镜像服务器文件清单（纯 node：入口闭包 ⊆ runtime COPY 列表 / COPY src 红线 / 负控）
     industry-unit              # B51 R3 潮工最小闭环（纯 node：方块 ID 钉值/归属与配方/拓扑分量与超限/锅炉点火与空桶回收/供需效率降速/槽位动作/清洗/存档净化/接线绊线）
+    magic-unit                 # B51 R4 四潮回响最小闭环（纯 node：仪台与焦点 ID 钉值/归属与配方/回响钳制与调谐/施法五关/风步落点裁剪/冷却/形状校验/存档与档案/接线绊线）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -135,7 +136,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12 test-extra-content test-industry; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12 test-extra-content test-industry test-magic; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

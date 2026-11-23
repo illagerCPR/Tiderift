@@ -2820,6 +2820,58 @@ reg('crusher', {
   crusher_front: crusherFrontTex(276),
 });
 
+
+// ── Build 51 R4 回响仪台（**文件末尾追加**，方块 ID 零漂移，取 227）─────────────────
+// 魔法内容：仪台用经验调谐回响、也是焦点制作的知识来源；requiresExtras: ['magic']。
+// 视觉：石英台面 + 四潮环刻（风/坠/雨/无潮四段缺口），台心一枚回响尘孔。
+function resonanceTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([228, 232, 238], 0.93 + hash2(x, y, seed) * 0.1);
+  }
+  // 四角石钉
+  for (const [x, y] of [[2, 2], [13, 2], [2, 13], [13, 13]]) fillRect(px, x, y, x + 1, y + 1, rgb([150, 158, 170]));
+  // 四潮环：四段青蓝弧线 + 四道缺口（无潮 = 缺口）
+  const ring = rgb([96, 190, 196], 0.98);
+  for (let a = 0; a < 360; a += 6) {
+    const seg = Math.floor(a / 90);
+    if (seg === 3) continue; // 无潮那一段留白
+    const rad = (a * Math.PI) / 180;
+    const x = Math.round(7.5 + Math.cos(rad) * 5);
+    const y = Math.round(7.5 + Math.sin(rad) * 5);
+    setPx(px, x, y, ring);
+  }
+  // 台心回响尘
+  fillRect(px, 7, 7, 8, 8, rgb([148, 226, 222], 1.1));
+  setPx(px, 7, 7, 'rgb(255,255,255)');
+  return pixelSvg(px);
+}
+
+function resonanceSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([214, 218, 226], 0.9 + hash2(x, y, seed) * 0.1);
+  }
+  fillRect(px, 0, 0, 15, 2, rgb([236, 240, 246]));
+  fillRect(px, 0, 12, 15, 15, rgb([168, 174, 186]));
+  // 侧面一道回响刻线 + 四小点（四潮）
+  fillRect(px, 0, 7, 15, 7, rgb([96, 190, 196], 0.95));
+  for (const x of [3, 6, 9, 12]) setPx(px, x, 9, rgb([96, 190, 196], 0.8));
+  rivetFrame(px, rgb([150, 158, 170]), 1);
+  return pixelSvg(px);
+}
+
+reg('resonance_table', {
+  displayName: '回响仪台', hardness: 2.5, tool: 'pickaxe', minTier: 0,
+  requiresExtras: ['magic'], magicKind: 'table',
+  icon: 'resonance_table_top',
+  textures: { top: 'resonance_table_top', side: 'resonance_table_side', bottom: 'resonance_table_side' },
+  lore: ['把经验按进台心，它会还你潮的回响。'],
+}, {
+  resonance_table_top: resonanceTopTex(280),
+  resonance_table_side: resonanceSideTex(281),
+});
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

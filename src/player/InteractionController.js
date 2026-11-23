@@ -264,6 +264,14 @@ export class InteractionController {
         return CLICK_CONSUMED;
       }
 
+      // B51 R4：回响仪台——右键用经验调谐回响（方块交互优先于手持物品）
+      const tableDef = furnaceHit ? BlockRegistry.getById(furnaceHit.id) : null;
+      if (tableDef && tableDef.magicKind === 'table' && g.magic && !g.player.spectator) {
+        if (g.magic.tuneTable()) {
+          g.controls.mouseRight = false;
+          return CLICK_CONSUMED;
+        }
+      }
       // B51 R3：潮工机器——手持物品=投料，空手=取产物（联机只发动作，等服务器回执）
       const machineDef = furnaceHit ? BlockRegistry.getById(furnaceHit.id) : null;
       if (machineDef && machineDef.industryKind && g.industry && !g.player.spectator) {
@@ -496,6 +504,13 @@ export class InteractionController {
         }
       }
       
+      // B51 R4：手持回响焦点 → 施法（不依赖准星命中方块；失败也消费本次右键，防误放/连发）
+      if (sel && g.magic && g.magic.isFocus(sel.name)) {
+        g.magic.castHeld();
+        g.controls.mouseRight = false;
+        return CLICK_CONSUMED;
+      }
+
       if (sel && hit) {
         const placeX = hit.block.x + hit.normal.x;
         const placeY = hit.block.y + hit.normal.y;

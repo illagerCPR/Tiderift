@@ -658,6 +658,8 @@ export class NetworkManager {
       if (typeof prof.saturation === 'number') p.saturation = Math.min(20, Math.max(0, prof.saturation));
       if (typeof prof.xp === 'number') p.xp = Math.max(0, prof.xp);
       if (typeof prof.xpLevel === 'number') p.xpLevel = Math.max(0, prof.xpLevel);
+      // B51 R4：回响随玩家档案（关闭魔法的房间不显示也不扣减，但数值按档案恢复）
+      if (typeof prof.echo === 'number') p.echo = Math.max(0, Math.min(p.echoMax || 100, prof.echo | 0));
       if (!preservePosition && prof.position && g.world && prof.dim === g.world.dimension) {
         p.position.set(prof.position.x, prof.position.y, prof.position.z);
         p.velocity.set(0, 0, 0);
@@ -680,6 +682,7 @@ export class NetworkManager {
       saturation: p.saturation,
       xp: p.xp,
       xpLevel: p.xpLevel,
+      echo: p.echo | 0, // B51 R4：回响随档案（轻信任模型，服务器只做范围清洗）
     };
   }
 
@@ -864,6 +867,10 @@ export class NetworkManager {
           this.isHost = (msg.hostId === this.selfId);
           this._emit('world_info', msg);   // 首次进入：由 main.js 用该 seed 启动世界
         }
+        break;
+      case MSG.MAGIC_EFFECT:
+        // B51 R4：远端施法表现（纯视觉：不扣回响、不结算伤害）
+        if (this.game && this.game.magic) this.game.magic.applyRemoteEffect(msg);
         break;
       case MSG.INDUSTRY_STATE:
         // B51 R3：机器权威状态（含仅发给本人的 res 回执）
@@ -1409,6 +1416,15 @@ export class NetworkManager {
   }
   sendRespawn(x, y, z) { this._send(MSG.RESPAWN, { x, y, z }); }
   sendGamemode(mode) { this._send(MSG.GAMEMODE, { mode }); }
+  // B51 R4：施法事件广播（本机权威结算；服务器只校验并转发表现）
+  sendMagicCast(spell, echo, pos, dir) {
+    this._send(MSG.MAGIC_CAST, {
+      spell, echo: echo | 0,
+      x: pos.x, y: pos.y, z: pos.z,
+      dx: dir.x, dy: dir.y, dz: dir.z,
+    });
+  }
+
   // B51 R3：潮工机器动作（投料/取产物）——服务器权威结算并回执
   sendIndustryAction(x, y, z, op, name, count) {
     this._send(MSG.INDUSTRY_ACTION, { x, y, z, op, name: name || null, count: count | 0 });

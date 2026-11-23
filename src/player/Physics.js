@@ -6,6 +6,8 @@ import { CHUNK_HEIGHT } from '../core/Chunk.js';
 
 const GRAVITY = -32;
 const JUMP_VELOCITY = 9;
+const SLOW_FALL_GRAVITY = 6;   // 风步缓降时的重力（远小于常重力）
+const SLOW_FALL_MAX = -3;      // 风步缓降时的下落速度上限（m/s）
 const WATER_GRAVITY = -8;       // 水中重力（约为陆地的 1/4）
 const WATER_DRAG = 0.8;         // 水中垂直阻力（每帧速度衰减）
 const WATER_HORZ_DRAG = 0.7;    // 水中水平阻力
@@ -37,6 +39,10 @@ export class Physics {
         // 限制水中垂直速度
         if (entity.velocity.y < -4) entity.velocity.y = -4;
         if (entity.velocity.y > 6) entity.velocity.y = 6;
+      } else if (entity.slowFall > 0) {
+        // B51 R4 风步缓降：轻重力 + 下落速度上限（不改变水平速度、不等于飞行）
+        entity.velocity.y += SLOW_FALL_GRAVITY * dt;
+        if (entity.velocity.y < SLOW_FALL_MAX) entity.velocity.y = SLOW_FALL_MAX;
       } else if (entity.gliding) {
         entity.velocity.y += GLIDE_GRAVITY * dt;
         // 下沉上限随机速变化：飞得越快升力越大，平飞下沉越缓（拉起转爬升的起

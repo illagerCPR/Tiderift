@@ -29,6 +29,25 @@ export class Hud {
     this.xpText.style.cssText = 'position: absolute; left: 50%; top: -16px; transform: translateX(-50%); color: #80ff20; font-size: 12px; text-shadow: 1px 1px 0 #000;';
     this.xpBar.appendChild(this.xpText);
     
+    // B51 R4：回响条（仅启用魔法的世界显示；经验条上方一行）
+    this.echoBar = document.createElement('div');
+    // 位置：快捷栏左侧（右侧让给第一人称手持物，正上方是血量/经验条）
+    this.echoBar.style.cssText = `
+      position: absolute; bottom: 40px; left: calc(50% - 390px);
+      width: 170px; height: 8px; background: rgba(0,0,0,0.5); border: 1px solid #2f4a52;
+      z-index: 9; display: none;
+    `;
+    this.echoFill = document.createElement('div');
+    this.echoFill.style.cssText = 'width: 0%; height: 100%; background: linear-gradient(90deg, #3fa8b0, #7fe6e0);';
+    this.echoBar.appendChild(this.echoFill);
+    this.echoCd = document.createElement('div');
+    this.echoCd.style.cssText = 'position: absolute; inset: 0; width: 0%; background: rgba(255,255,255,0.35);';
+    this.echoBar.appendChild(this.echoCd);
+    this.echoText = document.createElement('div');
+    this.echoText.style.cssText = 'position: absolute; left: 0; top: -15px; color: #9fe6e0; font-size: 11px; text-shadow: 1px 1px 0 #000; white-space: nowrap;';
+    this.echoBar.appendChild(this.echoText);
+    document.body.appendChild(this.echoBar);
+
     // 氧气泡（水下显示）
     this.airBar = document.createElement('div');
     this.airBar.style.cssText = `
@@ -195,6 +214,20 @@ export class Hud {
 
   // 全部状态栏隐藏（返回主菜单时调用；Hud 是跨存档共享实例，
   // 不隐藏会让血量/饥饿/经验条/氧气/准星残留在菜单界面上）
+  // B51 R4：回响条（visible=false 时整条隐藏——关闭魔法的世界不显示任何回响 UI）
+  setEcho(echo, max, cooldownFrac = 0, visible = true) {
+    if (!this.echoBar) return;
+    if (!visible || !(max > 0)) {
+      this.echoBar.style.display = 'none';
+      return;
+    }
+    this.echoBar.style.display = 'block';
+    const pct = Math.max(0, Math.min(100, (echo / max) * 100));
+    this.echoFill.style.width = `${pct}%`;
+    this.echoCd.style.width = `${Math.max(0, Math.min(1, cooldownFrac)) * 100}%`;
+    this.echoText.textContent = t('回响 {n}/{m}', { n: echo | 0, m: max });
+  }
+
   hideAll() {
     this.el.style.display = 'none';
     this.xpBar.style.display = 'none';
@@ -207,6 +240,7 @@ export class Hud {
     this.finaleBanner.style.opacity = '0';
     this.versionTag.style.display = 'none';
     this.toast.style.display = 'none';
+    if (this.echoBar) this.echoBar.style.display = 'none'; // B51 R4：回菜单/退出世界不残留回响条
     this.toast.style.opacity = '0';
     this.witherOverlay.style.opacity = '0'; // 回菜单复位凋零滤镜（防上一存档残留）
   }

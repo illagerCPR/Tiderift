@@ -375,7 +375,8 @@ export function sanitizeSaveData(raw) {
     xp: clamp(finite(p.xp, 0), 0, 1e9),
     xpLevel: clamp(finite(p.xpLevel, 0), 0, 1e6),
     onFire: clamp(finite(p.onFire, 0), 0, 1e6),
-    airTicks: clamp(finite(p.airTicks, 300), 0, 300)
+    airTicks: clamp(finite(p.airTicks, 300), 0, 300),
+    echo: clamp(finite(p.echo, 0), 0, 100) // B51 R4：回响（上限与 ECHO_MAX 同步）
   };
 
   out.inventory = sanitizeInventory(raw.inventory, dropped);

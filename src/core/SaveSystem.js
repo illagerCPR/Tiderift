@@ -70,7 +70,8 @@ export class SaveSystem {
           xp: game.player.xp,
           xpLevel: game.player.xpLevel,
           onFire: game.player.onFire,
-          airTicks: game.player.airTicks
+          airTicks: game.player.airTicks,
+          echo: game.player.echo | 0 // B51 R4：回响（关闭魔法的世界保留数值但不生效）
         },
         inventory: game.inventory.serialize(),
         dimensionBlocks: serializeDimBuckets(game.world.dimensionBlocks),

@@ -133,6 +133,10 @@ export const MSG = {
   INDUSTRY_ACTION: 'industry_action', // C2S {x,y,z,op:'insert'|'extract',name?,count?}
   INDUSTRY_STATE: 'industry_state',   // S2C {x,y,z,d,by,state,res?}（res 只随发起者的那一份下发）
 
+  // B51 R4：四潮回响（本机权威结算；服务器只做启用/形状/频率硬约束后转发表现事件）
+  MAGIC_CAST: 'magic_cast',     // C2S {spell, echo, x,y,z, dx,dy,dz}
+  MAGIC_EFFECT: 'magic_effect', // S2C {by, spell, x,y,z, dx,dy,dz}（同维广播，不含发起者）
+
   // 世界
   SET_TIME: 'set_time',
   TIME: 'time',

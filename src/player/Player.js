@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Raycast } from './Raycast.js';
 import { PLAYER_EYE_HEIGHT } from './constants.js';
+import { ECHO_MAX } from '../content/magic/defs.js';
 
 // Build 20 ⑤：第三人称相机与眼睛的默认距离（格）；贴墙时按射线遮挡裁剪拉近
 const THIRD_PERSON_DIST = 4;
@@ -42,6 +43,10 @@ export class Player {
     this.airTicks = 300;      // 氧气（原版口径：满氧 300 tick = 15 秒，20 tick/s 按 dt 折算）
     this.drownTimer = 1;      // 溺水伤害计时（秒，耗尽后每 1 秒扣 2 血）
     this.invulnerable = 0;     // 受击后无敌帧（秒），> 0 时阻止 hurt()
+    // B51 R4 回响（魔法内容）：关闭魔法的世界保留数值但不生效、不回复、不扣减
+    this.echo = 0;
+    this.echoMax = ECHO_MAX;
+    this.slowFall = 0;         // 风步缓降剩余秒数（Physics 读，只影响下落速度上限）
     this.effects = new Map();  // 状态效果（信标 buff + 凋零 debuff 统一管理）：name -> { level, time(秒) }
     this.onHurt = null;          // 受击回调 (amount, source) => void，由 Game 注册
     this.onDeath = null;

@@ -1061,6 +1061,48 @@ reg('primordial_emblem', { stack: 1, lore: [
   g.s(8, 3, 'rgb(96,190,190)'); g.s(3, 8, 'rgb(96,190,190)'); g.s(12, 8, 'rgb(96,190,190)');
 }));
 
+
+// ── Build 51 R4 魔法三件（**文件末尾追加**，物品 ID 零漂移）────────────────────────
+// 回响尘：四界留下的潮的记忆结成的细屑，焦点与仪台的基础材料。
+reg('echo_dust', { stack: 64, requiresExtras: ['magic'], lore: ['潮退之后留下的回声，捏在手里微微发凉。'] }, art(g => {
+  const pale = 'rgb(196, 232, 228)', mid = 'rgb(120, 190, 190)', deep = 'rgb(70, 130, 140)';
+  g.hl(5, 5, 10, mid);
+  g.hl(6, 4, 11, pale);
+  g.hl(7, 4, 11, pale);
+  g.hl(8, 5, 10, mid);
+  g.s(5, 6, deep); g.s(10, 6, deep); g.s(8, 9, deep);
+  g.spi(4, 4, 8, 7, pale, 301, 0.22);
+  g.s(6, 5, 'rgb(255,255,255)'); g.s(9, 8, 'rgb(255,255,255)');
+}));
+
+// 风潮焦点：一片绕成环的旧羽 + 台心尘核，握在手里像有风穿过。
+reg('gale_focus', { stack: 1, requiresExtras: ['magic'], lore: ['风潮的回响：一步踏出，风替你走完剩下的路。'] }, art(g => {
+  const pale = 'rgb(226, 238, 246)', shade = 'rgb(150, 176, 200)', core = 'rgb(120, 208, 214)';
+  g.hl(6, 4, 11, pale);
+  g.hl(7, 3, 12, pale);
+  g.hl(8, 3, 12, shade);
+  g.hl(9, 4, 11, shade);
+  g.vl(8, 3, 12, shade);
+  g.d(8, 8, 2, 2, core);
+  g.s(8, 8, 'rgb(240, 255, 255)');
+  g.s(4, 12, pale); g.s(11, 4, pale);
+}));
+
+// 坠潮焦点：烬火纹章扣在铁环上，中心一点余温。
+reg('ember_focus', { stack: 1, requiresExtras: ['magic'], lore: ['坠潮的回响：火不必落地，也能替你说完一句话。'] }, art(g => {
+  const iron = 'rgb(148, 152, 160)', ember = 'rgb(226, 128, 72)', glow = 'rgb(255, 206, 132)';
+  g.d(8, 8, 4, 4, iron);
+  g.d(8, 8, 3, 3, 'rgb(0,0,0,0)');
+  for (let y = 4; y <= 12; y++) for (let x = 4; x <= 12; x++) {
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 16 && d2 >= 9) g.s(x, y, iron);
+  }
+  g.d(8, 8, 2, 2, ember);
+  g.s(8, 7, glow); g.s(8, 8, glow); g.s(7, 8, ember);
+  g.s(8, 3, ember); g.s(8, 13, 'rgb(160, 90, 60)');
+}));
+
 export const ItemSVGDefinitions = svgMap;
 
 export function getItemCount() {

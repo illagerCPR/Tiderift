@@ -90,6 +90,7 @@ import { BlockSVGDefinitions } from '../blocks/BlockDefs.js';
 import { ItemSVGDefinitions } from '../items/ItemDefs.js';
 import { normalizeExtraContent, serializeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
 import { IndustrySystem } from './IndustrySystem.js';
+import { MagicSystem } from './MagicSystem.js';
 
 // B51：世界清单解析——未知 schema 必须由上游（normalizeSaveData / 服务器）拒绝；
 // 走到这里说明上游漏了，一律告警并回落双关（不允许静默通过）。
@@ -163,6 +164,7 @@ export class Game {
     this._raceCheckAt = 0;        // 赛道完整性巡检节流
     this._waymarkNavCache = null; // 下一座航路查询缓存（随世界重建清空）
     this.industry = null;         // B51 R3 潮工（工业）域（新建型：start 创建 / _disposeWorld 释放）
+    this.magic = null;            // B51 R4 四潮回响（魔法）域（新建型：start 创建 / _disposeWorld 释放）
     this.ruins = null;            // 可动手解开的遗迹（新建型：start 创建 / _disposeWorld 释放）
     this._ruinPuzzles = new Map(); // 当前登记的机关定义（key -> puzzle；开门与游记要用）
     this._ruinScanAt = 0;         // 目标机关集扫描节流时间戳（performance.now）
@@ -423,6 +425,7 @@ export class Game {
     this.redstone = null;
     if (this.tnt) { this.tnt.dispose(); this.tnt = null; }
     if (this.industry) { this.industry.dispose(); this.industry = null; } // B51 R3：工业域无外部资源，清缓存即可
+    if (this.magic) { this.magic.dispose(); this.magic = null; }         // B51 R4：魔法域摘弹道 mesh + 隐藏回响 HUD
     if (this.physics) this.physics.world = null;
     this.world = null;
   }
@@ -538,6 +541,8 @@ export class Game {
     // B51 R3：潮工域（单机本地 tick / 联机只显示服务器权威）；方块变化 → 拓扑标脏
     this.industry = new IndustrySystem(this);
     this.world.onIndustryDirty = () => { if (this.industry) this.industry.markDirty(); };
+    // B51 R4：四潮回响域（回响/冷却/施法/弹道/HUD；关闭魔法的世界整段早退）
+    this.magic = new MagicSystem(this);
     this.redstone.onTntPowered = (x, y, z) => this.tnt.prime(x, y, z);
     
     // 恢复修改的方块/容器：V2 按维度分桶装入；V1 旧档字段直接进当前维度桶（迁移）
@@ -642,6 +647,12 @@ export class Game {
       this.player.position.set(spawn.x, spawn.y, spawn.z);
     }
     this.player.setMode(mode);
+    // B51 R4：回响与缓降是跨存档共享的 Player 字段——读档/换维以 loadData 为准，新世界/联机从 0 起。
+    // 不能塞进上面的 `!dimensionSpawn` 分支：传送门换维（dimensionSpawn=true）同样要保住回响。
+    this.player.echo = loadData && loadData.player && Number.isFinite(loadData.player.echo)
+      ? Math.max(0, Math.min(this.player.echoMax, loadData.player.echo | 0))
+      : 0;
+    this.player.slowFall = 0;
     // 滑翔瞬态复位（Player 跨存档共享实例；掉落展开由 _updateGliding 逐帧重判）
     this.player.gliding = false;
     if (this.hud) this.hud.setGliding(false);
@@ -1823,6 +1834,8 @@ export class Game {
     this.updateHopperFlow(dt);
     // B51 R3：潮工推进（联机时早退，权威在服务器 industry sweep）
     if (this.industry) this.industry.update(dt);
+    // B51 R4：回响恢复 / 缓降计时 / 弹道推进 / 回响 HUD
+    if (this.magic) this.magic.update(dt);
     if (this.furnaceScreen && this.furnaceScreen.visible) this.furnaceScreen.tick();
     // JEI 伴随面板：跟随容器界面（背包/箱子/合成台/熔炉/交易）显隐
     if (this.recipeViewer) this.recipeViewer.updateFrame();
@@ -3004,7 +3017,8 @@ export class Game {
     const playerData = {
       yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food,
       saturation: p.saturation, exhaustion: p.exhaustion,
-      xp: p.xp, xpLevel: p.xpLevel, onFire: 0, airTicks: 300
+      xp: p.xp, xpLevel: p.xpLevel, onFire: 0, airTicks: 300,
+      echo: p.echo | 0, // B51 R4：回响跨维透传（不随换维丢失）
     };
     // 传送门落点：带坐标（下界/天域）→ 预解析立足面高度并写进 player 坐标；
     // 仅带 portal 标记（末地）→ 落维度出生点，到达后由 _afterPortalArrival 建回程垫

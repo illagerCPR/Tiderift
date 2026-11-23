@@ -19,6 +19,8 @@ import {
 
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
 import { roomStats } from './stats.js';
+// B51 R4：四潮回响——法术表与形状校验（本机权威、服务器只做启用/形状/频率硬约束）
+import { sanitizeCast, spellDef, isMagicId } from './magic.js';
 
 // B51：额外内容世界清单（与客户端共用同一份纯模块：规范化/启用列表/序列化）
 import {
@@ -113,12 +115,14 @@ export function sanitizePlayerProfile(v) {
   const saturation = profileNum(v.saturation, 0, 20);
   const xp = profileNum(v.xp, 0, 30000000);
   const xpLevel = profileNum(v.xpLevel, 0, 1000);
-  if (health === null || food === null || saturation === null || xp === null || xpLevel === null) return null;
+  // B51 R4：回响（缺省 0；旧档案无字段 → 0，不报错）
+  const echo = v.echo === undefined ? 0 : profileNum(v.echo, 0, 100);
+  if (health === null || food === null || saturation === null || xp === null || xpLevel === null || echo === null) return null;
   return {
     inventory: { slots, armor },
     position: { x: px, y: py, z: pz },
     dim: typeof v.dim === 'string' && v.dim ? v.dim.slice(0, 16) : 'overworld',
-    health, food, saturation, xp, xpLevel,
+    health, food, saturation, xp, xpLevel, echo,
     savedAt: Date.now(),
   };
 }
@@ -542,6 +546,8 @@ export class Room {
     this._industrySig = new Map();    // "dim|key" -> 槽位签名（即时广播判据）
     this._industrySyncAt = new Map(); // "dim|key" -> 上次进度广播毫秒
     this._lastIndustryAt = 0;
+    // B51 R4：每玩家每法术的最近一次施法时间（服务器硬约束施法间隔）
+    this._magicCastAt = new Map();
     this.drops = new Map();     // dropId -> {x,y,z,name,count,dim,spawnedAt,owner?,ownerUntil?}
     this.nextDropId = 1;
     this.nextMobId = 1;         // 怪物 id 分配（事件同步，服务器仅分配/中继不跑 AI）
@@ -693,6 +699,8 @@ export class Room {
     this._industrySig = new Map();
     this._industrySyncAt = new Map();
     this._lastIndustryAt = 0;
+    // B51 R4：每玩家每法术的最近一次施法时间（服务器硬约束施法间隔）
+    this._magicCastAt = new Map();
     for (const [dim, m] of this.dimensionBlocks) {
       const im = this.dimBucket(this.dimensionIndustryBlocks, dim);
       for (const [k, id] of m) {
@@ -1318,6 +1326,8 @@ export class Room {
     this._industrySig.clear();
     this._industrySyncAt.clear();
     this._lastIndustryAt = 0;
+    // B51 R4：每玩家每法术的最近一次施法时间（服务器硬约束施法间隔）
+    this._magicCastAt = new Map();
     this._lastFurnaceAt = 0;
     this.drops.clear();
     // B35 D：重建世界 = 新种子，旧遗迹键（含锚点）全部失效，账本与领取记录一并清空
@@ -1344,6 +1354,7 @@ export class Room {
       case MSG.CONTAINER_SET: this.onContainerSet(player, msg); break;
       case MSG.FURNACE_OPEN: this.onFurnaceOpen(player, msg); break;
       case MSG.INDUSTRY_ACTION: this.onIndustryAction(player, msg); break; // B51 R3
+      case MSG.MAGIC_CAST: this.onMagicCast(player, msg); break;          // B51 R4
       case MSG.FURNACE_SET: this.onFurnaceSet(player, msg); break;
       case MSG.DROP_SPAWN: this.onDropSpawn(player, msg); break;
       case MSG.DROP_TAKEN: this.onDropTaken(player, msg); break;
@@ -1397,6 +1408,11 @@ export class Room {
     const key = `${x},${y},${z}`;
     // B36 F-1：每房间漏斗上限——超出不入账，把发起者本地放置回滚并提示
     // （放置目标必为空气/可替换格，回滚到账本既有值或 0 与本地现状一致）
+    // B51 R4：未启用魔法的世界拒绝写入魔法装置（同样回滚）
+    if (isMagicId(id) && !(this.extraContent && this.extraContent.magic === true)) {
+      this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: blocks.has(key) ? blocks.get(key) : 0, by: 0, d: dim });
+      return;
+    }
     // B51 R3：未启用工业的世界拒绝写入工业方块（回滚发起者本地预测；只放方块，不做猜测修复）
     if (isIndustryId(id) && !(this.extraContent && this.extraContent.industry === true)) {
       this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: blocks.has(key) ? blocks.get(key) : 0, by: 0, d: dim });
@@ -1438,8 +1454,9 @@ export class Room {
       const x = safeInt(it[0]), y = safeInt(it[1]), z = safeInt(it[2]), id = safeInt(it[3]);
       if (id < 0 || id > 65535) continue;
       const key = `${x},${y},${z}`;
-      // B51 R3：未启用工业的世界拒绝工业方块（批量路径逐格跳过）
+      // B51 R3/R4：未启用对应模块的世界拒绝该模块的方块（批量路径逐格跳过）
       if (isIndustryId(id) && !(this.extraContent && this.extraContent.industry === true)) continue;
+      if (isMagicId(id) && !(this.extraContent && this.extraContent.magic === true)) continue;
       // 与单条路径同义：显式保留空气值，容器内容另行清理。
       blocks.set(key, id);
       if (id === 0) {
@@ -2112,6 +2129,34 @@ export class Room {
       }
     }
     if (dirty) this.saveSoon();
+  }
+
+  // ── B51 R4 四潮回响（本机权威结算；服务器只做启用/形状/频率硬约束并转发表现）─────────
+  // 边界：服务器不扣回响、不判伤害、不改地形——回响与背包沿用项目轻信任玩家档案模型。
+  onMagicCast(player, msg) {
+    if (!this.extraContent || this.extraContent.magic !== true) return; // 关闭魔法的房间：静默丢弃
+    const cast = sanitizeCast(msg);
+    if (!cast) return;
+    const def = spellDef(cast.spell);
+    if (!def) return;
+    // 频率硬约束：服务器独立记账，不信任客户端冷却
+    const key = `${player.id}|${cast.spell}`;
+    const now = Date.now();
+    const last = this._magicCastAt.get(key) || 0;
+    if (now - last < def.cooldown * 1000) return;
+    // 位置形状：起始点必须在服务器记录的玩家位置附近（防跨图乱放表现）
+    const px = safeNum(player.pos && player.pos.x, 0);
+    const py = safeNum(player.pos && player.pos.y, 0);
+    const pz = safeNum(player.pos && player.pos.z, 0);
+    const dist = Math.hypot(cast.x - px, cast.y - py, cast.z - pz);
+    if (dist > 12) return;
+    this._magicCastAt.set(key, now);
+    // 只广播表现给同维其他人（发起者本端已自行结算）
+    this.broadcastDim(MSG.MAGIC_EFFECT, {
+      by: player.id, spell: cast.spell,
+      x: cast.x, y: cast.y, z: cast.z,
+      dx: cast.dx, dy: cast.dy, dz: cast.dz,
+    }, player.dim, player.id);
   }
 
   // 掉落物：客户端请求生成 -> 服务器分配唯一 id 并广播（含发起者，各端据此创建同一实体；M4：同维度广播）
