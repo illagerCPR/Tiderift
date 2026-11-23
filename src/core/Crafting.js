@@ -2,12 +2,15 @@
 // 支持 2x2（背包）和 3x3（工作台）
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
+import { normalizeRequires, requiresSatisfied } from '../content/ExtraContent.js';
 
 // 配方表：pattern 是二维数组（每行一个数组），元素为物品/方块名或 null
 // shaped: 必须匹配形状（包围盒收缩后比较）；shapeless: 顺序无关
+// B51：配方可带归属白名单 requiresExtras（第 4 参）——列表展示与实际匹配共用同一份数据，
+// 不允许「界面隐藏但配方仍能合成」。
 const recipes = [];
 
-function addShaped(output, count, pattern) {
+function addShaped(output, count, pattern, requiresExtras = null) {
   // pattern 可以是一维数组或二维数组（每行一个数组）
   let grid;
   if (Array.isArray(pattern[0])) {
@@ -30,11 +33,16 @@ function addShaped(output, count, pattern) {
   }
   // 收缩到最小包围盒
   const shrunk = shrinkGrid(grid);
-  recipes.push({ type: 'shaped', output, count, pattern: shrunk });
+  recipes.push({ type: 'shaped', output, count, pattern: shrunk, requiresExtras: normalizeRequires(requiresExtras) });
 }
 
-function addShapeless(output, count, ingredients) {
-  recipes.push({ type: 'shapeless', output, count, ingredients });
+function addShapeless(output, count, ingredients, requiresExtras = null) {
+  recipes.push({ type: 'shapeless', output, count, ingredients, requiresExtras: normalizeRequires(requiresExtras) });
+}
+
+// 配方是否对当前世界启用（RecipeViewer 列表与 matchRecipe 共用）
+export function recipeEnabled(recipe, manifest) {
+  return !!recipe && requiresSatisfied(recipe.requiresExtras, manifest);
 }
 
 // 将二维网格收缩到最小包围盒（去除全 null 的边缘行列）
@@ -165,7 +173,8 @@ addShaped('hopper', 1, ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'chest',
 addShaped('oak_log', 1, ['oak_planks','oak_planks','oak_planks','oak_planks']);
 
 // 匹配函数：输入是 grid 二维数组（每行一个数组），返回匹配结果或 null
-export function matchRecipe(grid) {
+// manifest 缺省 = 双关（fail-closed）：带归属需求的配方不会在未声明清单的世界里命中
+export function matchRecipe(grid, manifest) {
   // grid 是二维数组 [[a,b,c],[d,e,f],[g,h,i]]，元素为物品名或 null
   // 收缩输入网格到最小包围盒
   const shrunkInput = shrinkGrid(grid);
@@ -181,6 +190,7 @@ export function matchRecipe(grid) {
   if (!hasItem) return null;
   
   for (const r of recipes) {
+    if (!recipeEnabled(r, manifest)) continue;
     if (r.type === 'shaped') {
       if (matchShaped(r, shrunkInput)) {
         return { name: r.output, count: r.count };

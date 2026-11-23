@@ -1,14 +1,20 @@
 // Smelting.js -- 熔炉烧炼配方与燃料表
 // 与 Crafting.js 同风格：注册期构建纯表，运行期只查表（确定性，无随机）
 // SMELT_TIME：烧炼一个物品所需秒数（原版 10s）
+// B51：配方可带归属白名单 requiresExtras（第 4 参）；查询侧按显式清单过滤。
+import { normalizeRequires, requiresSatisfied } from '../content/ExtraContent.js';
 
 export const SMELT_TIME = 10;
 
 // 配方表：input 物品/方块名 -> { output, count }
 const smeltingRecipes = new Map();
 
-export function addSmelting(input, output, count = 1) {
-  smeltingRecipes.set(input, { output, count });
+export function addSmelting(input, output, count = 1, requiresExtras = null) {
+  smeltingRecipes.set(input, { output, count, requiresExtras: normalizeRequires(requiresExtras) });
+}
+
+export function smeltingEnabled(recipe, manifest) {
+  return !!recipe && requiresSatisfied(recipe.requiresExtras, manifest);
 }
 
 export function getSmeltingResult(input) {
@@ -16,10 +22,13 @@ export function getSmeltingResult(input) {
   return smeltingRecipes.get(input) || null;
 }
 
-// 全部烧炼配方（JEI 式查询用）：[{ input, output, count }]
-export function getAllSmeltingRecipes() {
+// 全部烧炼配方（JEI 式查询用）：[{ input, output, count }]；给 manifest 时按归属过滤
+export function getAllSmeltingRecipes(manifest) {
   const list = [];
-  for (const [input, r] of smeltingRecipes) list.push({ input, output: r.output, count: r.count });
+  for (const [input, r] of smeltingRecipes) {
+    if (!smeltingEnabled(r, manifest)) continue;
+    list.push({ input, output: r.output, count: r.count });
+  }
   return list;
 }
 

@@ -6,6 +6,7 @@ import { ItemRegistry } from '../core/ItemRegistry.js';
 import { ItemSVGDefinitions } from '../items/ItemDefs.js';
 import { matchRecipe } from '../core/Crafting.js';
 import { CREATIVE_CATEGORIES, CATEGORY_LABEL_KEYS, getItemCategory, isTechnicalBlock } from '../core/ItemCategories.js';
+import { isContentEnabled, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
 import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
 import { getDisplayName } from './itemName.js';
@@ -359,9 +360,11 @@ export class InventoryScreen {
     grid.innerHTML = '';
     // 方块优先；同名物品（lever/stone_button 在 Block/Item 双侧都注册）跳过避免重复；
     // B29 技术性方块（流体/流动等级/状态家族变体/传送门/作物阶段等）不进创造栏（类JEI 不受影响）
-    const blocks = BlockRegistry.all().filter(b => b.name !== 'air' && !isTechnicalBlock(b));
+    // B51：额外内容归属过滤——关闭的模块连创造栏/搜索都不出现（不只是隐藏页签）
+    const extras = (this.game && this.game.world && this.game.world.extraContent) || NONE_EXTRA_CONTENT;
+    const blocks = BlockRegistry.all().filter(b => b.name !== 'air' && !isTechnicalBlock(b) && isContentEnabled(b, extras));
     const seen = new Set(blocks.map(b => b.name));
-    const items = ItemRegistry.all().filter(b => b.name !== 'air' && !seen.has(b.name));
+    const items = ItemRegistry.all().filter(b => b.name !== 'air' && !seen.has(b.name) && isContentEnabled(b, extras));
     const allItems = [...blocks, ...items];
     const q = this.creativeSearch.trim().toLowerCase();
     const list = q
@@ -660,7 +663,8 @@ export class InventoryScreen {
       }
       grid2d.push(row);
     }
-    return matchRecipe(grid2d);
+    const extras = (this.game && this.game.world && this.game.world.extraContent) || NONE_EXTRA_CONTENT;
+    return matchRecipe(grid2d, extras);
   }
 
   // 更新合成输出槽显示

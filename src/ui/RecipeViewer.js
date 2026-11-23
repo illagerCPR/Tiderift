@@ -4,7 +4,8 @@
 // R 查配方 / U 查用途 / A 收藏 / J 开关面板（无容器界面时按 J 打开背包）。
 // 纯查询界面：不改背包、不产生物品；配方内材料图标可点击继续导航；
 // 不接管 controls（随容器界面显隐，容器界面自身已处理指针与按键）。
-import { getAllRecipes } from '../core/Crafting.js';
+import { getAllRecipes, recipeEnabled } from '../core/Crafting.js';
+import { isContentEnabled, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
 import { getAllSmeltingRecipes, getFuelTime, SMELT_TIME } from '../core/Smelting.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
@@ -324,28 +325,37 @@ export class RecipeViewer {
   }
 
   // ── 数据 ──
+  // B51：额外内容清单（世界运行时唯一来源）；关闭的模块不进列表、不出配方
+  _extras() {
+    return (this.game && this.game.world && this.game.world.extraContent) || NONE_EXTRA_CONTENT;
+  }
+
   _allItems() {
     // 方块优先；同名物品跳过（与创造物品栏去重规则一致）
-    const blocks = BlockRegistry.all().filter(b => b.name !== 'air');
+    const extras = this._extras();
+    const blocks = BlockRegistry.all().filter(b => b.name !== 'air' && isContentEnabled(b, extras));
     const seen = new Set(blocks.map(b => b.name));
-    const items = ItemRegistry.all().filter(b => b.name !== 'air' && !seen.has(b.name));
+    const items = ItemRegistry.all().filter(b => b.name !== 'air' && !seen.has(b.name) && isContentEnabled(b, extras));
     return [...blocks, ...items];
   }
 
-  // 物品的全部获取配方（合成 + 熔炼）
+  // 物品的全部获取配方（合成 + 熔炼）——归属过滤与 matchRecipe 同源
   _recipesFor(name) {
-    const crafting = getAllRecipes().filter(r => r.output === name);
-    const smelting = getAllSmeltingRecipes().filter(r => r.output === name);
+    const extras = this._extras();
+    const crafting = getAllRecipes().filter(r => r.output === name && recipeEnabled(r, extras));
+    const smelting = getAllSmeltingRecipes(extras).filter(r => r.output === name);
     return { crafting, smelting };
   }
 
   // 物品作为材料出现的全部配方
   _usagesFor(name) {
+    const extras = this._extras();
     const crafting = getAllRecipes().filter(r => {
+      if (!recipeEnabled(r, extras)) return false;
       if (r.type === 'shaped') return r.pattern.some(row => row.includes(name));
       return r.ingredients.includes(name);
     });
-    const smelting = getAllSmeltingRecipes().filter(r => r.input === name);
+    const smelting = getAllSmeltingRecipes(extras).filter(r => r.input === name);
     return { crafting, smelting };
   }
 

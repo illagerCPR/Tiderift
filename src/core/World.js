@@ -11,6 +11,7 @@ import { doorId } from './blockShape.js';
 import { getDimension, DEFAULT_DIMENSION } from './dimensions.js';
 import { ModifiedBlocks } from './ModifiedBlocks.js';
 import { parsePosKey } from './posKey.js';
+import { normalizeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
 
 export class World {
   constructor(seed = 0, dimension = DEFAULT_DIMENSION, worldOpts = null) {
@@ -18,7 +19,14 @@ export class World {
     this.dimension = dimension;
     this.dimDef = getDimension(dimension) || getDimension(DEFAULT_DIMENSION);
     this.chunks = new Map();
+    // B51：额外内容世界清单（规范化的不可变对象）。null = 未知 schema——调用方（Game.start /
+    // Room）必须先拒绝；这里兜底双关并告警，绝不让世界在"规则未定"的状态下生成。
+    const extras = normalizeExtraContent(worldOpts && worldOpts.extraContent);
+    if (extras === null) console.warn('[ExtraContent] 未知的内容清单 schema，回落为全关');
+    this.extraContent = extras || NONE_EXTRA_CONTENT;
     this.generator = this.dimDef.createGenerator(seed, worldOpts || {});
+    // 生成器侧查询（StructureManager）从生成器上取同一份清单：换维/Worker 都走这条
+    this.generator.extraContent = this.extraContent;
     // 维度分桶账本：modifiedBlocks/containers 是"当前维度"桶的指针
     //（切换维度 = 整体重建 World，指针永不跨维度换绑）
     this.dimensionBlocks = new Map();     // dimId -> ModifiedBlocks("x,y,z" -> 方块 id，带区块索引)

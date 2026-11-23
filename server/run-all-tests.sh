@@ -92,6 +92,7 @@ PURE_NODE_SUITES=(
     hopper-unit                # B36 F-1 漏斗搬运纯算法（纯 node：方块 id 钉值/配置白名单/朝向/一堆 tick/满空不可堆叠/touched 去重/确定性）
     furnace-unit               # B36 F-2 熔炉进出料纯算法（纯 node：id 钉值/烧炼语义/追赶有界/漏斗进出料路由/快照恢复/权威 tick）
     phenomena-unit             # B37 G 局部潮候与稀有景象（纯 node：四维窗口/预兆 60 秒/观测累计/游记桶与一次性纪念/铭牌方块/红线守卫）
+    extra-content-unit         # B51 R1 额外内容基石（纯 node：清单规范化/旧形态回落/未知 schema 拒绝/归属元数据/配方与结构闸口/World 清单同源/无全局串状态）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do

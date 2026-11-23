@@ -1,5 +1,8 @@
 // BlockRegistry.js -- 方块注册表
 // 每个方块定义: { id, name, textures:{top,side,bottom,front} 或 all, transparent, solid, hardness, light }
+// B51：额外内容归属白名单 requiresExtras（内容 ID 数组，缺省 = 基础内容）。
+// 注册**永远全量**执行（数字 ID 由注册顺序决定），开关只在获取/放置/生成/模拟闸口消费此元数据。
+import { normalizeRequires } from '../content/ExtraContent.js';
 
 const blocks = new Map();
 const nameToId = new Map();
@@ -66,6 +69,8 @@ function register(def) {
     passable: def.passable ?? false,
     // B48：爆炸抗性（≥ Explosion.BLAST_PROOF_RESIST 免疫；黑曜石 1200）
     blastResist: def.blastResist ?? 0,
+    // B51：额外内容归属（null = 基础内容；数组 = 需要全部启用，未知 ID 永不满足）
+    requiresExtras: normalizeRequires(def.requiresExtras),
     color: def.color || null
   };
   blocks.set(id, block);

@@ -8,6 +8,7 @@ import { CHUNK_SIZE, CHUNK_HEIGHT } from '../../core/Chunk.js';
 import { BlockRegistry } from '../../core/BlockRegistry.js';
 import { fillBox } from './StructureKit.js';
 import { RUIN_KIND_LABEL } from '../../core/Ruins.js';
+import { requiresSatisfied } from '../../content/ExtraContent.js';
 
 // 32 位确定性哈希（seed/坐标/盐 → uint32），不同盐的流互不相关
 function hash32(seed, a, b, salt) {
@@ -51,6 +52,18 @@ function dimMatches(def, gen) {
   if (!def || !def.dims || !Array.isArray(def.dims)) return true;
   const d = gen && gen.dimensionId;
   return !d || def.dims.indexOf(d) >= 0;
+}
+
+// B51：额外内容归属（def.requiresExtras）与维度过滤同一中心点——装饰、树让位、缓存查询、
+// 运行时按需求解、游记命中共用本判定，避免"世界没生成、游记/命令却能找到"。
+// 清单来自生成器（World 构造时写入；Worker 侧同源），缺省 = 双关。
+function extraMatches(def, gen) {
+  if (!def || !def.requiresExtras) return true;
+  return requiresSatisfied(def.requiresExtras, gen && gen.extraContent);
+}
+
+function typeActive(def, gen) {
+  return dimMatches(def, gen) && extraMatches(def, gen);
 }
 
 export class StructureManager {
@@ -167,7 +180,7 @@ export class StructureManager {
     if (structureTypes.size === 0) return;
     const { cx, cz } = chunk;
     for (const [name, def] of structureTypes) {
-      if (!dimMatches(def, this.generator)) continue;
+      if (!typeActive(def, this.generator)) continue;
       const rChunks = Math.ceil(def.radius / CHUNK_SIZE) + 1;
       const c0x = Math.floor((cx - rChunks) / def.cell);
       const c1x = Math.floor((cx + rChunks) / def.cell);
@@ -196,7 +209,7 @@ export class StructureManager {
     const bx0 = cx * CHUNK_SIZE - margin, bx1 = cx * CHUNK_SIZE + CHUNK_SIZE - 1 + margin;
     const bz0 = cz * CHUNK_SIZE - margin, bz1 = cz * CHUNK_SIZE + CHUNK_SIZE - 1 + margin;
     for (const [name, def] of structureTypes) {
-      if (!dimMatches(def, this.generator)) continue;
+      if (!typeActive(def, this.generator)) continue;
       const rChunks = Math.ceil(def.radius / CHUNK_SIZE) + 1;
       const c0x = Math.floor((cx - rChunks) / def.cell);
       const c1x = Math.floor((cx + rChunks) / def.cell);
@@ -239,7 +252,7 @@ export class StructureManager {
     for (const rec of this.cache.values()) {
       if (!rec) continue;
       if (typeName && rec.name !== typeName) continue;
-      if (!dimMatches(structureTypes.get(rec.name), this.generator)) continue;
+      if (!typeActive(structureTypes.get(rec.name), this.generator)) continue;
       const dx = Math.max(rec.minX - x, 0, x - rec.maxX);
       const dz = Math.max(rec.minZ - z, 0, z - rec.maxZ);
       if (dx * dx + dz * dz <= radius * radius) out.push(rec);
@@ -250,7 +263,7 @@ export class StructureManager {
   // 运行时按需求解指定 cell 的记录（村庄传送/村民生成定位等），结果同样进缓存
   ensureRecord(typeName, ccx, ccz) {
     const def = structureTypes.get(typeName);
-    if (!def || !dimMatches(def, this.generator)) return null;
+    if (!def || !typeActive(def, this.generator)) return null;
     return this._cellRecord(typeName, def, ccx, ccz);
   }
 
@@ -258,7 +271,7 @@ export class StructureManager {
   // 村民生成等周期性逻辑用这个而不是 recordsNear——后者只读缓存，长距离探索后记录会被挤出。
   recordsAround(typeName, x, z, r = 1) {
     const def = structureTypes.get(typeName);
-    if (!def || !dimMatches(def, this.generator)) return [];
+    if (!def || !typeActive(def, this.generator)) return [];
     const cellBlocks = def.cell * CHUNK_SIZE;
     const ccx = Math.floor(x / cellBlocks);
     const ccz = Math.floor(z / cellBlocks);
@@ -291,7 +304,7 @@ export class StructureManager {
   // 调用方须自行节流（InfoBar 0.5s）——每次调用至多 2 类型 × 9 cell 求解（多数有缓存）。
   structureNameAt(x, z) {
     for (const [name, def] of structureTypes) {
-      if (!dimMatches(def, this.generator)) continue;
+      if (!typeActive(def, this.generator)) continue;
       for (const rec of this.recordsAround(name, x, z)) {
         if (x < rec.minX || x > rec.maxX || z < rec.minZ || z > rec.maxZ) continue;
         if (name === 'village') return rec.meta && rec.meta.variant === 'desert' ? '沙漠村庄' : '村庄';
@@ -317,7 +330,7 @@ export class StructureManager {
   // 游记探索：当前位置命中的结构实例（只返回已靠近并落入包围盒的结构）。
   structureRecordAt(x, z) {
     for (const [name, def] of structureTypes) {
-      if (!dimMatches(def, this.generator)) continue;
+      if (!typeActive(def, this.generator)) continue;
       for (const rec of this.recordsAround(name, x, z)) {
         if (x < rec.minX || x > rec.maxX || z < rec.minZ || z > rec.maxZ) continue;
         let label = name;
