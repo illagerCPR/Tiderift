@@ -5,7 +5,14 @@
 <div align="center">
 
 [![CI](https://github.com/illagerCPR/Tiderift/actions/workflows/ci.yml/badge.svg)](https://github.com/illagerCPR/Tiderift/actions/workflows/ci.yml)
+[![Docker Image](https://github.com/illagerCPR/Tiderift/actions/workflows/docker.yml/badge.svg)](https://github.com/illagerCPR/Tiderift/actions/workflows/docker.yml)
+[![Deploy Pages](https://github.com/illagerCPR/Tiderift/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/illagerCPR/Tiderift/actions/workflows/deploy-pages.yml)
+
 [![Release](https://img.shields.io/github/v/release/illagerCPR/Tiderift?include_prereleases&label=Release)](https://github.com/illagerCPR/Tiderift/releases)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Three.js](https://img.shields.io/badge/Three.js-r160-black?logo=three.js&logoColor=white)](https://threejs.org/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 
 </div>
 
@@ -20,6 +27,7 @@
 - **视听**：体素光照与昼夜、粒子效果、程序化音效与音乐、全景主菜单、水面与天气表现
 - **界面**：11 种语言、设置面板、方块与物品图标、手持物与远端玩家 3D 模型
 - **局域网联机**：房间服务器 + 同种子世界，实时同步方块、玩家、聊天与战斗（详见下文）
+- **额外内容（可选模块）**：创建世界前可选开「工业」与「魔法」两条独立主线，默认关闭、创建后不可更改（详见下文）
 
 ---
 
@@ -61,6 +69,44 @@ npm install --prefix server ws # 联机服务器依赖
 npm run build          # 产物输出到 dist/
 npm run preview        # 预览构建产物
 ```
+
+---
+
+## 额外内容（可选模块）
+
+创建新世界前可以在「额外内容」界面里分别开启 **工业** 与 **魔法** 两个模块：默认全部关闭（就是原始体验），也可以只开一个，或两个都开。**世界创建后不可更改**——它不是随时可切的设置，而是这个世界的规则。
+
+- **存档槽、导入摘要、联机房间信息**都会显示「工业 / 魔法」徽标；暂停菜单只显示、不能改。
+- 联机时房间清单由**建房者**决定，加入者自动跟随；重复创建同名房间、加入已有房间都不会覆盖它。
+- 关闭某个模块的世界里，该模块的方块与物品既不出现也合不出、放不下，服务器也会拒绝写入。
+- 旧的存档与旧房间永远保持原始体验（缺字段按"全部关闭"读取）。
+
+### 工业：潮工
+
+利用燃料、热、水与机械传动，把零散营地变成能持续生产的工坊。
+
+| 方块 | 作用 |
+|---|---|
+| **潮压锅炉** | 投入燃料（煤、木炭、木板…）与**桶装水**点火，产出潮压；空桶会被回收，取走后再添水即可继续烧 |
+| **传动轴** | 六面相邻自动连成机械网络；网络的供给与需求决定所有机器的转速 |
+| **碎石机** | 把圆石碎成砾石、砾石碎成沙；有料、有产物空间、有潮压才会转动 |
+
+玩法：搭锅炉 → 用传动轴连到机器 → 右键锅炉投燃料与水桶 → 右键碎石机投圆石 → **空手右键**取产物。
+缺压时整条轴一起变慢，拆掉锅炉全网停转。当前版本用右键投料/取物，完整的机器界面在后续版本。
+
+### 魔法：四潮回响
+
+裂潮之后留在星髓、潮火与雨水里的「回响」，可以用焦点短暂地重现。
+
+| 物品 | 作用 |
+|---|---|
+| **回响仪台** | 右键消耗 **1 级经验**调谐出 25 点回响（回响是施法的费用，上限 100，脱战会极缓慢恢复） |
+| **回响尘** | 用星髓研磨；仪台与两种焦点的材料 |
+| **风潮焦点** | 右键 **风步**：沿视线短距冲刺（会被墙挡住，不会穿墙），随后短暂缓降 |
+| **坠潮焦点** | 右键 **烬矢**：直线射出灼热弹，只伤生物，不点燃地形、不炸方块 |
+
+屏幕下方快捷栏左侧会显示回响条；回响不足、法术冷却中、焦点不对时都会有提示。
+创造与旁观模式不能施法。当前版本提供风潮与坠潮两系，雨潮与无潮在后续版本。
 
 ---
 
@@ -179,7 +225,7 @@ docker run -d -p 3001:3001 -v tiderift-data:/data tiderift
 | WASD | 移动 |
 | 空格 | 跳跃（创造模式下双击切换飞行） |
 | Shift | 下蹲 / 潜行 |
-| 鼠标左键 / 右键 | 破坏 / 放置方块（手持食物 = 食用；弓 = 按住蓄力） |
+| 鼠标左键 / 右键 | 破坏 / 放置方块（手持食物 = 食用；弓 = 按住蓄力；焦点 = 施法；机器 = 投料/取物） |
 | 滚轮 / 1-9 | 切换快捷栏物品 |
 | E | 打开背包（合成）；背包 / 容器打开时按 ESC 也可关闭 |
 | Q / Ctrl+Q | 丢弃手中 1 个 / 整组物品 |
@@ -191,6 +237,15 @@ docker run -d -p 3001:3001 -v tiderift-data:/data tiderift
 | ESC | 暂停菜单（有界面打开时先关闭该界面） |
 
 ---
+
+## 已知限制（额外内容）
+
+- **工业**：目前没有完整的机器界面，投料/取物都用右键；水车、风车与流体管道尚未实现（潮压只来自锅炉）。
+  单个机械网络上限 128 个节点（超出整网停转），每房间工业账本上限 512 台；超限网络不会静默复制物品。
+- **魔法**：目前只有风潮「风步」与坠潮「烬矢」两系，雨潮「回潮」与无潮「折步」在后续版本；
+  暂无蓄力区分基础/进阶。回响上限 100，脱战每 6 秒恢复 1 点（防卡死兜底，主动获取靠仪台调谐）。
+- 关闭模块的世界里，如果导入的旧存档带着该模块的方块，方块会**保留但不再运行**（不会替换成空气，也不会继续生产）。
+- 联机时服务器的权威范围是**启用状态、形状与频率**；回响与背包沿用项目既有的玩家档案模型（轻信任、不宣称反作弊）。
 
 ## 已知限制（联机）
 
