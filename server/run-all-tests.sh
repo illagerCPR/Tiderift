@@ -93,6 +93,7 @@ PURE_NODE_SUITES=(
     furnace-unit               # B36 F-2 熔炉进出料纯算法（纯 node：id 钉值/烧炼语义/追赶有界/漏斗进出料路由/快照恢复/权威 tick）
     phenomena-unit             # B37 G 局部潮候与稀有景象（纯 node：四维窗口/预兆 60 秒/观测累计/游记桶与一次性纪念/铭牌方块/红线守卫）
     extra-content-unit         # B51 R1 额外内容基石（纯 node：清单规范化/旧形态回落/未知 schema 拒绝/归属元数据/配方与结构闸口/World 清单同源/无全局串状态）
+    industry-unit              # B51 R3 潮工最小闭环（纯 node：方块 ID 钉值/归属与配方/拓扑分量与超限/锅炉点火与空桶回收/供需效率降速/槽位动作/清洗/存档净化/接线绊线）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -133,7 +134,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12 test-extra-content; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12 test-extra-content test-industry; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"

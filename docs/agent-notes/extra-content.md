@@ -3,7 +3,7 @@
 > 覆盖 `docs/extra-content-master-plan.md` 的 Build 51–56 实现。改 `src/content/ExtraContent.js`、
 > 注册表的 `requiresExtras`、`Crafting/Smelting` 归属过滤、`StructureManager.typeActive`、
 > 创造栏/配方查询的归属闸口前**必读**。
-> 分轮交付；本文按轮追加，当前：**B51 R2（世界创建界面 + 全链路透传 + 能力协商）**。
+> 分轮交付；本文按轮追加，当前：**B51 R3（工业最小闭环：潮压锅炉 / 传动轴 / 碎石机）**。
 
 ## 一、总原则（违反即回退）
 
@@ -117,7 +117,59 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
   该房间**拒绝任何加入**（不静默降级）。
 - **断线恢复**：恢复到已不存在的房间 → 中止恢复并回主菜单，**不得借恢复包定义新世界规则**。
 
-## 七、术语与命名纪律
+## 七、R3：工业最小闭环（潮工）
+
+### 7.1 三层分工
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 数据 | `src/content/industry/defs.js` | 方块名 / 潮压平衡 / 碎石配方 / 预算与节拍（单机与服务器共用的唯一一张表） |
+| 纯算法 | `src/core/Industry.js` | 拓扑分量、供需效率、锅炉燃烧、碎石推进、槽位投料取出、状态清洗（node 可测） |
+| 两端驱动 | `src/player/IndustrySystem.js`（单机 tick + 交互）/ `server/room.js` 的 `tickIndustrySweep`（权威 tick） | 只管调度与板端结算，不写第二套算法 |
+
+**规则**：任何工业数值改动只改 `defs.js`；任何推进语义改动只改 `Industry.js`，两端自动同步。
+
+### 7.2 方块与 ID（尾部追加，零漂移）
+
+| id | 方块 | kind | 归属 |
+|---|---|---|---|
+| 224 | `tide_boiler` 潮压锅炉 | `boiler` | `requiresExtras: ['industry']` |
+| 225 | `drive_shaft` 传动轴 | `shaft` | 同上 |
+| 226 | `crusher` 碎石机 | `crusher` | 同上 |
+
+`BlockRegistry` 透传 `industryKind`；`server/industry.js` 有同表（钉值断言在 `tests/industry-unit.mjs`）。
+**新状态变体（点燃态/朝向）若将来新增，一律继续尾部追加，并同步两处 id 表。**
+
+### 7.3 潮压与交互口径（首版）
+
+- 锅炉：`燃料` + `桶装水` 各 1 个点火 → 燃烧 `getFuelTime()` 秒，期间供给 `BOILER_SUPPLY=4`；空桶回收到 `output`（满则停炉等取）。
+- 网络：锅炉/轴/碎石机 6 邻接连通；`效率 = min(1, 供给/需求)`，全网同一口径；无供给停转保温；超 128 节点整网停摆。
+- 碎石机：`cobblestone→gravel`、`gravel→sand`；满效率 4 秒一个；产物满阻塞保温；无料进度缓慢回退。
+- 交互（**R3 简化，R52 再做完整机器界面**）：右键手持物品 = 投料；空手 = 取 `output`。投错的内容需拆机器取回（破坏散落）。
+- 破坏机器 = 清账本 + 槽位内容散落（联机由服务器权威散落，客户端不再散第二次）。
+
+### 7.4 权威与持久化
+
+- **联机客户端一律不 tick**（`IndustrySystem.update` 首行 `networkMode` 早退）；它只发 `INDUSTRY_ACTION`，
+  服务器结算后回 `INDUSTRY_STATE`（`res` 只随发起者那一份下发）。
+- 服务器 200ms sweep（`flowSweep` 内），`dt` 钳到 ≤1s：**不追赶离线生产**；槽位变化即时广播，
+  只有进度变化按 `INDUSTRY_SYNC_MS=500` 节流；静置机器零消息。
+- 落盘：单机存档 `dimensionIndustry`（dim → {pos: state}）；房间快照 `dimensionIndustry`（dim → entries 数组）。
+  状态只含**槽位 + 进度**；拓扑与方块索引纯派生自方块账本，**不落盘**。
+- 方块消失路径两处都要清理：单机 `World.trackIndustry` + `IndustrySystem.onBreak`；服务器 `onBlockSet`
+  与 `onBlockSetBatch` 的 `dropIndustryAt`。**漏一处就会出现幽灵机器继续产出。**
+- 关闭工业的世界：客户端不 tick、服务器拒绝 `block_set` 写入工业方块（回滚），已存在的机器保留数据但不运行。
+
+### 7.5 验收与回归
+
+| 套件 | 守什么 |
+|---|---|
+| `tests/industry-unit.mjs` | 方块 ID 钉值与归属/名字表/分类、配方归属、拓扑分量与超限、锅炉点火与空桶回收、供需降速、槽位动作、dt 钳制与确定性、状态清洗、存档与导入净化、接线绊线 |
+| `server/test-industry.mjs` | 关闭工业拒绝写入、投料/取物权威回执、服务器真的产出、两人同抢不复制、拆机器散落与账本清理、快照落盘与重启恢复 |
+
+手动闭环（浏览器）：放锅炉+轴+碎石机 → 投煤与水桶 → 投圆石 → 等 4 秒 → 空手右键取砾石 → 拆锅炉后全网停。
+
+## 八、术语与命名纪律
 
 - 代码 ID（`industry` / `magic`，方块/物品名、协议字段）一经落地不随显示名变动；显示名走 i18n 键
   （`EXTRA_LABEL_KEYS`，界面主模块名始终是用户指定的「工业 / 魔法」）。

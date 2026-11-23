@@ -865,6 +865,10 @@ export class NetworkManager {
           this._emit('world_info', msg);   // 首次进入：由 main.js 用该 seed 启动世界
         }
         break;
+      case MSG.INDUSTRY_STATE:
+        // B51 R3：机器权威状态（含仅发给本人的 res 回执）
+        if (this.game && this.game.industry) this.game.industry.applyRemoteState(msg);
+        break;
       case MSG.WORLD_RESUMED:
         if (!this.isRecovering || this._recoveryPhase !== 'awaiting_ack' ||
             msg.recoveryId !== this._recoveryId || msg.dim !== this._recoveryDim ||
@@ -1405,6 +1409,10 @@ export class NetworkManager {
   }
   sendRespawn(x, y, z) { this._send(MSG.RESPAWN, { x, y, z }); }
   sendGamemode(mode) { this._send(MSG.GAMEMODE, { mode }); }
+  // B51 R3：潮工机器动作（投料/取产物）——服务器权威结算并回执
+  sendIndustryAction(x, y, z, op, name, count) {
+    this._send(MSG.INDUSTRY_ACTION, { x, y, z, op, name: name || null, count: count | 0 });
+  }
   sendSetTime(t) { this._send(MSG.SET_TIME, { time: t }); }
   // B38 L3：ch = 'room'（缺省）| 'team' | 'dm'；dm 需带目标昵称 to
   sendChat(text, ch = 'room', to = null) {

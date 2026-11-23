@@ -753,4 +753,14 @@ export const es = {
   "无": "Ninguno",
   "额外内容：{list}（创建时确定，不可更改）": "Contenido adicional: {list} (fijado al crear, no modificable)",
   "该存档包含当前版本不支持的额外内容规则，请升级游戏": "Esta partida guardada contiene reglas de contenido adicional que esta versión no admite. Actualiza el juego.",
+  // ── B51 R3 潮工机器交互提示 ──
+  "已投入": "Insertado",
+  "已取出": "Recogido",
+  "槽位已满": "Ranura llena",
+  "这台机器不收这个": "Esta máquina no acepta eso",
+  "没有可取的东西": "No hay nada que recoger",
+  "机械网络过大（上限 128 节点），整网停转": "Red de máquinas demasiado grande (límite 128 nodos): toda la red se detiene",
+  "旧炉学会了听潮：燃料烧水，水化作压，压推动轴。": "El viejo horno aprendió a escuchar la marea: el combustible hierve el agua, el agua se vuelve presión y la presión gira el eje.",
+  "六面相邻即成网；拆一节，整条轴就慢下来。": "Seis vecinos forman una red; quita un segmento y todo el eje se ralentiza.",
+  "石头咬石头：圆石碎成砾石，砾石再碎成沙。": "La piedra muerde la piedra: el adoquín se rompe en grava y la grava se muele en arena.",
 };

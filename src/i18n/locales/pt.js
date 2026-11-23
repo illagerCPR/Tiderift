@@ -753,4 +753,14 @@ export const pt = {
   "无": "Nenhum",
   "额外内容：{list}（创建时确定，不可更改）": "Conteúdo adicional: {list} (fixado na criação, não alterável)",
   "该存档包含当前版本不支持的额外内容规则，请升级游戏": "Este save contém regras de conteúdo adicional não suportadas por esta versão. Atualize o jogo.",
+  // ── B51 R3 潮工机器交互提示 ──
+  "已投入": "Inserido",
+  "已取出": "Retirado",
+  "槽位已满": "Espaço cheio",
+  "这台机器不收这个": "Esta máquina não aceita isso",
+  "没有可取的东西": "Nada para retirar",
+  "机械网络过大（上限 128 节点），整网停转": "Rede de máquinas grande demais (limite 128 nós); a rede inteira parou",
+  "旧炉学会了听潮：燃料烧水，水化作压，压推动轴。": "A velha fornalha aprendeu a escutar a maré: o combustível ferve a água, a água vira pressão e a pressão gira o eixo.",
+  "六面相邻即成网；拆一节，整条轴就慢下来。": "Seis vizinhos formam uma rede; tire um segmento e todo o eixo desacelera.",
+  "石头咬石头：圆石碎成砾石，砾石再碎成沙。": "Pedra morde pedra: o paralelepípedo quebra em cascalho e o cascalho moe-se em areia.",
 };

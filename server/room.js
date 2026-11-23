@@ -11,6 +11,12 @@ import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX
 import { tickHopperFlow, hopperFacingOf, isHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
 // B36 F-2：熔炉账本——方块 id 表与烧炼推进纯算法（服务器权威进度；客户端只显示不推进）
 import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnaceBlockId, FURNACE_LIMIT, FURNACE_SYNC_MS } from './furnace.js';
+// B51 R3：潮工机器——id 表 + 纯算法（服务器权威推进；客户端只显示）
+import {
+  tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor, sanitizeMachineState,
+  machineSig, spillStacks, industryKindOf, isIndustryId, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
+} from './industry.js';
+
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
 import { roomStats } from './stats.js';
 
@@ -527,6 +533,15 @@ export class Room {
     this.dimensionFurnaces = new Map();
     this._lastFurnaceAt = 0;        // 上次推进时间戳（dt 依据，钳 1s 防追赶长跳）
     this._furnaceSyncAt = new Map(); // "dim|x,y,z" -> 上次进度广播毫秒（FURNACE_SYNC_MS 节拍）
+    // B51 R3：潮工机器账本（dim -> Map("x,y,z" -> state)）与方块索引（dim -> Map(key -> kind)）。
+    // 状态（槽位 + 进度）进快照；索引与拓扑纯派生自方块账本，不落盘。
+    this.dimensionIndustry = new Map();
+    this.dimensionIndustryBlocks = new Map();
+    this._industryVersion = 0;        // 方块索引版本（拓扑缓存失效判据）
+    this._industryNetCache = new Map(); // dim -> { version, networks }
+    this._industrySig = new Map();    // "dim|key" -> 槽位签名（即时广播判据）
+    this._industrySyncAt = new Map(); // "dim|key" -> 上次进度广播毫秒
+    this._lastIndustryAt = 0;
     this.drops = new Map();     // dropId -> {x,y,z,name,count,dim,spawnedAt,owner?,ownerUntil?}
     this.nextDropId = 1;
     this.nextMobId = 1;         // 怪物 id 分配（事件同步，服务器仅分配/中继不跑 AI）
@@ -668,6 +683,43 @@ export class Room {
       const blocks = this.dimBucket(this.dimensionBlocks, dim);
       for (const k of [...m.keys()]) {
         if (!isFurnaceId(blocks.has(k) ? blocks.get(k) : -1)) m.delete(k);
+      }
+    }
+    // B51 R3：潮工账本恢复（旧快照无该字段 → 空表；坏项跳过）+ 方块索引重建
+    this.dimensionIndustry = new Map();
+    this.dimensionIndustryBlocks = new Map();
+    this._industryVersion++;
+    this._industryNetCache = new Map();
+    this._industrySig = new Map();
+    this._industrySyncAt = new Map();
+    this._lastIndustryAt = 0;
+    for (const [dim, m] of this.dimensionBlocks) {
+      const im = this.dimBucket(this.dimensionIndustryBlocks, dim);
+      for (const [k, id] of m) {
+        const kind = industryKindOf(id);
+        if (kind) im.set(k, kind);
+      }
+    }
+    const rawIndustry = snap.dimensionIndustry;
+    if (rawIndustry !== undefined && (typeof rawIndustry !== 'object' || Array.isArray(rawIndustry))) {
+      warnBadSnapshot(this.name, '工业账本非对象');
+    } else if (rawIndustry) {
+      for (const [dim, entries] of Object.entries(rawIndustry)) {
+        if (!Array.isArray(entries)) { warnBadSnapshot(this.name, `维度 ${dim} 的工业账本非数组`); continue; }
+        const m = this.dimBucket(this.dimensionIndustry, Room.safeDim(dim));
+        for (const [k, st] of safeEntries(entries)) {
+          const kind = st && typeof st === 'object' ? st.kind : null;
+          const clean = sanitizeMachineState(kind, st);
+          if (clean) m.set(k, clean);
+        }
+      }
+    }
+    // 账本与状态对不上的条目一律丢弃（防幽灵机器）
+    for (const [dim, states] of this.dimensionIndustry) {
+      const idx = this.dimensionIndustryBlocks.get(dim);
+      for (const k of [...states.keys()]) {
+        const kind = idx ? idx.get(k) : null;
+        if (!kind || kind === 'shaft') states.delete(k);
       }
     }
     this.drops = new Map();
@@ -1258,6 +1310,14 @@ export class Room {
     this._flowHot.clear();
     this.dimensionFurnaces.clear();
     this._furnaceSyncAt.clear();
+    // B51 R3：重建世界 = 新地形，工业机器账本与索引一并作废（世界规则不变）
+    this.dimensionIndustry.clear();
+    this.dimensionIndustryBlocks.clear();
+    this._industryVersion++;
+    this._industryNetCache.clear();
+    this._industrySig.clear();
+    this._industrySyncAt.clear();
+    this._lastIndustryAt = 0;
     this._lastFurnaceAt = 0;
     this.drops.clear();
     // B35 D：重建世界 = 新种子，旧遗迹键（含锚点）全部失效，账本与领取记录一并清空
@@ -1283,6 +1343,7 @@ export class Room {
       case MSG.BLOCK_SET_BATCH: this.onBlockSetBatch(player, msg); break;
       case MSG.CONTAINER_SET: this.onContainerSet(player, msg); break;
       case MSG.FURNACE_OPEN: this.onFurnaceOpen(player, msg); break;
+      case MSG.INDUSTRY_ACTION: this.onIndustryAction(player, msg); break; // B51 R3
       case MSG.FURNACE_SET: this.onFurnaceSet(player, msg); break;
       case MSG.DROP_SPAWN: this.onDropSpawn(player, msg); break;
       case MSG.DROP_TAKEN: this.onDropTaken(player, msg); break;
@@ -1336,6 +1397,11 @@ export class Room {
     const key = `${x},${y},${z}`;
     // B36 F-1：每房间漏斗上限——超出不入账，把发起者本地放置回滚并提示
     // （放置目标必为空气/可替换格，回滚到账本既有值或 0 与本地现状一致）
+    // B51 R3：未启用工业的世界拒绝写入工业方块（回滚发起者本地预测；只放方块，不做猜测修复）
+    if (isIndustryId(id) && !(this.extraContent && this.extraContent.industry === true)) {
+      this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: blocks.has(key) ? blocks.get(key) : 0, by: 0, d: dim });
+      return;
+    }
     if (isHopperId(id)) {
       const hoppers = this.dimBucket(this.dimensionHoppers, dim);
       if (!hoppers.has(key) && this._hopperTotal() >= FLOW_HOPPER_LIMIT) {
@@ -1350,6 +1416,10 @@ export class Room {
       containers.delete(key); // T5：箱子被挖 → 容器账本一并清除（内容散落由挖掘方 drop_spawn 上报）
     }
     this.trackHopperBlock(dim, key, id); // B36 F-1：漏斗索引与方块账本同步
+    // B51 R3：工业方块索引 + 机器消失 → 清账本并散落内容物（服务器权威）
+    const prevIndustry = this._industryKindAt(dim, key);
+    this.trackIndustryBlock(dim, key, id);
+    if (prevIndustry && !isIndustryId(id)) this.dropIndustryAt(dim, key);
     // B36 F-2：熔炉被挖毁/换成非熔炉 → 清账本并散落内容物（服务器权威，联机端不再本地散落）
     if (!isFurnaceId(id)) this.dropFurnaceAt(dim, key);
     this.broadcastDim(MSG.BLOCK_CHANGE, { x, y, z, id, by: player.id, d: dim }, dim, player.id);
@@ -1368,12 +1438,18 @@ export class Room {
       const x = safeInt(it[0]), y = safeInt(it[1]), z = safeInt(it[2]), id = safeInt(it[3]);
       if (id < 0 || id > 65535) continue;
       const key = `${x},${y},${z}`;
+      // B51 R3：未启用工业的世界拒绝工业方块（批量路径逐格跳过）
+      if (isIndustryId(id) && !(this.extraContent && this.extraContent.industry === true)) continue;
       // 与单条路径同义：显式保留空气值，容器内容另行清理。
       blocks.set(key, id);
       if (id === 0) {
         containers.delete(key);
       }
       this.trackHopperBlock(dim, key, id); // B36 F-1：漏斗索引与方块账本同步
+      // B51 R3：工业方块索引 + 机器消失 → 清账本 + 散落
+      const prevIndustry = this._industryKindAt(dim, key);
+      this.trackIndustryBlock(dim, key, id);
+      if (prevIndustry && !isIndustryId(id)) this.dropIndustryAt(dim, key);
       if (!isFurnaceId(id)) this.dropFurnaceAt(dim, key); // B36 F-2：熔炉消失 → 清账本 + 散落
       changes.push([x, y, z, id]);
     }
@@ -1887,6 +1963,152 @@ export class Room {
           this._furnaceSyncAt.set(syncKey, now);
           this.broadcastDim(MSG.FURNACE_SET, this.furnaceMessage(x, y, z, dim, st, 0), dim);
         }
+      }
+    }
+    if (dirty) this.saveSoon();
+  }
+
+
+  // ── B51 R3 潮工账本（服务器权威推进与内容同步）───────────────────────────────
+  // 消息形状：{x,y,z,d,by,state,res?}；res 只随发起者的那一份下发（投料/取物回执）。
+  industryMessage(x, y, z, dim, st, by) {
+    return { x, y, z, d: dim, by, state: st };
+  }
+
+  // 方块索引与账本同步（单格与批量路径共用）：进入/离开工业家族都要更新
+  trackIndustryBlock(dim, key, id) {
+    const bucket = this.dimBucket(this.dimensionIndustryBlocks, dim);
+    const kind = industryKindOf(id);
+    const prev = bucket.get(key);
+    if (kind) bucket.set(key, kind);
+    else bucket.delete(key);
+    if (prev !== kind) this._industryVersion++;
+  }
+
+  _industryKindAt(dim, key) {
+    const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
+    return idx.get(key) || null;
+  }
+
+  _industryTotal() {
+    let n = 0;
+    for (const m of this.dimensionIndustry.values()) n += m.size;
+    return n;
+  }
+
+  // 取（或建）机器条目：位置不是可交互机器（传动轴/普通方块）或已达房间上限 → null
+  getOrCreateIndustry(dim, key) {
+    const states = this.dimBucket(this.dimensionIndustry, dim);
+    const cur = states.get(key);
+    if (cur) return cur;
+    const kind = this._industryKindAt(dim, key);
+    if (!kind || kind === 'shaft') return null;
+    if (this._industryTotal() >= INDUSTRY_BLOCK_LIMIT) return null;
+    const st = emptyStateFor(kind);
+    states.set(key, st);
+    return st;
+  }
+
+  // C2S：投料 / 取产物——服务器权威结算，先回发起者（带 res），再广播给同维其他人
+  onIndustryAction(player, msg) {
+    const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
+    const dim = player.dim;
+    const key = `${x},${y},${z}`;
+    const kind = this._industryKindAt(dim, key);
+    if (!kind || kind === 'shaft') return;
+    const st = this.getOrCreateIndustry(dim, key);
+    if (!st) {
+      if (this._industryTotal() >= INDUSTRY_BLOCK_LIMIT) {
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `本房间工业机器账本已满（${INDUSTRY_BLOCK_LIMIT} 台）` });
+      }
+      return;
+    }
+    const op = msg.op === 'extract' ? 'extract' : (msg.op === 'insert' ? 'insert' : null);
+    if (!op) return;
+    const name = typeof msg.name === 'string' ? msg.name.slice(0, 64) : null;
+    // 不允许带 data 的物品进机器（潜影盒等；工业槽位是无 data 的 64 堆叠）
+    if (op === 'insert' && msg.data) return;
+    const res = applyIndustryAction(kind, st, op, name, safeInt(msg.count, 1));
+    const payload = this.industryMessage(x, y, z, dim, st, player.id);
+    this.broadcastDim(MSG.INDUSTRY_STATE, payload, dim, player.id);
+    this.sendTo(player, MSG.INDUSTRY_STATE, { ...payload, res: { ...res, name } });
+    this._industrySyncAt.set(`${dim}|${key}`, Date.now());
+    this._industrySig.set(`${dim}|${key}`, machineSig(st));
+    if (res.ok) this.saveSoon();
+  }
+
+  // 机器方块消失 → 账本条目删除 + 内容物散落（联机端不再本地散落，避免双份）
+  dropIndustryAt(dim, key) {
+    if (!this.dimensionIndustry.size) return;
+    const states = this.dimBucket(this.dimensionIndustry, dim);
+    const st = states.get(key);
+    states.delete(key);
+    this._industrySig.delete(`${dim}|${key}`);
+    this._industrySyncAt.delete(`${dim}|${key}`);
+    if (!st) return;
+    const parts = key.split(',');
+    const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    let n = 0;
+    for (const it of spillStacks(st)) {
+      const id = this.nextDropId++;
+      const entry = {
+        x: x + 0.5, y: y + 0.5, z: z + 0.5, dim, spawnedAt: Date.now(),
+        name: String(it.name).slice(0, 32), count: Math.min(64, Math.max(1, it.count | 0)),
+      };
+      this.drops.set(id, entry);
+      this.broadcastDim(MSG.DROP_SPAWN, this.dropMessage(id, entry), dim);
+      n++;
+    }
+    if (n) this.saveSoon();
+  }
+
+  // 拓扑缓存：只在方块索引变化后重建（不得每 tick 全图 BFS）
+  _industryNetworks(dim) {
+    let entry = this._industryNetCache.get(dim);
+    if (entry && entry.version === this._industryVersion) return entry.networks;
+    const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
+    const networks = buildNetworks(idx);
+    entry = { version: this._industryVersion, networks };
+    this._industryNetCache.set(dim, entry);
+    return networks;
+  }
+
+  // 潮工推进（index.mjs 每 200ms 调用）：供给/需求/效率与碎石产出全部归服务器。
+  // 槽位变化即时广播；只有进度变化时按 INDUSTRY_SYNC_MS 节流。
+  tickIndustrySweep(now = Date.now()) {
+    if (!this.dimensionIndustry.size) { this._lastIndustryAt = now; return; }
+    const dt = this._lastIndustryAt ? Math.min(1, Math.max(0, (now - this._lastIndustryAt) / 1000)) : 0;
+    this._lastIndustryAt = now;
+    if (dt <= 0) return;
+    let dirty = false;
+    for (const [dim, states] of this.dimensionIndustry) {
+      if (!states.size) continue;
+      const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
+      const networks = this._industryNetworks(dim);
+      // 方块已不在这一格 → 条目作废（内容散落由方块改动路径处理过）
+      for (const [key, st] of [...states]) {
+        const kind = idx.get(key);
+        if (!kind) { states.delete(key); this._industrySig.delete(`${dim}|${key}`); dirty = true; }
+        else if (st.kind !== kind) { states.delete(key); this._industrySig.delete(`${dim}|${key}`); dirty = true; }
+      }
+      if (!states.size) continue;
+      const r = tickIndustry(idx, states, dt, networks);
+      for (const key of r.changed) {
+        const st = states.get(key);
+        if (!st) continue;
+        const syncKey = `${dim}|${key}`;
+        const sig = machineSig(st);
+        const lastSync = this._industrySyncAt.get(syncKey) || 0;
+        const slotsChanged = this._industrySig.get(syncKey) !== sig;
+        const active = (st.burnTime > 0) || (st.progress > 0);
+        if (!slotsChanged && !(active && now - lastSync >= INDUSTRY_SYNC_MS)) continue;
+        this._industrySig.set(syncKey, sig);
+        this._industrySyncAt.set(syncKey, now);
+        const parts = key.split(',');
+        const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+        this.broadcastDim(MSG.INDUSTRY_STATE, this.industryMessage(x, y, z, dim, st, 0), dim);
+        dirty = true;
       }
     }
     if (dirty) this.saveSoon();

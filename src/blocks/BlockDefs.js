@@ -2650,6 +2650,176 @@ reg('tnt_primed', {
   tnt_primed_bottom: noiseTex([188, 108, 98], 265, { dark: 0.9, light: 1.1 }),
 });
 
+
+// ── Build 51 R3 潮工三件套（**文件末尾追加**，方块 ID 零漂移）─────────────────────────
+// 工业内容：注册永远全量（数字 id 由顺序决定），开关只决定获取/放置/交互/模拟是否启用。
+// industryKind 是运行期身份（boiler/shaft/crusher），朝向/状态变体不改变它。
+// 三个方块都 requiresExtras: ['industry']——关闭工业的世界拿不到、放不下、也不 tick。
+const IRON = [188, 194, 202];
+const IRON_DARK = [132, 140, 150];
+const COPPER = [186, 118, 74];
+const TIDE_GLOW = [120, 208, 214];
+
+// 铆钉边（金属板的四角螺钉）
+function rivetFrame(px, c, cx = 2) {
+  for (const [x, y] of [[cx, cx], [15 - cx, cx], [cx, 15 - cx], [15 - cx, 15 - cx]]) setPx(px, x, y, c);
+}
+
+function boilerSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const f = 0.94 + hash2(x, y, seed) * 0.12;
+      px[y * 16 + x] = rgb(IRON, f);
+    }
+  }
+  // 上下箍带
+  fillRect(px, 0, 0, 15, 1, rgb(IRON_DARK));
+  fillRect(px, 0, 14, 15, 15, rgb(IRON_DARK));
+  // 铜管环 + 潮压孔（青蓝色）
+  for (let y = 4; y <= 11; y++) {
+    setPx(px, 4, y, rgb(COPPER)); setPx(px, 11, y, rgb(COPPER));
+  }
+  fillRect(px, 5, 4, 10, 4, rgb(COPPER));
+  fillRect(px, 5, 11, 10, 11, rgb(COPPER));
+  fillRect(px, 6, 6, 9, 9, rgb(TIDE_GLOW, 0.85));
+  setPx(px, 7, 7, rgb(TIDE_GLOW, 1.35)); setPx(px, 8, 7, rgb(TIDE_GLOW, 1.2));
+  setPx(px, 7, 8, rgb(TIDE_GLOW, 1.2));
+  rivetFrame(px, rgb(IRON_DARK, 0.82), 1);
+  return pixelSvg(px);
+}
+
+function boilerTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(IRON, 0.92 + hash2(x, y, seed) * 0.12);
+  }
+  // 顶盖内圈 + 压力表盘（指针在两点钟方向）
+  fillRect(px, 3, 3, 12, 12, rgb(IRON_DARK, 1.04));
+  fillRect(px, 4, 4, 11, 11, rgb([236, 240, 244], 0.96));
+  fillRect(px, 5, 5, 10, 10, rgb([58, 66, 74]));
+  for (const [x, y] of [[7, 5], [9, 5], [5, 7], [10, 7], [5, 9], [10, 9], [7, 10], [9, 10]]) {
+    setPx(px, x, y, rgb(TIDE_GLOW, 0.9));
+  }
+  fillRect(px, 7, 7, 8, 8, rgb(TIDE_GLOW, 1.15));
+  setPx(px, 9, 6, rgb([236, 120, 96])); // 指针
+  rivetFrame(px, rgb(IRON_DARK, 0.8), 1);
+  return pixelSvg(px);
+}
+
+function boilerBottomTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(IRON_DARK, 0.88 + hash2(x, y, seed) * 0.14);
+  }
+  fillRect(px, 4, 4, 11, 11, rgb(IRON_DARK, 0.72));
+  fillRect(px, 6, 6, 9, 9, rgb(COPPER, 0.9));
+  rivetFrame(px, rgb(IRON_DARK, 1.25), 2);
+  return pixelSvg(px);
+}
+
+// 传动轴：横向轴身 + 两端轴承座（侧面）；顶/底为轴端插口
+function shaftSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([92, 98, 106], 0.9 + hash2(x, y, seed) * 0.12);
+  }
+  fillRect(px, 0, 6, 15, 9, rgb(IRON, 0.94));
+  for (let x = 0; x < 16; x += 4) fillRect(px, x, 6, x + 1, 9, rgb(IRON_DARK));
+  fillRect(px, 0, 7, 15, 8, rgb(IRON, 1.08));
+  // 轴承座
+  fillRect(px, 0, 4, 2, 11, rgb(COPPER, 0.92));
+  fillRect(px, 13, 4, 15, 11, rgb(COPPER, 0.92));
+  setPx(px, 1, 5, rgb(COPPER, 1.15)); setPx(px, 14, 5, rgb(COPPER, 1.15));
+  return pixelSvg(px);
+}
+
+function shaftCapTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([92, 98, 106], 0.9 + hash2(x, y, seed) * 0.12);
+  }
+  fillRect(px, 5, 5, 10, 10, rgb(IRON_DARK, 1.1));
+  fillRect(px, 6, 6, 9, 9, rgb(IRON, 1.02));
+  fillRect(px, 7, 7, 8, 8, rgb(COPPER, 1.0)); // 轴端插口
+  return pixelSvg(px);
+}
+
+// 碎石机：石壳 + 铁齿咬口
+function crusherSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const f = 0.86 + hash2(x, y, seed) * 0.18;
+      let c = [126, 128, 132];
+      if (y % 5 === 0) c = [108, 110, 114];
+      px[y * 16 + x] = rgb(c, f);
+    }
+  }
+  // 进料口（上）+ 咬齿
+  fillRect(px, 2, 2, 13, 5, rgb([46, 48, 52]));
+  for (let x = 3; x <= 12; x += 3) {
+    fillRect(px, x, 3, x + 1, 4, rgb(IRON, 1.02));
+  }
+  // 出料口（下）
+  fillRect(px, 4, 12, 11, 14, rgb([38, 40, 44]));
+  fillRect(px, 5, 12, 10, 12, rgb(IRON_DARK, 0.9));
+  rivetFrame(px, rgb(IRON_DARK, 0.86), 1);
+  return pixelSvg(px);
+}
+
+function crusherFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([126, 128, 132], 0.88 + hash2(x, y, seed) * 0.16);
+  }
+  // 大咬口 + 双排铁齿（正面看得出"这是碎石机"）
+  fillRect(px, 1, 3, 14, 9, rgb([42, 44, 48]));
+  for (let x = 2; x <= 13; x += 2) {
+    fillRect(px, x, 4, x, 5, rgb(IRON, 1.04));
+    fillRect(px, x, 7, x, 8, rgb(IRON, 0.96));
+  }
+  fillRect(px, 1, 3, 14, 3, rgb(IRON_DARK, 0.9));
+  fillRect(px, 1, 9, 14, 9, rgb(IRON_DARK, 0.9));
+  // 传动齿轮（右上角）
+  fillRect(px, 11, 11, 14, 14, rgb(COPPER, 0.95));
+  setPx(px, 12, 12, rgb(COPPER, 1.2)); setPx(px, 13, 13, rgb(COPPER, 1.2));
+  return pixelSvg(px);
+}
+
+reg('tide_boiler', {
+  displayName: '潮压锅炉', hardness: 3.5, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'], industryKind: 'boiler',
+  textures: { top: 'tide_boiler_top', side: 'tide_boiler_side', bottom: 'tide_boiler_bottom' },
+  lore: ['旧炉学会了听潮：燃料烧水，水化作压，压推动轴。'],
+}, {
+  tide_boiler_top: boilerTopTex(270),
+  tide_boiler_side: boilerSideTex(271),
+  tide_boiler_bottom: boilerBottomTex(272),
+});
+
+reg('drive_shaft', {
+  displayName: '传动轴', hardness: 3, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'], industryKind: 'shaft',
+  icon: 'drive_shaft_side',
+  textures: { top: 'drive_shaft_cap', side: 'drive_shaft_side', bottom: 'drive_shaft_cap' },
+  lore: ['六面相邻即成网；拆一节，整条轴就慢下来。'],
+}, {
+  drive_shaft_side: shaftSideTex(273),
+  drive_shaft_cap: shaftCapTex(274),
+});
+
+reg('crusher', {
+  displayName: '碎石机', hardness: 3.5, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'], industryKind: 'crusher',
+  icon: 'crusher_front',
+  textures: { top: 'crusher_side', side: 'crusher_side', bottom: 'crusher_side', front: 'crusher_front' },
+  facing: 'n', lore: ['石头咬石头：圆石碎成砾石，砾石再碎成沙。'],
+}, {
+  crusher_side: crusherSideTex(275),
+  crusher_front: crusherFrontTex(276),
+});
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

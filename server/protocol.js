@@ -129,6 +129,10 @@ export const MSG = {
   BLUEPRINT_REMOVED: 'blueprint_removed',   // S2C {id}：删除广播
   BLUEPRINT_DENY: 'blueprint_deny',         // S2C {id, reason}：保存/删除被拒
 
+  // B51 R3：潮工机器（服务器权威推进；客户端只提交动作并显示权威回执，不本地改状态）
+  INDUSTRY_ACTION: 'industry_action', // C2S {x,y,z,op:'insert'|'extract',name?,count?}
+  INDUSTRY_STATE: 'industry_state',   // S2C {x,y,z,d,by,state,res?}（res 只随发起者的那一份下发）
+
   // 世界
   SET_TIME: 'set_time',
   TIME: 'time',

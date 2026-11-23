@@ -43,6 +43,9 @@ export function roomSnapshot(room) {
   // 对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集
   const dimensionFurnaces = {};
   for (const [dim, m] of (room.dimensionFurnaces || new Map())) dimensionFurnaces[dim] = [...m.entries()];
+  // B51 R3：潮工机器账本（dim -> [[key, {kind,input/fuel/water/output,progress/burnTime}]）
+  const dimensionIndustry = {};
+  for (const [dim, m] of (room.dimensionIndustry || new Map())) dimensionIndustry[dim] = [...m.entries()];
   return {
     name: room.name,
     seed: room.seed,
@@ -60,6 +63,7 @@ export function roomSnapshot(room) {
     dimensionBlocks,
     dimensionContainers,
     dimensionFurnaces,
+    dimensionIndustry,
     drops: [...room.drops.entries()].map(([id, d]) => ({ id, ...d })),
     // B34-A：四界游记房间共享标记（个人标记不入账，只有明确分享过的才在这里）
     // 对不完整房间对象鲁棒：单测/备份导出路径可能只提供账本字段的子集

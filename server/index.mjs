@@ -902,6 +902,12 @@ const flowSweep = setInterval(() => {
     } catch (e) {
       console.error(`[熔炉] 房间「${r.name}」tick 异常: ${(e && e.message) || e}`);
     }
+    // B51 R3：潮工机器推进（服务器权威；与漏斗/熔炉共用 200ms sweep）
+    try {
+      r.tickIndustrySweep(now);
+    } catch (e) {
+      console.error(`[工业] 房间「${r.name}」tick 异常: ${(e && e.message) || e}`);
+    }
   }
 }, 200);
 

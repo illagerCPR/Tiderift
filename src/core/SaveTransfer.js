@@ -11,6 +11,7 @@ import { safeBiomeScale } from '../world/biomes.js';
 import { BlockRegistry } from './BlockRegistry.js';
 import { ItemRegistry } from './ItemRegistry.js';
 import { normalizeExtraContent, serializeExtraContent } from '../content/ExtraContent.js';
+import { sanitizeMachineState } from './Industry.js';
 
 export const SAVE_FILE_FORMAT = 'tiderift-save';
 export const SAVE_FILE_VERSION = 1;
@@ -272,6 +273,29 @@ function sanitizeFurnaceState(raw) {
   };
 }
 
+// B51 R3：工业机器状态（dim -> { "x,y,z": state }）；kind 决定槽位形状，不认识的一律丢弃
+function sanitizeIndustryBuckets(raw, dropped) {
+  const out = Object.create(null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const dim of Object.keys(raw)) {
+    if (DANGEROUS_KEYS.has(dim) || !DIM_KEYS.has(dim)) continue;
+    const bucket = raw[dim];
+    if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) continue;
+    const o = Object.create(null);
+    for (const key of Object.keys(bucket)) {
+      if (DANGEROUS_KEYS.has(key)) continue;
+      if (!COORD_KEY.test(key) || key.length > MAX_COORD_KEY_LEN) { dropped.industry++; continue; }
+      const st = bucket[key];
+      const kind = st && typeof st === 'object' ? st.kind : null;
+      const clean = sanitizeMachineState(kind, st);
+      if (!clean) { dropped.industry++; continue; }
+      o[key] = clean;
+    }
+    out[dim] = o;
+  }
+  return out;
+}
+
 function sanitizeFurnaceBuckets(raw, dropped) {
   const out = Object.create(null);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
@@ -314,7 +338,7 @@ function sanitizePlainObject(raw) {
 // 净化存档：只修已知字段、保留未知字段（跳过原型污染键）；返回 { data, dropped }
 export function sanitizeSaveData(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new SaveTransferError('not-a-save');
-  const dropped = { items: 0, blocks: 0, containers: 0, furnaces: 0, keys: 0 };
+  const dropped = { items: 0, blocks: 0, containers: 0, furnaces: 0, industry: 0, keys: 0 };
   const out = Object.create(null);
   for (const key of Object.keys(raw)) {
     if (DANGEROUS_KEYS.has(key)) { dropped.keys++; continue; }
@@ -358,6 +382,7 @@ export function sanitizeSaveData(raw) {
   out.dimensionBlocks = sanitizeBlockBuckets(raw.dimensionBlocks, dropped);
   out.dimensionContainers = sanitizeContainerBuckets(raw.dimensionContainers, dropped);
   out.dimensionFurnaces = sanitizeFurnaceBuckets(raw.dimensionFurnaces, dropped);
+  out.dimensionIndustry = sanitizeIndustryBuckets(raw.dimensionIndustry, dropped); // B51 R3
   out.finalePrimordial = sanitizePoint(raw.finalePrimordial);
   out.bedSpawn = sanitizeBedSpawn(raw.bedSpawn);
   out.sky = { time: clamp(finite(raw.sky && raw.sky.time, 0.35), 0, 1) };
@@ -401,6 +426,7 @@ export function summarize(data) {
     blocks: countDimEntries(data.dimensionBlocks),
     containers: countDimEntries(data.dimensionContainers),
     furnaces: countDimEntries(data.dimensionFurnaces),
+    industry: countDimEntries(data.dimensionIndustry),
     finaleDone: !!data.finaleDone
   };
 }

@@ -19,6 +19,8 @@ export function normalizeSaveData(data) {
   out.extraContent = extras;
   if (!Array.isArray(out.blueprints)) out.blueprints = [];
   if (!out.ruins || typeof out.ruins !== 'object' || Array.isArray(out.ruins)) out.ruins = null; // 旧档缺字段 → reset(null) 回落空账本
+  // B51 R3：工业机器状态（旧档缺字段 → 空表；迁移后的 V1 也没有）
+  if (!out.dimensionIndustry || typeof out.dimensionIndustry !== 'object' || Array.isArray(out.dimensionIndustry)) out.dimensionIndustry = {};
   if (out.version === 1) {
     // V1 → V2 迁移：旧平铺字段归入主世界桶（内存中升级，不回写）
     out.version = SAVE_VERSION;
@@ -74,6 +76,8 @@ export class SaveSystem {
         dimensionBlocks: serializeDimBuckets(game.world.dimensionBlocks),
         dimensionContainers: serializeDimBuckets(game.world.dimensionContainers),
         dimensionFurnaces: serializeDimBuckets(game.world.dimensionFurnaces),
+        // B51 R3：工业机器槽位与进度（拓扑不落盘，由方块账本重建）
+        dimensionIndustry: serializeDimBuckets(game.world.dimensionIndustry),
         dragonDefeated: !!game.world.dragonDefeated, // 末影龙击败标记（进末地是否再生成龙）
         finalePrimordial: game.world.finalePrimordial || null, // 候潮状态（终局篇 F1：祭坛坐标）
         finaleDone: !!game.world.finaleDone, // 听潮完成（终局篇 F3：仪式一次性门控）

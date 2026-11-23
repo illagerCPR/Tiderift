@@ -104,8 +104,13 @@ const MAGIC = normalizeExtraContent({ schema: 1, industry: false, magic: true })
     '方块定义带 requiresExtras 字段且基础内容为 null');
   ok(bow && Object.prototype.hasOwnProperty.call(bow, 'requiresExtras') && bow.requiresExtras === null,
     '物品定义带 requiresExtras 字段且基础内容为 null');
-  ok(BlockRegistry.all().every((b) => b.name === 'air' || isContentEnabled(b, NONE_EXTRA_CONTENT)),
-    '全部现存方块在双关世界仍然启用（注册不随开关增删）');
+  // 注册不随开关增删：基础内容在双关世界全部可用；带归属的（首批工业三件套）在双关世界不启用
+  ok(BlockRegistry.all().filter((b) => !b.requiresExtras).every((b) => isContentEnabled(b, NONE_EXTRA_CONTENT)),
+    '基础方块在双关世界全部启用（注册不随开关增删）');
+  ok(BlockRegistry.all().filter((b) => b.requiresExtras && b.requiresExtras.includes('industry'))
+    .every((b) => !isContentEnabled(b, NONE_EXTRA_CONTENT)), '工业方块在双关世界不启用');
+  ok(BlockRegistry.all().filter((b) => b.requiresExtras && b.requiresExtras.includes('industry'))
+    .every((b) => isContentEnabled(b, INDUSTRY)), '工业方块在启用工业的世界全部启用');
 }
 
 // ── ⑤ 配方闸口 ──────────────────────────────────────────────────────────────

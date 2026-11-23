@@ -172,6 +172,12 @@ addShaped('hopper', 1, ['iron_ingot', null, 'iron_ingot', 'iron_ingot', 'chest',
 // 还原配方
 addShaped('oak_log', 1, ['oak_planks','oak_planks','oak_planks','oak_planks']);
 
+// ── B51 R3 潮工三件套（内容归属 industry：关闭工业的世界拿不到配方）─────────────
+// 传动轴（一根铁轴 + 一节石头座，出 4 根）；碎石机与锅炉都要先有轴
+addShaped('drive_shaft', 4, [['iron_ingot'], ['stone'], ['iron_ingot']], ['industry']);
+addShaped('crusher', 1, ['stone','iron_ingot','stone','stone','drive_shaft','stone','stone','iron_ingot','stone'], ['industry']);
+addShaped('tide_boiler', 1, ['iron_ingot','iron_ingot','iron_ingot','iron_ingot','furnace','iron_ingot','stone','bucket','stone'], ['industry']);
+
 // 匹配函数：输入是 grid 二维数组（每行一个数组），返回匹配结果或 null
 // manifest 缺省 = 双关（fail-closed）：带归属需求的配方不会在未声明清单的世界里命中
 export function matchRecipe(grid, manifest) {

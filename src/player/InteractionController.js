@@ -158,6 +158,7 @@ export class InteractionController {
         if (def.name === 'beacon') g._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
         if (def.name === 'shulker_box') g._breakShulkerBox(hit.block, false); // Idea-2C：创造也掉盒（内容跟随）
         if (def.baseBlock === 'furnace') g._breakFurnace(hit.block); // B28 家族（四朝向 × 点燃态）
+        if (def.industryKind) g.industry?.onBreak(hit.block); // B51 R3：机器拆毁 → 清账本 + 内容散落
         if (def.name === 'end_crystal') g._breakCrystal(hit.block.x, hit.block.y, hit.block.z);
         // Build 20 ④：创造挖星髓不再激怒潮鸣（激怒调用仅生存分支保留）
         if (def.name === 'gale_block') g._clearGaleColumn(hit.block.x, hit.block.y, hit.block.z); // 批次 B：拆风阵块清气流柱
@@ -199,6 +200,7 @@ export class InteractionController {
           if (def.name === 'beacon') g._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
           if (def.name === 'shulker_box') g._breakShulkerBox(hit.block, true); // Idea-2C：内容跟随盒体
           if (def.baseBlock === 'furnace') g._breakFurnace(hit.block); // B28 家族（四朝向 × 点燃态）
+          if (def.industryKind) g.industry?.onBreak(hit.block); // B51 R3：机器拆毁 → 清账本 + 内容散落（单机本地散落）
           if (def.name === 'end_crystal') g._breakCrystal(hit.block.x, hit.block.y, hit.block.z);
           if (def.name === 'star_marrow_ore') g.mobManager?.angerTideEchoes(hit.block.x, hit.block.y, hit.block.z); // 批次 B：潮鸣激怒
           if (def.name === 'gale_block') g._clearGaleColumn(hit.block.x, hit.block.y, hit.block.z); // 批次 B：拆风阵块清气流柱
@@ -260,6 +262,15 @@ export class InteractionController {
         g.furnaceScreen.show(furnaceHit.block.x, furnaceHit.block.y, furnaceHit.block.z);
         g.controls.mouseRight = false;
         return CLICK_CONSUMED;
+      }
+
+      // B51 R3：潮工机器——手持物品=投料，空手=取产物（联机只发动作，等服务器回执）
+      const machineDef = furnaceHit ? BlockRegistry.getById(furnaceHit.id) : null;
+      if (machineDef && machineDef.industryKind && g.industry && !g.player.spectator) {
+        if (g.industry.interact(furnaceHit.block)) {
+          g.controls.mouseRight = false;
+          return CLICK_CONSUMED;
+        }
       }
 
       const hit = g.selectedBlock;

@@ -89,6 +89,7 @@ import '../items/ItemDefs.js';
 import { BlockSVGDefinitions } from '../blocks/BlockDefs.js';
 import { ItemSVGDefinitions } from '../items/ItemDefs.js';
 import { normalizeExtraContent, serializeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
+import { IndustrySystem } from './IndustrySystem.js';
 
 // B51：世界清单解析——未知 schema 必须由上游（normalizeSaveData / 服务器）拒绝；
 // 走到这里说明上游漏了，一律告警并回落双关（不允许静默通过）。
@@ -161,6 +162,7 @@ export class Game {
     this._raceHudAt = 0;          // 计时条刷新节流
     this._raceCheckAt = 0;        // 赛道完整性巡检节流
     this._waymarkNavCache = null; // 下一座航路查询缓存（随世界重建清空）
+    this.industry = null;         // B51 R3 潮工（工业）域（新建型：start 创建 / _disposeWorld 释放）
     this.ruins = null;            // 可动手解开的遗迹（新建型：start 创建 / _disposeWorld 释放）
     this._ruinPuzzles = new Map(); // 当前登记的机关定义（key -> puzzle；开门与游记要用）
     this._ruinScanAt = 0;         // 目标机关集扫描节流时间戳（performance.now）
@@ -420,6 +422,7 @@ export class Game {
     this.raycast = null;
     this.redstone = null;
     if (this.tnt) { this.tnt.dispose(); this.tnt = null; }
+    if (this.industry) { this.industry.dispose(); this.industry = null; } // B51 R3：工业域无外部资源，清缓存即可
     if (this.physics) this.physics.world = null;
     this.world = null;
   }
@@ -532,11 +535,14 @@ export class Game {
     // B48：TNT 引信/爆炸/表现（新建型：随世界销毁）。红石只管"通电"这一件事，
     // 点燃后的一切（引信、破坏、伤害、特效、联机批量写）都收口在 TntSystem。
     this.tnt = new TntSystem(this);
+    // B51 R3：潮工域（单机本地 tick / 联机只显示服务器权威）；方块变化 → 拓扑标脏
+    this.industry = new IndustrySystem(this);
+    this.world.onIndustryDirty = () => { if (this.industry) this.industry.markDirty(); };
     this.redstone.onTntPowered = (x, y, z) => this.tnt.prime(x, y, z);
     
     // 恢复修改的方块/容器：V2 按维度分桶装入；V1 旧档字段直接进当前维度桶（迁移）
     if (loadData && (loadData.dimensionBlocks || loadData.dimensionContainers)) {
-      this.world.loadDimensionBuckets(loadData.dimensionBlocks, loadData.dimensionContainers, loadData.dimensionFurnaces);
+      this.world.loadDimensionBuckets(loadData.dimensionBlocks, loadData.dimensionContainers, loadData.dimensionFurnaces, loadData.dimensionIndustry);
     } else {
       if (loadData && loadData.modifiedBlocks) {
         for (const [key, id] of Object.entries(loadData.modifiedBlocks)) {
@@ -1815,6 +1821,8 @@ export class Game {
     this.updateFurnaces(dt);
     // B36 F-1：单机漏斗搬运（联机时早退，权威在服务器 tick）
     this.updateHopperFlow(dt);
+    // B51 R3：潮工推进（联机时早退，权威在服务器 industry sweep）
+    if (this.industry) this.industry.update(dt);
     if (this.furnaceScreen && this.furnaceScreen.visible) this.furnaceScreen.tick();
     // JEI 伴随面板：跟随容器界面（背包/箱子/合成台/熔炉/交易）显隐
     if (this.recipeViewer) this.recipeViewer.updateFrame();
@@ -2991,6 +2999,8 @@ export class Game {
     if (dimContainersOverride) contBuckets[dim] = dimContainersOverride;
     const furnBuckets = {};
     for (const [d, m] of this.world.dimensionFurnaces) furnBuckets[d] = Object.fromEntries(m);
+    const indBuckets = {};
+    for (const [d, m] of this.world.dimensionIndustry) indBuckets[d] = Object.fromEntries(m);
     const playerData = {
       yaw: p.yaw, pitch: p.pitch, health: p.health, food: p.food,
       saturation: p.saturation, exhaustion: p.exhaustion,
@@ -3025,6 +3035,7 @@ export class Game {
       dimensionBlocks: dimBuckets,
       dimensionContainers: contBuckets,
       dimensionFurnaces: furnBuckets,
+      dimensionIndustry: indBuckets, // B51 R3：工业机器状态跨维透传（槽位与进度不随换维丢失）
       redstone: this.redstone ? this.redstone.serialize() : null,
       journal: this.journal ? this.journal.serialize() : null, // 游记跨维透传（换维重建不丢探索记录）
       waymarks: this.waymarks ? this.waymarks.serialize() : null, // 航标进度跨维透传（换维重建不丢）

@@ -12,6 +12,8 @@ import { getDimension, DEFAULT_DIMENSION } from './dimensions.js';
 import { ModifiedBlocks } from './ModifiedBlocks.js';
 import { parsePosKey } from './posKey.js';
 import { normalizeExtraContent, serializeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
+import { sanitizeMachineState, emptyStateFor } from './Industry.js';
+import { INDUSTRY_BLOCK_KIND } from '../content/industry/defs.js';
 
 export class World {
   constructor(seed = 0, dimension = DEFAULT_DIMENSION, worldOpts = null) {
@@ -33,10 +35,16 @@ export class World {
     this.dimensionContainers = new Map(); // dimId -> Map("x,y,z" -> 27 槽数组)
     this.dimensionFurnaces = new Map();   // dimId -> Map("x,y,z" -> 熔炉状态 {input,fuel,output,burnTime,burnMax,cookTime})
     this.dimensionHoppers = new Map();    // dimId -> Map("x,y,z" -> 出料口朝向)；B36 F-1 搬运目标集（纯派生自方块账本）
+    // B51 R3：工业机器状态（dim -> Map("x,y,z" -> state)）与工业方块索引（dim -> Map(key -> kind)）。
+    // 状态（槽位 + 进度）进存档；索引纯派生自方块账本、不落盘。
+    this.dimensionIndustry = new Map();
+    this.dimensionIndustryBlocks = new Map();
     this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
     this.hoppers = this.dimBucket(this.dimensionHoppers);
+    this.industry = this.dimBucket(this.dimensionIndustry);
+    this.industryBlocks = this.dimBucket(this.dimensionIndustryBlocks);
     // T5 容器：打开时惰性生成（结构箱子按 (seed,表名,坐标) 确定性 loot），
     // 玩家改动即落 Map（存档持久化；联机经 container_set 广播收敛）
     this.onLocalBlockChange = null;  // 本地发起方块修改回调 (x,y,z,id)，由 NetworkManager 注册（联机上报）
@@ -59,7 +67,7 @@ export class World {
   }
 
   // 从存档/换维数据装入全部维度桶，并把当前维度指针指向对应桶
-  loadDimensionBuckets(blocksObj, containersObj, furnacesObj = null) {
+  loadDimensionBuckets(blocksObj, containersObj, furnacesObj = null, industryObj = null) {
     for (const [dim, entries] of Object.entries(blocksObj || {})) {
       const m = new ModifiedBlocks();
       for (const [k, v] of Object.entries(entries || {})) m.set(k, v | 0);
@@ -81,6 +89,18 @@ export class World {
         this.dimensionFurnaces.set(dim, m);
       }
     }
+    // B51 R3：工业机器状态（旧档/旧快照无字段 → 空表，天然兼容）
+    this.dimensionIndustry.clear();
+    for (const [dim, entries] of Object.entries(industryObj || {})) {
+      if (!entries || typeof entries !== 'object' || Array.isArray(entries)) continue;
+      const m = new Map();
+      for (const [k, raw] of Object.entries(entries)) {
+        const kind = raw && typeof raw === 'object' ? raw.kind : null;
+        const st = sanitizeMachineState(kind, raw);
+        if (st) m.set(k, st);
+      }
+      this.dimensionIndustry.set(dim, m);
+    }
     this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
@@ -95,6 +115,26 @@ export class World {
       this.dimensionHoppers.set(dim, hm);
     }
     this.hoppers = this.dimBucket(this.dimensionHoppers);
+    // B51 R3：工业方块索引纯派生自方块账本（工业方块只会由玩家放下 → 必在账本里）
+    this.dimensionIndustryBlocks.clear();
+    for (const [dim, m] of this.dimensionBlocks) {
+      const im = new Map();
+      for (const [k, id] of m) {
+        const def = BlockRegistry.getById(id);
+        if (def && def.industryKind) im.set(k, def.industryKind);
+      }
+      this.dimensionIndustryBlocks.set(dim, im);
+    }
+    this.industry = this.dimBucket(this.dimensionIndustry);
+    this.industryBlocks = this.dimBucket(this.dimensionIndustryBlocks);
+    // 账本与状态对不上的条目直接丢（旧存档/异常导入/方块已被换掉）——绝不留下幽灵机器
+    for (const [dim, states] of this.dimensionIndustry) {
+      const idx = this.dimensionIndustryBlocks.get(dim);
+      for (const [k, st] of [...states]) {
+        const kind = idx ? idx.get(k) : null;
+        if (!kind || kind === 'shaft' || !st || st.kind !== kind) states.delete(k);
+      }
+    }
   }
 
   key(cx, cz) { return `${cx},${cz}`; }
@@ -245,6 +285,7 @@ export class World {
     c.dirty = true;
     if (recordMod) this.modifiedBlocks.set(`${gx},${gy},${gz}`, id);
     this.trackHopper(gx, gy, gz, id); // B36 F-1：漏斗索引随写方块增删（全写入口收口于此）
+    this.trackIndustry(gx, gy, gz, id); // B51 R3：工业方块索引（拓扑只在方块变化时标脏重建）
     if (this.onLocalBlockChange) this.onLocalBlockChange(gx, gy, gz, id);
     // 作物登记表维护（种/长/收/破坏/远端同步全路径收口于此）
     if (this.onCropBlockChange) this.onCropBlockChange(gx, gy, gz, oldId, id);
@@ -321,6 +362,50 @@ export class World {
     if (def && def.baseBlock === 'hopper') this.hoppers.set(k, def.facing);
     else if (this.hoppers.size) this.hoppers.delete(k);
   }
+
+  // ── 工业机器（B51 R3；状态由 IndustrySystem 推进，这里只做账本存取）──
+  static industryKey(x, y, z) { return `${x},${y},${z}`; }
+
+  // 工业方块索引维护：写入的方块带 industryKind 才建索引，否则清掉该格
+  trackIndustry(x, y, z, id) {
+    const def = BlockRegistry.getById(id);
+    const k = World.industryKey(x, y, z);
+    if (def && def.industryKind) this.industryBlocks.set(k, def.industryKind);
+    else this.industryBlocks.delete(k);
+    // 方块消失 → 该格机器状态作废（内容散落由破坏路径负责，避免双份）
+    if (!(def && def.industryKind)) this.industry.delete(k);
+    if (this.onIndustryDirty) this.onIndustryDirty(x, y, z);
+  }
+
+  getIndustry(x, y, z) {
+    return this.industry.get(World.industryKey(x, y, z)) || null;
+  }
+
+  // 取（或建）机器状态：位置必须真的是该种工业方块（不凭空造账）
+  getOrOpenIndustry(x, y, z) {
+    const k = World.industryKey(x, y, z);
+    const kind = this.industryBlocks.get(k);
+    if (!kind || kind === 'shaft') return null;
+    let st = this.industry.get(k);
+    if (!st || st.kind !== kind) {
+      st = emptyStateFor(kind);
+      this.industry.set(k, st);
+    }
+    return st;
+  }
+
+  removeIndustry(x, y, z) {
+    this.industry.delete(World.industryKey(x, y, z));
+  }
+
+  // 方块 → 工业种类（供交互/破坏路径判型；非工业方块返回 null）
+  industryKindAt(x, y, z) {
+    const def = BlockRegistry.getById(this.getBlock(x, y, z));
+    return (def && def.industryKind) || null;
+  }
+
+  // 工业方块种类表（纯函数视图，供纯算法模块消费）
+  dumpIndustryBlocks() { return new Map(this.industryBlocks); }
 
   // ── 熔炉状态（单机持久化；打开时惰性创建，进度随 Game.update 推进）──
   static furnaceKey(x, y, z) { return `${x},${y},${z}`; }

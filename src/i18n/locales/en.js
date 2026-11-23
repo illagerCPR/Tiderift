@@ -753,4 +753,14 @@ export const en = {
   "无": "None",
   "额外内容：{list}（创建时确定，不可更改）": "Extra content: {list} (fixed at creation, cannot be changed)",
   "该存档包含当前版本不支持的额外内容规则，请升级游戏": "This save contains extra-content rules that this version does not support. Please update the game.",
+  // ── B51 R3 潮工机器交互提示 ──
+  "已投入": "Inserted",
+  "已取出": "Collected",
+  "槽位已满": "Slot full",
+  "这台机器不收这个": "This machine does not accept that",
+  "没有可取的东西": "Nothing to collect",
+  "机械网络过大（上限 128 节点），整网停转": "Machine network too large (limit 128 nodes); the whole network has stopped",
+  "旧炉学会了听潮：燃料烧水，水化作压，压推动轴。": "The old furnace learned to listen to the tide: fuel boils water, water becomes pressure, pressure turns the shaft.",
+  "六面相邻即成网；拆一节，整条轴就慢下来。": "Six neighbours make a network; pull one segment and the whole shaft slows.",
+  "石头咬石头：圆石碎成砾石，砾石再碎成沙。": "Stone bites stone: cobblestone breaks into gravel, gravel grinds down to sand.",
 };

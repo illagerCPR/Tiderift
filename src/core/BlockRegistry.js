@@ -71,6 +71,8 @@ function register(def) {
     blastResist: def.blastResist ?? 0,
     // B51：额外内容归属（null = 基础内容；数组 = 需要全部启用，未知 ID 永不满足）
     requiresExtras: normalizeRequires(def.requiresExtras),
+    // B51 R3：工业机器身份（'boiler'|'shaft'|'crusher'；朝向/状态变体不改变它）
+    industryKind: def.industryKind || null,
     color: def.color || null
   };
   blocks.set(id, block);

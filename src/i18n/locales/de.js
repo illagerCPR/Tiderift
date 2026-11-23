@@ -753,4 +753,14 @@ export const de = {
   "无": "Keine",
   "额外内容：{list}（创建时确定，不可更改）": "Zusatzinhalte: {list} (bei Erstellung festgelegt, nicht änderbar)",
   "该存档包含当前版本不支持的额外内容规则，请升级游戏": "Dieser Spielstand enthält Zusatzinhalts-Regeln, die diese Version nicht unterstützt. Bitte aktualisiere das Spiel.",
+  // ── B51 R3 潮工机器交互提示 ──
+  "已投入": "Eingefüllt",
+  "已取出": "Entnommen",
+  "槽位已满": "Fach voll",
+  "这台机器不收这个": "Diese Maschine nimmt das nicht",
+  "没有可取的东西": "Nichts zu entnehmen",
+  "机械网络过大（上限 128 节点），整网停转": "Maschinennetz zu groß (Grenze 128 Knoten), das ganze Netz steht",
+  "旧炉学会了听潮：燃料烧水，水化作压，压推动轴。": "Der alte Ofen lernte, die Tide zu hören: Brennstoff kocht Wasser, Wasser wird Druck, Druck dreht die Welle.",
+  "六面相邻即成网；拆一节，整条轴就慢下来。": "Sechs Nachbarn bilden ein Netz; zieh ein Stück heraus und die ganze Welle wird langsamer.",
+  "石头咬石头：圆石碎成砾石，砾石再碎成沙。": "Stein beißt Stein: Bruchstein zerbricht zu Kies, Kies mahlt sich zu Sand.",
 };
