@@ -93,6 +93,7 @@ PURE_NODE_SUITES=(
     furnace-unit               # B36 F-2 熔炉进出料纯算法（纯 node：id 钉值/烧炼语义/追赶有界/漏斗进出料路由/快照恢复/权威 tick）
     phenomena-unit             # B37 G 局部潮候与稀有景象（纯 node：四维窗口/预兆 60 秒/观测累计/游记桶与一次性纪念/铭牌方块/红线守卫）
     extra-content-unit         # B51 R1 额外内容基石（纯 node：清单规范化/旧形态回落/未知 schema 拒绝/归属元数据/配方与结构闸口/World 清单同源/无全局串状态）
+    docker-image-files         # 镜像服务器文件清单（纯 node：入口闭包 ⊆ runtime COPY 列表 / COPY src 红线 / 负控）
     industry-unit              # B51 R3 潮工最小闭环（纯 node：方块 ID 钉值/归属与配方/拓扑分量与超限/锅炉点火与空桶回收/供需效率降速/槽位动作/清洗/存档净化/接线绊线）
 )
 

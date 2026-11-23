@@ -201,3 +201,16 @@ docker restart t && curl -fsS -o /dev/null http://127.0.0.1:3001/admin
   CDN，玩家仍需手填服务器 IP（`LAN_PORT` 固定 3001，端口不可改）。
 - 镜像不内置 TLS。需要 HTTPS 时在前面加反向代理（Caddy/Nginx），并把 `ws://` 升级为 `wss://`
   ——**当前 `lanWsUrl()` 硬编码 `ws://`**，HTTPS 部署需另行改造（尚未实现）。
+
+## B51 R3：新增 server/*.js 必须同时加进 Dockerfile（镜像 smoke 才会翻车的坑）
+
+runtime 阶段对服务器源码是**精确列举**拷贝（`COPY server/index.mjs server/room.js … ./server/`）。
+新增一个 `server/xxx.js`（本轮是 `server/industry.js`）而忘了补一行时：
+
+- `npm test` 全绿（本机文件都在），CI 的 `Build frontend + 全量回归` 也绿；
+- 只有 Docker workflow 的「Smoke test HTTP endpoints」才会失败，容器日志是
+  `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/server/industry.js' imported from /app/server/room.js`。
+
+防回退：`tests/docker-image-files.mjs` 从 `server/index.mjs` 出发沿 `./xxx.js` 做传递闭包，
+断言每个模块都在 runtime COPY 列表里（并守住 `COPY src ./src` 两条红线）。**新增服务器模块后连这个套件一起跑。**
+
