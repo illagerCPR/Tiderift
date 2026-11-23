@@ -7,28 +7,32 @@ import { TerrainGenerator } from '../world/terrain.js';
 // Worker 图里若缺这一导入，BlockRegistry 为空 → getByName 全 undefined → 生成全空气。
 // BlockDefs 顶层只做 SVG 字符串生成（DOM 全在函数体内），Worker 上下文安全。
 import '../blocks/BlockDefs.js';
+import { normalizeExtraContent, extraContentCode, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
 
-// 每个 seed+规模缓存一个生成器（噪声表初始化较重），LRU 上限防换房/换维堆积
+// 每个 seed+规模+内容清单缓存一个生成器（噪声表初始化较重），LRU 上限防换房/换维堆积。
+// B51：缓存键必须含额外内容清单——否则同种子不同模块组合会错误复用生成器（得到另一套结构/矿物）。
 const generators = new Map();
 const MAX_GENERATORS = 4;
 
-function getGenerator(seed, biomeScale) {
-  const key = seed + '|' + (biomeScale || '');
+function getGenerator(seed, biomeScale, rawExtras) {
+  const extras = normalizeExtraContent(rawExtras) || NONE_EXTRA_CONTENT;
+  const key = seed + '|' + (biomeScale || '') + '|' + extraContentCode(extras);
   let gen = generators.get(key);
   if (!gen) {
     if (generators.size >= MAX_GENERATORS) {
       generators.delete(generators.keys().next().value);
     }
     gen = new TerrainGenerator(seed, biomeScale);
+    gen.extraContent = extras; // 结构闸口（StructureManager.typeActive）从生成器读取
     generators.set(key, gen);
   }
   return gen;
 }
 
 self.onmessage = (e) => {
-  const { id, cx, cz, seed, biomeScale } = e.data || {};
+  const { id, cx, cz, seed, biomeScale, extraContent } = e.data || {};
   try {
-    const gen = getGenerator(seed, biomeScale);
+    const gen = getGenerator(seed, biomeScale, extraContent);
     const chunk = new Chunk(cx, cz);
     gen.generateChunk(chunk);
     const buf = chunk.blocks.buffer;

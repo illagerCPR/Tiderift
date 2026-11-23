@@ -118,6 +118,12 @@ export function filterEnabled(defs, manifest) {
   return out;
 }
 
+// 客户端能力声明（HELLO 上报）：支持 schema 1 的全部内容 ID。
+// 服务器据此拒绝「启用了客户端不支持内容」的房间；旧客户端不报此字段 = 只支持双关房间。
+export function extraCapability() {
+  return { schema: EXTRA_CONTENT_SCHEMA, ids: [...EXTRA_IDS] };
+}
+
 // 记录用简述："industry+magic" / "industry" / "magic" / ""（不进 UI，UI 走 EXTRA_LABEL_KEYS）
 export function extraContentCode(m) {
   return enabledExtras(m).join('+');

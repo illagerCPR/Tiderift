@@ -3,7 +3,7 @@
 > 覆盖 `docs/extra-content-master-plan.md` 的 Build 51–56 实现。改 `src/content/ExtraContent.js`、
 > 注册表的 `requiresExtras`、`Crafting/Smelting` 归属过滤、`StructureManager.typeActive`、
 > 创造栏/配方查询的归属闸口前**必读**。
-> 分轮交付；本文按轮追加，当前：**B51 R1（基石）**。
+> 分轮交付；本文按轮追加，当前：**B51 R2（世界创建界面 + 全链路透传 + 能力协商）**。
 
 ## 一、总原则（违反即回退）
 
@@ -68,7 +68,56 @@
 **新增任何生成内容（结构/矿脉/新生物）后，双开清单不得改变这条基线之外的基础地形**——
 若确需改变，必须同时更新夹具并在本文记录理由。
 
-## 六、术语与命名纪律
+## 六、R2：世界创建界面与全链路透传
+
+### 6.1 界面（`src/ui/ExtraContentScreen.js`）
+
+- 只在**创建新世界前**出现：单人页「额外内容: … 选择…」与 LAN 页建房区同一行入口，单例跨页复用。
+- 两张独立卡片（工业 / 魔法），没有第三颗开关；两张都开才显示联动说明。
+- 草稿由 `MenuScreen.selectedExtras` 持有（菜单会话内有效），界面只读写同一个引用。
+- 文案一律在 `render()` 里以 `t(简体原文)` 字面量书写——**不要改回模块级文案表 + `t(table[key])`**：
+  静态扫描覆盖不到动态键，翻译会静默回落中文。
+- 徽标统一走 `MenuScreen.extrasBadgeLabel()`（存档槽 / 导入摘要），暂停菜单只读行由
+  `PauseMenu._applyWorldRules()` 在 `show()` 时刷新，**没有任何修改入口**。
+
+### 6.2 启动参数收口（`Game.start`）
+
+```js
+start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extraContent })
+```
+
+- 第 7 参是选项对象；**不要再追加第 8 个位置参数**。读档时以 `loadData` 为准（草稿只在新建时生效，
+  这正是"读旧档不采用当前草稿"的实现点）。
+- `World` 构造携带清单并把同一份写进 `world.generator.extraContent`（结构闸口与 Worker 同源）。
+- 换维：`_composeSwitchLoadData()` 必须带 `extraContent`（`serializeExtraContent(this.world.extraContent)`），
+  漏掉会让换维后的世界悄悄变成双关。
+- `resolveExtraContent()` 对未知 schema 只做「告警 + 兜底双关」——真正的拒绝在
+  `normalizeSaveData`（存档）与服务器（房间），不要依赖这里的兜底当校验。
+
+### 6.3 存档 / 导入导出
+
+| 接入点 | 行为 |
+|---|---|
+| `SaveSystem.save` | 写 `extraContent`（来自 `game.world.extraContent`） |
+| `normalizeSaveData` | 旧档缺字段 → 双关；未知 schema → 返回 `null`（读档失败） |
+| `SaveSystem.listSaves` | 摘要带 `extraContent`（槽位徽标；未知 schema 回落双关不阻塞列表） |
+| `SaveTransfer.sanitizeSaveData` | 导入净化保留并规范化清单 |
+| `parseSaveText` | 未知 schema → `bad-extra-content`（新增错误码，文案已进 10 语言包） |
+| `summarize` | 导入摘要带 `extraContent` |
+
+### 6.4 LAN 权威与能力协商
+
+- **消息**：`HELLO.extras = {schema, ids}`（能力声明）、`CREATE_ROOM.extraContent` / `JOIN_ROOM.extraContent`
+  （建房草稿）、`WORLD_INFO.extraContent`（房间权威清单）。纯新增字段，**不升 `PROTOCOL_VERSION`**。
+- **语义**：与 seed/biomeScale 同生命周期——首次创建固定；重复 `create_room` 不覆盖；加入已有房间**完全忽略**草稿；
+  隐式创建（加入不存在房间）采用该请求的草稿；`/room` 换到新房间**继承当前房间清单**；`/rebuild` 保留清单。
+- **拒绝**：房间启用了客户端不支持的内容 → `KICKED` 并点名缺失模块；能力声明缺失（旧客户端）= 只支持双关房间。
+  **双关房间旧客户端照常可进**（默认体验不变）。
+- **快照**：`store.roomSnapshot` 写 `extraContent`；`Room.restore` 遇到不支持的 schema 置 `extraBroken`，
+  该房间**拒绝任何加入**（不静默降级）。
+- **断线恢复**：恢复到已不存在的房间 → 中止恢复并回主菜单，**不得借恢复包定义新世界规则**。
+
+## 七、术语与命名纪律
 
 - 代码 ID（`industry` / `magic`，方块/物品名、协议字段）一经落地不随显示名变动；显示名走 i18n 键
   （`EXTRA_LABEL_KEYS`，界面主模块名始终是用户指定的「工业 / 魔法」）。

@@ -336,6 +336,17 @@
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   }
 
+  // B51：额外内容世界规则（只读展示；创建后不可更改，面板不提供开关）
+  function fmtExtras(ex) {
+    if (!ex || (ex.industry !== true && ex.magic !== true)) {
+      return '<span class="tag" title="世界创建时确定，创建后不可更改">无额外内容</span>';
+    }
+    const names = [];
+    if (ex.industry === true) names.push('工业');
+    if (ex.magic === true) names.push('魔法');
+    return `<span class="tag" title="世界创建时确定，创建后不可更改">额外内容: ${names.join(' + ')}</span>`;
+  }
+
   function renderRooms() {
     const el = document.getElementById('rooms');
     if (!status || !status.rooms || !status.rooms.length) {
@@ -347,6 +358,7 @@
         <span class="tag">seed=${room.seed}</span>
         <span class="tag">方块改动 ${room.blocks}</span>
         <span class="tag">掉落物 ${room.drops}</span>
+        ${fmtExtras(room.extraContent)}
       </div>
       ${room.players.length ? `<table>
         <tr><th>玩家</th><th>模式</th><th>生命/饥饿</th><th>位置</th><th>限速丢包</th><th></th></tr>

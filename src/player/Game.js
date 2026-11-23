@@ -88,6 +88,18 @@ import '../blocks/BlockDefs.js';
 import '../items/ItemDefs.js';
 import { BlockSVGDefinitions } from '../blocks/BlockDefs.js';
 import { ItemSVGDefinitions } from '../items/ItemDefs.js';
+import { normalizeExtraContent, serializeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
+
+// B51：世界清单解析——未知 schema 必须由上游（normalizeSaveData / 服务器）拒绝；
+// 走到这里说明上游漏了，一律告警并回落双关（不允许静默通过）。
+function resolveExtraContent(raw, source) {
+  const m = normalizeExtraContent(raw);
+  if (m === null) {
+    console.error(`[ExtraContent] ${source}的内容清单 schema 不受支持，已回落为全关`);
+    return NONE_EXTRA_CONTENT;
+  }
+  return m;
+}
 
 // B35 D：遗迹目标集扫描参数——只在玩家附近登记（远处机关 sample 会回 -1，白判），
 // 扫描按 2s 或换区块节流，绝不允许每帧遍历全部结构。
@@ -162,6 +174,7 @@ export class Game {
     this.aetherDusk = false; // 天域批次 D：复潮状态（存档/联机恢复，档案覆盖见 start）
     this.finaleInfo = null; // 终局篇 F3：WORLD_INFO 先达暂存（offered/done/坐标，start 落地）
     this.biomeScale = DEFAULT_BIOME_SCALE; // 生物群系规模档位（新建走参数/联机消息，载入走存档）
+    this.extraContent = NONE_EXTRA_CONTENT; // B51：额外内容世界清单（新建/联机/读档，创建后不可更改）
     this.paused = false;
     // B48：爆炸镜头震动（_shake 剩余强度 0~1，_shakeT 相位；每帧只偏移相机位置）
     this._shake = 0;
@@ -411,7 +424,13 @@ export class Game {
     this.world = null;
   }
 
-  async start(mode, seed, loadData = null, slot = 1, cheatsEnabled = false, networkMode = false, biomeScale = DEFAULT_BIOME_SCALE) {
+  // B51：世界启动参数收口为选项对象（第 7 参）——新建/读档/联机/换维共用同一份解析，
+  // 不再往末尾追加第 8、第 9 个位置参数。
+  //   opts.biomeScale   群系规模档位（新建/联机由调用方给；读档以存档为准）
+  //   opts.extraContent 额外内容世界清单（同上；读档以存档为准）
+  async start(mode, seed, loadData = null, slot = 1, cheatsEnabled = false, networkMode = false, opts = {}) {
+    const startOpts = opts || {};
+    const optBiomeScale = startOpts.biomeScale === undefined ? DEFAULT_BIOME_SCALE : startOpts.biomeScale;
     let startToken = null;
     try {
     // 清理旧世界资源，防止切换存档时残留
@@ -448,14 +467,17 @@ export class Game {
       this.cheatsEnabled = !!loadData.cheatsEnabled;
       // 生物群系规模：存档携带（旧存档无字段回落 small，与旧世界逐字节一致）
       this.biomeScale = safeBiomeScale(loadData.biomeScale);
+      // 额外内容：旧存档无字段回落双关；未知 schema 已由 normalizeSaveData 拒绝（此处兜底告警）
+      this.extraContent = resolveExtraContent(loadData.extraContent, '存档');
     } else {
       this.cheatsEnabled = !!cheatsEnabled;
-      this.biomeScale = safeBiomeScale(biomeScale);
+      this.biomeScale = safeBiomeScale(optBiomeScale);
+      this.extraContent = resolveExtraContent(startOpts.extraContent, networkMode ? '房间' : '新建');
     }
 
     // 维度：存档携带（V2）或新建默认主世界；世界与天空档案按维度装配
     const dimension = (loadData && loadData.dimension) || 'overworld';
-    this.world = new World(seed, dimension, { biomeScale: this.biomeScale });
+    this.world = new World(seed, dimension, { biomeScale: this.biomeScale, extraContent: this.extraContent });
     // B-①：主世界注入地形 Worker（其余维度生成器类不同，走同步路径）
     if (dimension === 'overworld') this.world.terrainWorker = new TerrainWorkerClient(2);
     this.world.dragonDefeated = !!(loadData && loadData.dragonDefeated); // 末影龙击败标记（存档恢复）
@@ -2943,7 +2965,7 @@ export class Game {
       // 检查在出队时再做（排队期间维度可能已被更早的任务改变）
       if (!this.running || !this.world || dim === this.world.dimension) return false;
       const loadData = this._composeSwitchLoadData(dim, null, null, arrival);
-      await this.start(loadData.gamemode, loadData.seed, loadData, this.currentSlot, loadData.cheatsEnabled, this.networkMode);
+      await this.start(loadData.gamemode, loadData.seed, loadData, this.currentSlot, loadData.cheatsEnabled, this.networkMode, {});
       if (arrival) this._afterPortalArrival(arrival);
       return true;
     });
@@ -2989,6 +3011,7 @@ export class Game {
       gamemode: p.gamemode,
       cheatsEnabled: this.cheatsEnabled,
       biomeScale: this.biomeScale, // 群系规模跨维透传（换维重建世界后主世界群系布局不变）
+      extraContent: serializeExtraContent(this.world.extraContent), // B51：额外内容跨维透传（世界规则不随换维丢失）
       dimension: dim,
       dimensionSpawn: !hasPos, // 传送门落点带坐标；否则忽略坐标落到目标维度出生点
       dragonDefeated: !!this.world.dragonDefeated, // 击败标记跨维透传（换维重建不丢）
@@ -3047,7 +3070,7 @@ export class Game {
           }
         : null;
       const loadData = this._composeSwitchLoadData(dim, dimBlocks, dimContainers, arrival);
-      await this.start(loadData.gamemode, loadData.seed, loadData, this.currentSlot, loadData.cheatsEnabled, this.networkMode);
+      await this.start(loadData.gamemode, loadData.seed, loadData, this.currentSlot, loadData.cheatsEnabled, this.networkMode, {});
       if (arrival) this._afterPortalArrival(arrival);
       if (this.chatBox) this.chatBox.add(t('已切换到「{d}」', { d: t(def.name) }), '#8f8');
       return true;

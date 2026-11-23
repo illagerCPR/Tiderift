@@ -15,6 +15,7 @@ import * as store from './store.js';
 import * as config from './config.js';
 import { roomStats } from './stats.js';
 import { tierOf, createConnectionLimiters, RateLimiter } from './ratelimit.js';
+import { serializeExtraContent } from '../src/content/ExtraContent.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -137,6 +138,24 @@ function handleCommand(player, text) {
 }
 
 // 世界内换房（阶段5）：保持 WebSocket 连接，离开当前房间并加入目标房间，客户端重启本地世界
+// B51：当前房间的清单（换房隐式创建时继承）
+function oldRoomManifest(player) {
+  return player && player.room ? player.room.extraContent : null;
+}
+
+// B51：客户端额外内容能力声明（HELLO 上报；旧客户端缺省 = 只支持双关房间）
+function parseExtraCaps(raw) {
+  const ids = new Set();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { schema: 0, ids };
+  const schema = Number(raw.schema);
+  if (Array.isArray(raw.ids)) {
+    for (const id of raw.ids) {
+      if (typeof id === 'string' && id.length > 0 && id.length <= 32) ids.add(id);
+    }
+  }
+  return { schema: Number.isFinite(schema) ? schema : 0, ids };
+}
+
 function switchRoom(player, roomName) {
   const key = normalizeRoomName(roomName);
   if (!player.room) return;
@@ -150,6 +169,9 @@ function switchRoom(player, roomName) {
     return;
   }
   const target = getRoom(key);
+  // B51：目标房间不存在时，游戏内新建沿用当前房间的额外内容（避免绕过创建前界面/静默双关）
+  const newRoom = target.seed === null;
+  const inheritExtras = newRoom ? serializeExtraContent(oldRoomManifest(player)) : undefined;
   if (target.isFull()) {
     player.room.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `房间「${key}」已满，无法切换（继续留在当前房间）` });
     return;
@@ -159,9 +181,15 @@ function switchRoom(player, roomName) {
   player.room = null;
   if (!target.addPlayer(player)) return; // 理论不会触发（已先检查满）
   player.room = target;
-  target.joinRoom(player, {}, { restart: true });
-  target.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `已切换到房间「${target.name}」seed=${target.seed}` });
-  console.log(`[换房] ${player.name}: ${oldRoom.name} -> ${target.name}`);
+  // B51：清单能力不足时 joinRoom 返回 false（已发 kicked 并移除），这里收回房间引用
+  if (!target.joinRoom(player, { extraContent: inheritExtras }, { restart: true })) {
+    player.room = null;
+    return;
+  }
+  const inheritNote = newRoom && inheritExtras && (inheritExtras.industry || inheritExtras.magic)
+    ? `（新建房间继承额外内容）` : '';
+  target.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `已切换到房间「${target.name}」seed=${target.seed}${inheritNote}` });
+  console.log(`[换房] ${player.name}: ${oldRoom.name} -> ${target.name}${newRoom ? '（新房间）' : ''}`);
 }
 
 // S5：首次开房/加入前先退旧房（与 switchRoom 同语义），防同一玩家在两个房间同时登记成幽灵成员。
@@ -979,6 +1007,8 @@ wss.on('connection', (ws, req) => {
           return;
         }
         player = { id: nextPlayerId++, ws, name: String(msg.name || '玩家').slice(0, 16) };
+        // B51：额外内容能力（旧客户端不报此字段 → 只支持双关房间）
+        player.extraCaps = parseExtraCaps(msg.extras);
         player.rate = createConnectionLimiters(serverConfig); // Idea-4C：连接级限速器（阈值活读 config）
         send(ws, { t: MSG.WELCOME, selfId: player.id, players: [], protocol: PROTOCOL_VERSION, legacy });
         console.log(`[*] ${player.name} 已连接 (id=${player.id})${legacy ? '（旧客户端：未上报协议版本）' : ''}`);

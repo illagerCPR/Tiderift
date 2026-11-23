@@ -10,6 +10,7 @@ import { DIMENSIONS } from './dimensions.js';
 import { safeBiomeScale } from '../world/biomes.js';
 import { BlockRegistry } from './BlockRegistry.js';
 import { ItemRegistry } from './ItemRegistry.js';
+import { normalizeExtraContent, serializeExtraContent } from '../content/ExtraContent.js';
 
 export const SAVE_FILE_FORMAT = 'tiderift-save';
 export const SAVE_FILE_VERSION = 1;
@@ -139,6 +140,9 @@ export function parseSaveText(text) {
   // 跨版本：来自更新版本的文件一律拒绝（旧客户端没有该版本的新方块 ID，会崩区块网格）
   const build = Number(envelope.build);
   if (Number.isFinite(build) && build > BUILD) throw new SaveTransferError('newer-build');
+
+  // B51：额外内容清单先校验——未知 schema 明确报错（不允许静默降级成双关而丢失世界规则）
+  if (normalizeExtraContent(envelope.save.extraContent) === null) throw new SaveTransferError('bad-extra-content');
 
   const version = envelope.save.version;
   if (version !== 1 && version !== 2) throw new SaveTransferError('bad-save-version');
@@ -326,6 +330,7 @@ export function sanitizeSaveData(raw) {
   out.gamemode = GAMEMODES.has(raw.gamemode) ? raw.gamemode : 'creative';
   out.cheatsEnabled = !!raw.cheatsEnabled;
   out.biomeScale = safeBiomeScale(raw.biomeScale);
+  out.extraContent = serializeExtraContent(raw.extraContent); // B51：旧档缺字段 → 双关
   out.aetherDusk = !!raw.aetherDusk;
   out.dragonDefeated = !!raw.dragonDefeated;
   out.finaleDone = !!raw.finaleDone;
@@ -392,6 +397,7 @@ export function summarize(data) {
     timestamp: Number(data.timestamp) || 0,
     seed: (Number(data.seed) || 0) >>> 0,
     cheatsEnabled: !!data.cheatsEnabled,
+    extraContent: normalizeExtraContent(data.extraContent), // B51：导入摘要徽标
     blocks: countDimEntries(data.dimensionBlocks),
     containers: countDimEntries(data.dimensionContainers),
     furnaces: countDimEntries(data.dimensionFurnaces),
@@ -415,6 +421,7 @@ export const SAVE_IMPORT_ERROR_KEYS = {
   'bad-json': '存档文件已损坏，无法读取',
   'bad-file-version': '存档文件版本不受支持',
   'bad-save-version': '存档数据版本不受支持',
+  'bad-extra-content': '该存档包含当前版本不支持的额外内容规则，请升级游戏',
   'newer-build': '该存档来自更新的游戏版本，请先升级游戏',
   'too-large': '存档文件过大，无法导入',
   'unreadable': '存档文件损坏或无法解压',

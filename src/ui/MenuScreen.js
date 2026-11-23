@@ -11,6 +11,7 @@ import { t, getLocale, onLocaleChange } from '../i18n/index.js';
 import { globeIconDataUri } from './LanguageScreen.js';
 import { personIconDataUri } from './SkinScreen.js';
 import { getLanHost, setLanHost, normalizeLanHost, lanWsUrl, probeLanServer } from '../net/lanStatus.js';
+import { normalizeExtraContent, EXTRA_IDS, EXTRA_LABEL_KEYS } from '../content/ExtraContent.js';
 import logoUrl from '../../res/logo-tiderift-js-edition.png';
 
 // 刷新图标（Build 23：主界面 LAN 组件；石质浅底上用深色描边——原 #e8e8e8 与按钮浅灰底对比不足）
@@ -36,6 +37,15 @@ function escapeHtml(s) {
   ));
 }
 
+// B51：额外内容徽标文本（存档槽 / 导入摘要共用）。双关返回空串，由调用方决定是否显示「无」。
+function extrasBadgeLabel(manifest) {
+  const m = normalizeExtraContent(manifest);
+  if (!m) return '';
+  const names = [];
+  for (const id of EXTRA_IDS) if (m[id] === true) names.push(t(EXTRA_LABEL_KEYS[id]));
+  return names.join(' · ');
+}
+
 // ---------- 石质按钮 ----------
 // Build 4：样式提取到共享模块 StoneStyle.js（全界面统一 .cw-stone-btn），此处仅注入
 
@@ -48,6 +58,9 @@ export class MenuScreen {
     this.selectedMode = 'creative';
     this.selectedCheats = false;
     this.selectedBiomeScale = DEFAULT_BIOME_SCALE; // 群系规模（新建世界/建房共用；载入存档不受影响）
+    // B51：额外内容草稿（本次菜单会话内有效；读档/加入已有房间绝不采用它）
+    this.selectedExtras = normalizeExtraContent(null);
+    this.extraContentScreen = null; // 由 main.js 注入（与 videoSettings 同款单例共享）
     this.mpStatus = null; // { text, color } 联机状态暂存：非 LAN 页先存，进 LAN 页回显
     this.el = document.createElement('div');
     this.el.style.cssText = `
@@ -80,6 +93,15 @@ export class MenuScreen {
       // Build 23：LAN 状态组件刷新按钮
       if (btn.id === 'lan-refresh-btn') {
         this._probeLan();
+        return;
+      }
+      // B51：额外内容选择界面（单人页 / LAN 页共用，草稿随菜单会话保留）
+      if (btn.id === 'extra-content-btn') {
+        if (this.extraContentScreen) {
+          this.extraContentScreen.show(this.selectedExtras, {
+            onChange: (m) => { this.selectedExtras = m; this.render(); },
+          });
+        }
         return;
       }
       // Build 43：导入存档 —— 触发隐藏的文件选择器
@@ -243,6 +265,8 @@ export class MenuScreen {
         const time = s.timestamp ? new Date(s.timestamp).toLocaleString(getLocale(), { hour12: false }) : t('未知');
         const dim = s.dimension && s.dimension !== 'overworld' ? ` · ${t(DIM_LABEL[s.dimension] || s.dimension)}` : '';
         const bs = s.biomeScale && s.biomeScale !== 'small' ? ` · ${t('群系:{label}', { label: t((BIOME_SCALES[s.biomeScale] || BIOME_SCALES.small).label) })}` : '';
+        const extrasLabel = extrasBadgeLabel(s.extraContent); // B51：存档徽标「工业 / 魔法」
+        const ex = extrasLabel ? ` · <span style="color:#9fd89f;">${extrasLabel}</span>` : '';
         html += `
           <div class="slot" data-slot="${s.slot}" style="
             display:flex; align-items:center; gap:12px; width:460px; min-height:60px;
@@ -250,7 +274,7 @@ export class MenuScreen {
             background: rgba(0,0,0,0.35); border: 2px solid ${c.border}; cursor: pointer;">
             <div style="font-size:20px; color:#5f5;">●</div>
             <div style="flex:1; display:flex; flex-direction:column; gap:2px;">
-              <div style="font-size:14px; font-weight:bold; color:#fff;">${t('槽 {n} · {m}', { n: s.slot, m: t(MODE_LABEL[s.gamemode] || s.gamemode) })}${dim}${bs}${s.cheatsEnabled ? ` · <span style="color:#fc5;">${t('作弊')}</span>` : ''}</div>
+              <div style="font-size:14px; font-weight:bold; color:#fff;">${t('槽 {n} · {m}', { n: s.slot, m: t(MODE_LABEL[s.gamemode] || s.gamemode) })}${dim}${bs}${ex}${s.cheatsEnabled ? ` · <span style="color:#fc5;">${t('作弊')}</span>` : ''}</div>
               <div style="font-size:11px; color:#bbb;">${time} · ${t('种子 {seed}', { seed: s.seed })}${s.cheatsEnabled ? ` · ${t('命令已启用')}` : ''}</div>
               ${s.finaleDone ? `<div style="font-size:12px; color:#ffd98a; letter-spacing:1px; text-shadow: 0 0 8px rgba(255,200,90,0.4);">✦ ${t('已通关 · 潮归其位')} ✦</div>` : ''}
             </div>
@@ -291,6 +315,18 @@ export class MenuScreen {
     refresh();
   }
 
+  // B51：额外内容入口行（单人页新建设置 / LAN 页建房区共用；草稿状态由 selectedExtras 承载）
+  _extraContentHtml(compact = false) {
+    const label = extrasBadgeLabel(this.selectedExtras) || t('无（原始体验）');
+    return `
+      <div id="mc-extra-content" style="margin-bottom: ${compact ? '8px' : '12px'}; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="font-size:13px;">${t('额外内容:')}</span>
+        <span style="font-size:13px; color:${this.selectedExtras.industry || this.selectedExtras.magic ? '#9fd89f' : '#bbb'};">${label}</span>
+        <button id="extra-content-btn" class="cw-stone-btn" style="padding:5px 12px; font-size:12px;">${t('选择…')}</button>
+        <span style="font-size:11px; color:#999;">${t('（仅对新建世界生效，创建后不可更改）')}</span>
+      </div>`;
+  }
+
   _renderSingle() {
     this.el.innerHTML = `
       <div style="font-size:22px; font-weight:bold; text-shadow: 2px 2px 0 rgba(0,0,0,0.55); margin-bottom:2px;">${t('单人游戏')}</div>
@@ -314,6 +350,7 @@ export class MenuScreen {
         <button data-mode="spectator" class="cw-stone-btn mode-btn" style="padding:10px 20px; font-size:14px;"><span style="display:inline-block; width:10px; height:10px; background:${MODE_COLOR.spectator.bg}; border:1px solid #000; margin-right:6px; vertical-align:middle;"></span>${t('旁观模式')}</button>
       </div>
       ${this._biomeScaleHtml()}
+      ${this._extraContentHtml()}
       <div id="mc-cheats" style="margin-bottom: 16px; display:flex; align-items:center; gap:8px;">
         <label style="font-size:14px; cursor:pointer; display:flex; align-items:center; gap:6px;">
           <input type="checkbox" id="cheats-input" ${this.selectedCheats ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
@@ -360,7 +397,7 @@ export class MenuScreen {
         } else {
           const seed = this._readSeed();
           this.hide();
-          this.onStart(this.selectedMode, seed, null, slot, this.selectedCheats, this.selectedBiomeScale);
+          this.onStart(this.selectedMode, seed, null, slot, this.selectedCheats, this.selectedBiomeScale, this.selectedExtras);
         }
       });
     });
@@ -463,7 +500,8 @@ export class MenuScreen {
         <div style="font-size:12px; color:#bbb; line-height:1.8; margin-bottom:12px; word-break:break-all;">
           ${t('文件：{name}', { name: escapeHtml(fileName) })}<br/>
           ${t('存档摘要：{mode} · {dim} · {time}', { mode: modeLabel, dim: dimLabel, time })}<br/>
-          ${t('种子 {seed}', { seed: summary.seed })} · ${formatBytes(fileSize)} · ${t('方块 {n}', { n: summary.blocks })}
+          ${t('种子 {seed}', { seed: summary.seed })} · ${formatBytes(fileSize)} · ${t('方块 {n}', { n: summary.blocks })}<br/>
+          ${t('额外内容：{list}', { list: extrasBadgeLabel(summary.extraContent) || t('无') })}
           ${cleaned > 0 ? `<br/><span style="color:#fc5;">${t('已清理 {n} 条异常数据', { n: cleaned })}</span>` : ''}
         </div>
         <div style="font-size:13px; margin-bottom:6px; color:#ddd;">${t('选择导入到哪个存档槽')}</div>
@@ -521,6 +559,7 @@ export class MenuScreen {
           </span>
           <span style="font-size:11px; color:#aaa;">${t('（建房时决定，随房间固定；加入者自动跟随）')}</span>
         </div>
+        ${this._extraContentHtml(true)}
         <div style="display:flex; gap:10px; align-items:center;">
           <button id="mp-host" class="cw-stone-btn" style="padding:8px 16px; font-size:13px;">${t('创建房间')}</button>
           <button id="mp-join" class="cw-stone-btn" style="padding:8px 16px; font-size:13px;">${t('加入房间')}</button>
@@ -553,8 +592,9 @@ export class MenuScreen {
     this.setMpStatus(t('连接中...'), '#9cf');
     this.net.connect(url, name);
     // 群系规模随建房上送（服务器首次开房固定；重复开房/加入沿用房间记录）
-    if (kind === 'host') this.net.createRoom(this._readSeed(), this.selectedMode, room, this.selectedBiomeScale);
-    else this.net.joinRoom(room);
+    // B51：建房用当前草稿；加入时沙箱携带同一份草稿，服务器仅在目标房间不存在时才采用
+    if (kind === 'host') this.net.createRoom(this._readSeed(), this.selectedMode, room, this.selectedBiomeScale, this.selectedExtras);
+    else this.net.joinRoom(room, this.selectedExtras);
   }
 
   setMpStatus(text, color = '#9cf') {

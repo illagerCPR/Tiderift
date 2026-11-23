@@ -9,6 +9,7 @@ import { Panorama } from './render/Panorama.js';
 import { VideoSettings } from './ui/VideoSettings.js';
 import { LanguageScreen } from './ui/LanguageScreen.js';
 import { SkinScreen } from './ui/SkinScreen.js';
+import { ExtraContentScreen } from './ui/ExtraContentScreen.js';
 import { audio } from './audio/AudioEngine.js';
 import { loadSettings } from './core/Settings.js';
 import { initLocale, t } from './i18n/index.js';
@@ -49,15 +50,19 @@ if (location.search.includes('bake-panorama')) {
   const skinScreen = new SkinScreen(game);
   game.skinScreen = skinScreen;
 
+  // B51：额外内容选择界面（只在创建新世界前出现；草稿由 MenuScreen 持有，单例跨页复用）
+  const extraContentScreen = new ExtraContentScreen();
+  game.extraContentScreen = extraContentScreen;
+
   // 局域网联机网络层
   const net = new NetworkManager(game);
   game.net = net;
 
-  // 主菜单（onStart 第 6 参：新建世界的生物群系规模档位）
-  const menu = new MenuScreen((mode, seed, loadData, slot, cheatsEnabled, biomeScale) => {
+  // 主菜单（onStart 第 6 参：生物群系规模档位；第 7 参：B51 额外内容世界清单）
+  const menu = new MenuScreen((mode, seed, loadData, slot, cheatsEnabled, biomeScale, extraContent) => {
     if (game.running) game.returnToMenu(false);
     menu.hide();
-    game.start(mode, seed, loadData, slot, cheatsEnabled, false, biomeScale);
+    game.start(mode, seed, loadData, slot, cheatsEnabled, false, { biomeScale, extraContent });
   }, net);
 
   // 菜单显隐联动全景启停（game.running 期间全景循环自身也会早退）
@@ -66,6 +71,7 @@ if (location.search.includes('bake-panorama')) {
   menu.videoSettings = videoSettings; // 主菜单"视频设置"入口
   menu.languageScreen = languageScreen; // 主菜单语言小按钮入口
   menu.skinScreen = skinScreen; // Build 21 M1：主菜单皮肤小按钮入口
+  menu.extraContentScreen = extraContentScreen; // B51：额外内容选择界面入口
   window.panorama = panorama; // 调试暴露
 
   game.onExit = () => {
@@ -73,19 +79,21 @@ if (location.search.includes('bake-panorama')) {
   };
 
   // 联机：收到世界信息后用服务器 seed 启动本地世界（msg.room 用于房间展示；biomeScale 随房间固定）
-  net.on('world_info', async ({ seed, mode, time, room, biomeScale }) => {
+  // biomeScale/extraContent 随房间固定（服务器权威；加入者本地草稿不参与）
+  net.on('world_info', async ({ seed, mode, time, room, biomeScale, extraContent }) => {
     net.room = room || net.room || 'default';
     menu.hide();
-    await game.start(mode, seed, null, 0, false, true, biomeScale);
+    await game.start(mode, seed, null, 0, false, true, { biomeScale, extraContent });
     game.sky.time = time;
     net.onWorldStarted();
     net.sendPlayerFull();
   });
 
   // 阶段5：世界内换房 / 重建世界 —— 保持连接，用新 seed 重启本地世界（不回主菜单）
-  net.on('restart_world', async ({ seed, mode, time, room, biomeScale }) => {
+  net.on('restart_world', async ({ seed, mode, time, room, biomeScale, extraContent }) => {
     net.room = room || net.room || 'default';
-    await game.start(mode, seed, null, 0, false, true, biomeScale);
+    // 重建/换房保留房间清单（服务器下发同一份；客户端不自行保留旧值）
+    await game.start(mode, seed, null, 0, false, true, { biomeScale, extraContent });
     game.sky.time = time;
     net.onWorldStarted();
     net.sendPlayerFull();

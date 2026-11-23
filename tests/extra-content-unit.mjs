@@ -246,4 +246,72 @@ const MAGIC = normalizeExtraContent({ schema: 1, industry: false, magic: true })
     '双开清单在尚无生成内容时不改变地形（基线对拍）');
 }
 
+// ── ⑪ R2：存档 / 导入 / 界面接线 ───────────────────────────────────────────
+{
+  const { normalizeSaveData } = await import('../src/core/SaveSystem.js');
+  const { sanitizeSaveData, parseSaveText, summarize } = await import('../src/core/SaveTransfer.js');
+
+  // 旧档（无 extraContent 字段）→ 双关；未知 schema → 拒绝读取（null）
+  const legacy = normalizeSaveData({ version: 2, seed: 1, gamemode: 'creative', dimension: 'overworld' });
+  ok(legacy && legacy.extraContent === NONE_EXTRA_CONTENT, '旧存档缺字段 → 清单回落双关');
+  const kept = normalizeSaveData({ version: 2, seed: 1, extraContent: { schema: 1, industry: true, magic: false } });
+  ok(kept && kept.extraContent.industry === true, '存档清单规范化保留工业');
+  ok(normalizeSaveData({ version: 2, seed: 1, extraContent: { schema: 3 } }) === null,
+    '存档清单未知 schema → 拒绝读取（version 不兼容）');
+
+  // 导入净化：清单保留并规范化；未知 schema 明确报错（不当成双关）
+  const { data: clean } = sanitizeSaveData({ version: 2, seed: 1, extraContent: { industry: true } });
+  ok(clean.extraContent.industry === true && clean.extraContent.schema === 1, '导入净化保留清单');
+  const bare = JSON.stringify({ version: 2, seed: 1, gamemode: 'creative', extraContent: { schema: 2 } });
+  let code = null;
+  try { parseSaveText(bare); } catch (e) { code = e && e.code; }
+  ok(code === 'bad-extra-content', `导入未知 schema 报 bad-extra-content（${code}）`);
+  const summary = summarize({ extraContent: { schema: 1, industry: false, magic: true } });
+  ok(summary.extraContent && summary.extraContent.magic === true, '导入摘要携带清单（供徽标显示）');
+}
+
+// ── ⑫ R2：源码接线绊线 ──────────────────────────────────────────────────────
+{
+  const game = src('../src/player/Game.js');
+  const mainSrc = src('../src/main.js');
+  const menu = src('../src/ui/MenuScreen.js');
+  const worker = src('../src/workers/TerrainWorker.js');
+  const save = src('../src/core/SaveSystem.js');
+  const net = src('../src/net/NetworkManager.js');
+  const room = src('../server/room.js');
+  const indexSrc = src('../server/index.mjs');
+  const st = src('../server/store.js');
+  const screen = src('../src/ui/ExtraContentScreen.js');
+  const pause = src('../src/ui/PauseMenu.js');
+
+  ok(/async start\(mode, seed, loadData = null, slot = 1, cheatsEnabled = false, networkMode = false, opts = \{\}\)/.test(game),
+    'Game.start 收口为选项对象（不再追加位置参数）');
+  ok(/extraContent: serializeExtraContent\(this\.world\.extraContent\)/.test(game),
+    '换维合成显式透传清单（world.extraContent → loadData）');
+  ok(/new World\(seed, dimension, \{ biomeScale: this\.biomeScale, extraContent: this\.extraContent \}\)/.test(game),
+    'World 构造携带清单');
+  ok(/game\.start\(mode, seed, null, 0, false, true, \{ biomeScale, extraContent \}\)/.test(mainSrc),
+    '联机首进/换房用房间权威清单启动');
+  ok(/selectedExtras\)/.test(menu) && /extra-content-btn/.test(menu), '单人页/LAN 页接额外内容入口与草稿');
+  ok(/onStart\(this\.selectedMode, seed, null, slot, this\.selectedCheats, this\.selectedBiomeScale, this\.selectedExtras\)/.test(menu),
+    '新建世界把草稿传给 onStart');
+  ok(/seed \+ '\|' \+ \(biomeScale \|\| ''\) \+ '\|' \+ extraContentCode\(extras\)/.test(worker),
+    '地形 Worker 缓存键包含清单（同种子不同组合不复用生成器）');
+  ok(/gen\.extraContent = extras/.test(worker), 'Worker 生成器写入清单（结构闸口同源）');
+  ok(/extraContent: serializeExtraContent\(game\.world && game\.world\.extraContent\)/.test(save),
+    '存档写入清单');
+  ok(/extraContent: normalizeExtraContent\(data\.extraContent\)/.test(save), '存档列表摘要带清单徽标数据');
+  ok(/extras: extraCapability\(\)/.test(net), 'HELLO 上报额外内容能力');
+  ok(/extraContent: serializeExtraContent\(extraContent\)/.test(net), '建房/加入请求携带草稿');
+  ok(/_applyCreationExtras\(player, msg\)/.test(room) && /unsupportedExtras\(player\)/.test(room),
+    '房间侧固定清单 + 客户端能力校验');
+  ok(/parseExtraCaps\(msg\.extras\)/.test(indexSrc), '服务器解析 HELLO 能力声明');
+  ok(/oldRoomManifest\(player\)/.test(indexSrc), '换房到新房间继承当前清单');
+  ok(/extraContent: room\.extraContent \|\| null/.test(st), '房间快照持久化清单');
+  ok(/data-toggle/.test(screen) && (screen.match(/data-toggle/g) || []).length <= 2,
+    '界面只有两张卡片（没有第三颗开关）');
+  ok(/_applyWorldRules/.test(pause), '暂停菜单只读展示世界规则');
+  ok(!/<input/.test(pause), '暂停菜单不提供修改入口（只读）');
+}
+
 finish('extra-content-unit');

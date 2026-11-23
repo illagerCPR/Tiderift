@@ -11,7 +11,7 @@ import { doorId } from './blockShape.js';
 import { getDimension, DEFAULT_DIMENSION } from './dimensions.js';
 import { ModifiedBlocks } from './ModifiedBlocks.js';
 import { parsePosKey } from './posKey.js';
-import { normalizeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
+import { normalizeExtraContent, serializeExtraContent, NONE_EXTRA_CONTENT } from '../content/ExtraContent.js';
 
 export class World {
   constructor(seed = 0, dimension = DEFAULT_DIMENSION, worldOpts = null) {
@@ -176,7 +176,9 @@ export class World {
     if (this.chunks.has(k)) return true;
     if (!this.terrainWorker || this.terrainWorker.broken) return false;
     if (this._pendingChunks.has(k)) return true;
-    const p = this.terrainWorker.generate(cx, cz, this.generator.seed, this.generator.biomeScale || null)
+    // B51：清单随请求下发（Worker 缓存键含清单；同步路径与 Worker 必须逐字节一致）
+    const p = this.terrainWorker.generate(cx, cz, this.generator.seed, this.generator.biomeScale || null,
+      serializeExtraContent(this.extraContent))
       .then(({ blocks }) => {
         this._pendingChunks.delete(k);
         if (this.chunks.has(k)) return; // 同步路径抢先建好：丢弃 worker 结果

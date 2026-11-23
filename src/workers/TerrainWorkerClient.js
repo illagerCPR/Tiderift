@@ -17,12 +17,13 @@ export class TerrainWorkerClient {
   }
 
   // 生成一个区块，返回 { cx, cz, blocks: Uint8Array }（blocks buffer 已移交主线程）
-  generate(cx, cz, seed, biomeScale) {
+  // extraContent：B51 世界清单（随请求下发，Worker 侧进缓存键——不读任何全局状态）
+  generate(cx, cz, seed, biomeScale, extraContent) {
     const id = this._nextId++;
     const w = this.workers[this._rr++ % this.workers.length];
     return new Promise((resolve, reject) => {
       this._pending.set(id, { resolve, reject });
-      w.postMessage({ id, cx, cz, seed, biomeScale });
+      w.postMessage({ id, cx, cz, seed, biomeScale, extraContent });
     });
   }
 

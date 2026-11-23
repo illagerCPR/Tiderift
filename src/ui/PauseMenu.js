@@ -3,6 +3,7 @@ import { SaveSystem } from '../core/SaveSystem.js';
 import { ensureStoneStyles } from './StoneStyle.js';
 import { t, onLocaleChange } from '../i18n/index.js';
 import { globeIconDataUri } from './LanguageScreen.js';
+import { normalizeExtraContent, EXTRA_IDS, EXTRA_LABEL_KEYS } from '../content/ExtraContent.js';
 
 export class PauseMenu {
   constructor(game) {
@@ -55,6 +56,11 @@ export class PauseMenu {
       background-image: url('${globeIconDataUri()}');
     `;
     this.mainView.appendChild(this.langBtn);
+
+    // B51：世界规则只读行（双关世界的原始体验不显示这一行）
+    this.rulesEl = document.createElement('div');
+    this.rulesEl.style.cssText = 'display:none; font-size:11px; color:#9fd89f; text-align:center; line-height:1.6; max-width:260px;';
+    this.mainView.appendChild(this.rulesEl);
 
     this.resumeBtn.addEventListener('click', () => this.hide());
     // 保存反馈（Build 4）：按钮短暂变为"✓ 已保存"并禁用 1.2s，防连点 + 显式确认
@@ -125,6 +131,16 @@ export class PauseMenu {
     return b;
   }
 
+  // B51：世界规则只读展示（额外内容创建后不可更改，暂停菜单只允许查看）
+  _applyWorldRules() {
+    const m = normalizeExtraContent(this.game && this.game.world ? this.game.world.extraContent : null);
+    const names = [];
+    if (m) for (const id of EXTRA_IDS) if (m[id] === true) names.push(t(EXTRA_LABEL_KEYS[id]));
+    if (!this.rulesEl) return;
+    this.rulesEl.style.display = names.length ? 'block' : 'none';
+    if (names.length) this.rulesEl.textContent = t('额外内容：{list}（创建时确定，不可更改）', { list: names.join(' · ') });
+  }
+
   show() {
     // B41：暂停即归体（暂停后 Game.update 不再跑，灵魂相机否则会被冻结在半空）
     if (this.game && this.game.soulView) this.game.soulView.exit();
@@ -138,6 +154,7 @@ export class PauseMenu {
     }
     if (document.pointerLockElement) document.exitPointerLock();
     if (this.game.paused !== undefined) this.game.paused = true;
+    this._applyWorldRules();
     // Build 34 C：暂停即取消进行中的竞速尝试。必须在这里收口——暂停后 Game.update 不再被调用，
     // 靠 _updateRace 的条件判断永远等不到这一帧（指针锁丢失/ESC 都汇集到 PauseMenu.show）
     if (typeof this.game._cancelRace === 'function') this.game._cancelRace('暂停');

@@ -1,5 +1,6 @@
 // NetworkManager.js -- 局域网联机网络层：连接/重连、消息路由、方块/玩家/掉落物/聊天同步
 import { MSG, PROTOCOL_VERSION } from '../../server/protocol.js';
+import { serializeExtraContent, extraCapability } from '../content/ExtraContent.js';
 import { t } from '../i18n/index.js';
 import { RemotePlayer } from '../entity/RemotePlayer.js';
 import { loadActiveSkin } from '../entity/PlayerSkin.js';
@@ -158,7 +159,8 @@ export class NetworkManager {
     ws.onopen = () => {
       this.connected = true;
       if (!isReconnect) this._reconnectAttempt = 0;
-      this._send(MSG.HELLO, { name: this.name, version: PROTOCOL_VERSION });
+      // B51：HELLO 附带额外内容能力声明（旧服务器忽略未知字段；新服务器据此拒绝不兼容房间）
+      this._send(MSG.HELLO, { name: this.name, version: PROTOCOL_VERSION, extras: extraCapability() });
       if (isReconnect) {
         // 重连固定当前维度和位置；账本落地并双向确认后才恢复游戏状态。
         this._recoveryId = `${Date.now().toString(36)}-${(++this._recoverySeq).toString(36)}`;
@@ -1492,8 +1494,21 @@ export class NetworkManager {
     return true;
   }
 
-  createRoom(seed, mode, room, biomeScale) { this._sendQueued(MSG.CREATE_ROOM, { seed, mode, room, biomeScale }); }
-  joinRoom(room) { this._sendQueued(MSG.JOIN_ROOM, { room }); }
+  // B51：建房携带额外内容草稿（服务器仅在房间首次创建时采用；重复开房沿用房间记录）
+  createRoom(seed, mode, room, biomeScale, extraContent) {
+    this._sendQueued(MSG.CREATE_ROOM, {
+      seed, mode, room, biomeScale,
+      extraContent: serializeExtraContent(extraContent),
+    });
+  }
+
+  // B51：加入时携带草稿——**仅当目标房间不存在**（服务器隐式创建）时采用，已存在则完全忽略
+  joinRoom(room, extraContent) {
+    this._sendQueued(MSG.JOIN_ROOM, {
+      room,
+      extraContent: serializeExtraContent(extraContent),
+    });
+  }
 
   // 阶段5：世界内换房 / 重建世界（保持连接，服务器回 WORLD_INFO(restart) 后重启本地世界）
   sendSwitchRoom(room) {

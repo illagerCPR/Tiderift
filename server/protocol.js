@@ -3,6 +3,9 @@
 
 // S11：协议版本号——客户端在 HELLO 里上报，服务端不匹配即 KICKED（提示刷新页面）。
 // 任何改变两端消息语义的改动都要递增此常量（纯新增消息类型不必）。
+// B51：额外内容是**纯新增可选字段**（HELLO.extras 能力声明；CREATE_ROOM/JOIN_ROOM.extraContent
+// 建房草稿；WORLD_INFO.extraContent 房间权威清单），不改既有字段语义，故不升 PROTOCOL_VERSION。
+// 兼容性由能力协商兜底：启用了客户端不支持内容的房间在入房时被拒绝（而不是让旧端解析未知方块）。
 export const PROTOCOL_VERSION = 2;
 
 export const MSG = {

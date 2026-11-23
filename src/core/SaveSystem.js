@@ -1,6 +1,8 @@
 // SaveSystem.js -- localStorage 多槽位存档系统
 // V2：维度化——dimension（当前所处维度）+ dimensionBlocks/dimensionContainers
 //（全维度方块/容器账本分桶）；V1 旧档读取时自动迁移进主世界桶
+import { normalizeExtraContent, serializeExtraContent } from '../content/ExtraContent.js';
+
 const SAVE_PREFIX = 'project-mc-save-';
 const LEGACY_KEY = 'project-mc-save';
 export const SAVE_VERSION = 2;
@@ -11,6 +13,10 @@ export const MAX_SAVE_SLOTS = 6;
 export function normalizeSaveData(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const out = { ...data };
+  // B51：额外内容世界清单——旧档缺字段回落双关；未知 schema 视为版本不兼容（返回 null 拒绝读取）
+  const extras = normalizeExtraContent(out.extraContent);
+  if (!extras) return null;
+  out.extraContent = extras;
   if (!Array.isArray(out.blueprints)) out.blueprints = [];
   if (!out.ruins || typeof out.ruins !== 'object' || Array.isArray(out.ruins)) out.ruins = null; // 旧档缺字段 → reset(null) 回落空账本
   if (out.version === 1) {
@@ -46,6 +52,8 @@ export class SaveSystem {
         gamemode: game.player.gamemode,
         cheatsEnabled: game.cheatsEnabled || false,
         biomeScale: game.biomeScale || 'small', // 群系规模档位（旧存档无字段 → 读侧回落 small）
+        // B51：额外内容世界清单（创建时决定、不可更改；旧存档无字段 → 读侧回落双关）
+        extraContent: serializeExtraContent(game.world && game.world.extraContent),
         aetherDusk: !!game.aetherDusk, // 天域批次 D：复潮状态（旧存档无字段 → 读侧回落 false）
         player: {
           x: game.player.position.x,
@@ -153,6 +161,7 @@ export class SaveSystem {
           gamemode: data.gamemode || 'creative',
           cheatsEnabled: !!data.cheatsEnabled,
           biomeScale: data.biomeScale || 'small',
+          extraContent: normalizeExtraContent(data.extraContent), // B51：槽位徽标（未知 schema 回落双关，不阻塞列表）
           timestamp: data.timestamp || 0,
           seed: data.seed || 0,
           dimension: data.dimension || 'overworld',

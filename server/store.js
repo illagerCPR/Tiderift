@@ -47,6 +47,9 @@ export function roomSnapshot(room) {
     name: room.name,
     seed: room.seed,
     biomeScale: room.biomeScale || null, // 群系规模档位（旧快照无字段 → restore 回落 null→small）
+    // B51：额外内容世界清单（首次开房固定；旧快照无字段 → restore 回落双关；
+    // 未知 schema 的快照由 Room.restore 标记 extraBroken 并拒绝加入，不静默降级）
+    extraContent: room.extraContent || null,
     time: room.time,
     aetherDusk: !!room.aetherDusk, // 天域复潮状态（批次 D，旧快照无字段 → restore 回落 false）
     finaleOffered: !!room.finaleOffered, // 终局篇 F3：候潮/听潮状态（单向开关落盘）

@@ -14,6 +14,12 @@ import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnac
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
 import { roomStats } from './stats.js';
 
+// B51：额外内容世界清单（与客户端共用同一份纯模块：规范化/启用列表/序列化）
+import {
+  normalizeExtraContent, serializeExtraContent, enabledExtras,
+  EXTRA_CONTENT_SCHEMA, EXTRA_LABEL_KEYS, NONE_EXTRA_CONTENT,
+} from '../src/content/ExtraContent.js';
+
 // B38 L3：队伍人数上限（加入时校验；op/配置不入库，保持会话级简单语义）
 const TEAM_LIMIT = 8;
 // S9：账本回放打包粒度（每块最多 512 格，形状与客户端 BLOCK_CHANGE_BATCH 消费一致）
@@ -526,6 +532,10 @@ export class Room {
     this.nextMobId = 1;         // 怪物 id 分配（事件同步，服务器仅分配/中继不跑 AI）
     this.seed = null;
     this.biomeScale = null; // 群系规模档位：首次开房固定（与 seed 同语义），null=未定（回提 small）
+    // B51：额外内容世界清单——与 seed/biomeScale 同生命周期（首次开房固定，重复开房/加入沿用）。
+    // null = 世界尚未创建；extraBroken = 快照清单来自不支持的 schema（拒绝任何加入，不静默降级）。
+    this.extraContent = null;
+    this.extraBroken = false;
     this.time = 0.35;
     this.aetherDusk = false; // 天域复潮状态（批次 D：单向开关，快照落盘 + welcome 下发）
     this.finaleOffered = false; // 终局篇 F3：候潮（献证，单向开关）
@@ -582,6 +592,16 @@ export class Room {
     if (!snap || typeof snap !== 'object') { warnBadSnapshot(this.name, '外层非对象'); return; }
     this.seed = safeInt(snap.seed, this.seed);
     this.biomeScale = snap.biomeScale != null ? safeBiomeScale(snap.biomeScale) : this.biomeScale;
+    // B51：清单随快照恢复；旧快照缺字段 → 双关；schema 不受支持 → 拒绝加入（extraBroken）
+    const snapExtras = normalizeExtraContent(snap.extraContent);
+    if (snapExtras === null) {
+      this.extraBroken = true;
+      this.extraContent = NONE_EXTRA_CONTENT;
+      warnBadSnapshot(this.name, '额外内容清单 schema 不受支持（该房间将拒绝加入）');
+    } else {
+      this.extraBroken = false;
+      this.extraContent = snapExtras;
+    }
     this.time = safeNum(snap.time, this.time);
     this.aetherDusk = !!snap.aetherDusk; // 天域复潮状态（批次 D，旧快照无字段回落 false）
     this.finaleOffered = !!snap.finaleOffered; // 终局篇 F3（旧快照无字段回落 false）
@@ -925,6 +945,7 @@ export class Room {
       blocks: this.blocksTotal(),
       drops: this.drops.size,
       settings: this.settings(), // Idea-4A：面板房间卡 checkbox 数据源
+      extraContent: serializeExtraContent(this.extraContent), // B51：面板/备份可见的世界规则
       players: [...this.players.values()].map((p) => ({
         id: p.id, name: p.name, mode: p.mode, dim: p.dim,
         health: p.health, food: p.food, pos: p.pos, host: p.id === this.hostId,
@@ -933,7 +954,49 @@ export class Room {
     };
   }
 
+  // ── B51：额外内容世界规则 ────────────────────────────────────────────────
+  // 该玩家客户端不支持的内容 ID 列表（能力声明来自 HELLO；旧客户端缺省 = 只支持双关房间）
+  unsupportedExtras(player) {
+    const caps = (player && player.extraCaps) || null;
+    const out = [];
+    for (const id of enabledExtras(this.extraContent)) {
+      const ok = !!caps && caps.schema === EXTRA_CONTENT_SCHEMA && caps.ids.has(id);
+      if (!ok) out.push(id);
+    }
+    return out;
+  }
+
+  // 拒绝入房并说明原因（沿用 kickPlayer：发 KICKED 后断开，客户端停止自动重连）
+  _rejectExtra(player, reason) {
+    this.kickPlayer(player.id, reason);
+    console.log(`[拒绝] ${player.name} -> 房间「${this.name}」：${reason}`);
+    return false;
+  }
+
+  // 创建/隐式创建时固定清单：首次采用建房者草稿，之后沿用房间记录；能力不足即拒绝
+  _applyCreationExtras(player, msg) {
+    if (this.extraBroken) {
+      return this._rejectExtra(player, `房间「${this.name}」的世界规则来自更新版本的服务器，当前服务端无法加载`);
+    }
+    if (this.extraContent === null) {
+      const wanted = normalizeExtraContent(msg && msg.extraContent);
+      if (wanted === null) {
+        return this._rejectExtra(player, '额外内容清单格式不受支持，请刷新页面后重试');
+      }
+      this.extraContent = wanted;
+    }
+    const unsupported = this.unsupportedExtras(player);
+    if (unsupported.length) {
+      const names = unsupported.map((id) => EXTRA_LABEL_KEYS[id] || id).join('、');
+      return this._rejectExtra(player, `房间「${this.name}」启用了当前客户端不支持的内容（${names}），请升级游戏后再加入`);
+    }
+    return true;
+  }
+
   createRoom(player, msg) {
+    // B51：清单先于种子固定——首次开房采用建房者草稿，重复开房/恢复沿用房间记录；
+    // 房间清单来自不支持的 schema、或房主客户端不支持该组合时拒绝（不静默降级）
+    if (!this._applyCreationExtras(player, msg)) return;
     // 已有世界的房间（重复开房/从磁盘恢复）沿用原 seed，仅首次开房时由 host 决定种子
     if (this.seed === null) this.seed = safeInt(msg.seed, Math.floor(Math.random() * 2147483647));
     // 群系规模与 seed 同语义：仅首次开房固定，重复开房/加入沿用房间记录（两端群系布局一致）
@@ -943,7 +1006,7 @@ export class Room {
     if (this.hostId === null || !this.players.has(this.hostId)) this.hostId = player.id;
     this.sendTo(player, MSG.ROOM_CREATED, { roomId: this.name });
     // restart=true 表示世界内换房到新房间：客户端需重启本地世界（新 seed）
-    this.sendTo(player, MSG.WORLD_INFO, { seed: this.seed, mode: player.mode, time: this.time, hostId: this.hostId, room: this.name, restart: !!msg.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
+    this.sendTo(player, MSG.WORLD_INFO, { seed: this.seed, mode: player.mode, time: this.time, hostId: this.hostId, room: this.name, restart: !!msg.restart, biomeScale: this.biomeScale, extraContent: serializeExtraContent(this.extraContent), aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
     this.sendTo(player, MSG.BLUEPRINTS, this.blueprintsPayload());
     this.sendTo(player, MSG.RUIN_STATE, this.ruinsPayload()); // B35 D：遗迹账本全量
     this.broadcast(MSG.PLAYER_JOIN, this.joinInfo(player), player.id);
@@ -972,19 +1035,36 @@ export class Room {
         player.pos = { x: pos.x, y: pos.y, z: pos.z, yaw: pos.yaw, pitch: pos.pitch };
       }
     }
+    // B51：清单不可用的房间一律拒绝（快照 schema 不受支持）
+    if (this.extraBroken) {
+      return this._rejectExtra(player, `房间「${this.name}」的世界规则来自更新版本的服务器，当前服务端无法加载`);
+    }
+    // 断线恢复到已不存在的房间：不得借恢复包改清单，也不自动造出另一套规则的世界——
+    // 中止恢复，让玩家回主菜单重新创建/加入。
+    if (recovery && this.seed === null) {
+      return this._rejectExtra(player, '房间世界已不存在（可能已被重建或清理），请重新创建/加入房间');
+    }
     // 房间世界不存在（尚未创建/无存档）时，首个加入者自动成为 host 并随机生成世界
     if (this.seed === null) {
-      if (recovery) {
-        this.seed = Math.floor(Math.random() * 2147483647);
-        if (this.biomeScale === null) this.biomeScale = safeBiomeScale(msg.biomeScale);
-      } else {
-        this.createRoom(player, { seed: Math.floor(Math.random() * 2147483647), mode: 'survival', restart: !!opts.restart });
-        return true;
-      }
+      // B51：隐式创建把本地草稿原样传入（与建房同一条固定路径），不能静默双关
+      this.createRoom(player, {
+        seed: Math.floor(Math.random() * 2147483647),
+        mode: 'survival',
+        restart: !!opts.restart,
+        biomeScale: msg && msg.biomeScale,
+        extraContent: msg && msg.extraContent,
+      });
+      return true;
+    }
+    // B51：加入已有房间——本地草稿完全忽略，只按房间权威清单校验客户端能力
+    const joinedUnsupported = this.unsupportedExtras(player);
+    if (joinedUnsupported.length) {
+      const names = joinedUnsupported.map((id) => EXTRA_LABEL_KEYS[id] || id).join('、');
+      return this._rejectExtra(player, `房间「${this.name}」启用了当前客户端不支持的内容（${names}），请升级游戏后再加入`);
     }
     // 无 host 时（如房间从磁盘恢复且暂无玩家在线）首个加入者接管 host
     if (this.hostId === null || !this.players.has(this.hostId)) this.hostId = player.id;
-    const info = { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: !!opts.restart, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() };
+    const info = { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: !!opts.restart, biomeScale: this.biomeScale, extraContent: serializeExtraContent(this.extraContent), aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() };
     if (recovery) { info.recoveryId = recovery.recoveryId; info.dim = recovery.dim; }
     this.sendTo(player, MSG.WORLD_INFO, info);
     // B34-A：进房/重连下发房间共享标记全量（客户端在世界就绪前会缓存，onWorldStarted 统一应用）
@@ -1186,7 +1266,8 @@ export class Room {
     this.time = 0.35;
     this.nextMobId = 1;
     this.nextDropId = 1;
-    this.broadcast(MSG.WORLD_INFO, { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: true, biomeScale: this.biomeScale, aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
+    // B51：重建只重置地形与运行账本，世界规则（额外内容清单）保持不变
+    this.broadcast(MSG.WORLD_INFO, { seed: this.seed, mode: this.modeOfHost(), time: this.time, hostId: this.hostId, room: this.name, restart: true, biomeScale: this.biomeScale, extraContent: serializeExtraContent(this.extraContent), aetherDusk: !!this.aetherDusk, finale: this.finaleInfo(), settings: this.settings() });
     for (const p of this.players.values()) {
       this.broadcast(MSG.PLAYER_JOIN, this.joinInfo(p), p.id);
     }
