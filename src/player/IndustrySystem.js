@@ -4,7 +4,7 @@
 // 生命周期：新建型——每次 Game.start 重建，_disposeWorld 释放（无 Three 资源、无 DOM、无监听器）。
 import {
   tickIndustry, buildNetworks, applyIndustryAction, spillStacks, sanitizeMachineState,
-  netInfoFor, toggleClutch,
+  netInfoFor, toggleClutch, setClutchPowered, pendingClutchSignals,
 } from '../core/Industry.js';
 import { INDUSTRY_TICK_MS } from '../content/industry/defs.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
@@ -33,6 +33,8 @@ export class IndustrySystem {
     this._dirty = true;            // 方块/离合闸变化后置位，下一 tick 重建拓扑
     this._warnedLimit = false;     // 超限提示只播一次
     this._net = new Map();         // B52 R2：联机权威网络摘要（"x,y,z" -> net）
+    this._signalAcc = 0;           // B52 R3：离合闸红石轮询节拍累加（秒）
+    this._signalSent = new Map();  // B52 R3：最近上报的红石信号（防重复发包）
   }
 
   // 方块变化（放置/破坏/远端同步/离合闸切换）→ 拓扑标脏
@@ -52,6 +54,7 @@ export class IndustrySystem {
     const g = this.game;
     const world = g.world;
     if (!world || !world.industryBlocks) return;
+    this._pollClutchSignals(dt); // B52 R3：两种模式都要做（联机只上报，不改本地权威）
     if (g.networkMode) return; // 联机：服务器权威推进，客户端只显示
     // 关闭工业的世界不运行模块机制（已存在的机器保留数据，但不生产、不消耗）
     if (!world.extraContent || world.extraContent.industry !== true) { this._acc = 0; return; }
@@ -77,6 +80,41 @@ export class IndustrySystem {
       this.game.hud && this.game.hud.showToast(t('机械网络过大（上限 128 节点），整网停转'));
       return;
     }
+  }
+
+  // B52 R3：离合闸的红石观测（250ms 节拍）
+  //   单机：直接写本地状态并重建拓扑；
+  //   联机：只把与本地已知状态不一致的信号上报服务器（服务器权威、回执覆盖）。
+  _pollClutchSignals(dt) {
+    const g = this.game;
+    const world = g.world;
+    if (!world.extraContent || world.extraContent.industry !== true) return;
+    if (!world.industryBlocks.size) return;
+    this._signalAcc += Math.max(0, dt || 0);
+    if (this._signalAcc < 0.25) return;
+    this._signalAcc = 0;
+    const redstone = g.redstone;
+    if (!redstone) return;
+    const powerAt = (x, y, z) => redstone.getPower(x, y, z) > 0;
+    const pending = pendingClutchSignals(world.industryBlocks, world.industry, powerAt);
+    if (!pending.length) return;
+    if (g.networkMode) {
+      if (!g.net) return;
+      const now = Date.now();
+      for (const p of pending) {
+        const last = this._signalSent.get(p.key);
+        if (last && last.powered === p.powered && now - last.at < 1500) continue; // 等回执，别刷包
+        this._signalSent.set(p.key, { powered: p.powered, at: now });
+        g.net.sendIndustryAction(p.x, p.y, p.z, 'signal', null, 0, null, -1, p.powered);
+      }
+      return;
+    }
+    let dirty = false;
+    for (const p of pending) {
+      const st = world.getOrOpenIndustry(p.x, p.y, p.z);
+      if (st && setClutchPowered(st, p.powered)) dirty = true;
+    }
+    if (dirty) this.markDirty();
   }
 
   // 某台机器所在网络的供需摘要：单机从本地拓扑算，联机读服务器下发的权威摘要
@@ -232,7 +270,9 @@ export class IndustrySystem {
   dispose() {
     this._networks = null;
     this._net.clear();
+    this._signalSent.clear();
     this._acc = 0;
+    this._signalAcc = 0;
     this._dirty = true;
   }
 }

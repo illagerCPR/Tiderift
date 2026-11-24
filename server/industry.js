@@ -4,14 +4,14 @@
 import {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
   sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
-  clutchEngaged, toggleClutch, setClutchPowered, isMachineSlot, slotInsertable,
+  clutchEngaged, toggleClutch, setClutchPowered, pendingClutchSignals, isMachineSlot, slotInsertable,
 } from '../src/core/Industry.js';
 import { INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS } from '../src/content/industry/defs.js';
 
 export {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
   sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
-  clutchEngaged, toggleClutch, setClutchPowered, isMachineSlot, slotInsertable,
+  clutchEngaged, toggleClutch, setClutchPowered, pendingClutchSignals, isMachineSlot, slotInsertable,
   INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
 };
 

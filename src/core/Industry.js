@@ -64,6 +64,25 @@ export function toggleClutch(st) {
   return { ok: true, code: 'toggled', engaged: clutchEngaged(st) };
 }
 
+// 本地红石观测 → 需要写入的离合闸信号列表（纯函数：单机与联机共用同一判定）。
+// powerAt(x,y,z) 返回该格是否有红石信号（>0）。只有和已知状态不一致时才产生条目。
+export function pendingClutchSignals(blocks, states, powerAt) {
+  const out = [];
+  if (!blocks || typeof powerAt !== 'function') return out;
+  for (const [key, kind] of blocks) {
+    if (kind !== 'clutch') continue;
+    const parts = key.split(',');
+    const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    const powered = !!powerAt(x, y, z);
+    const st = states ? states.get(key) : null;
+    const known = st && st.kind === 'clutch' ? st.powered === true : false;
+    if (known === powered) continue;
+    out.push({ key, x, y, z, powered });
+  }
+  return out;
+}
+
 // 红石信号写入；返回 true = 导流状态因此改变（调用方要重建拓扑 + 广播）
 export function setClutchPowered(st, on) {
   if (!st || st.kind !== 'clutch') return false;
