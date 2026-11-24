@@ -6,6 +6,10 @@ import { SPELLS, SPELL_IDS, spellDef, TABLE_BLOCK, ECHO_MAX } from '../src/conte
 
 export { sanitizeCast, spellDef, SPELLS, SPELL_IDS, TABLE_BLOCK, ECHO_MAX };
 
+// B54 R3：魔法来源的 PvP 伤害上限（烬矢满蓄）——服务器不信任客户端上报的数值，
+// 带 kind:'magic' 的攻击按此封顶；近战路径不带 kind，保持原行为。
+export const MAGIC_PVP_DAMAGE_CAP = SPELLS.ember_bolt.charged.damage;
+
 // 魔法装置：id -> kind（'table' = 回响仪台）
 export const MAGIC_ID_INFO = new Map([
   [227, 'table'], // resonance_table

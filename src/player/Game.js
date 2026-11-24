@@ -546,6 +546,8 @@ export class Game {
     this.world.onIndustryDirty = () => { if (this.industry) this.industry.markDirty(); };
     // B51 R4：四潮回响域（回响/冷却/施法/弹道/HUD；关闭魔法的世界整段早退）
     this.magic = new MagicSystem(this);
+    // B54 R3：冷却属于施法者——换维重建世界时透传（不进存档、不进协议）
+    if (loadData && loadData.magicCooldowns) this.magic.importCooldowns(loadData.magicCooldowns);
     this.redstone.onTntPowered = (x, y, z) => this.tnt.prime(x, y, z);
     
     // 恢复修改的方块/容器：V2 按维度分桶装入；V1 旧档字段直接进当前维度桶（迁移）
@@ -2928,6 +2930,8 @@ export class Game {
     this.player.onFire = 0;
     this.player.invulnerable = 0;
     this.player.clearEffects();
+    // B54 R3：死亡清魔法运行态（弹道/蓄力/缓降），回响与冷却保留（防跳崖刷新冷却）
+    if (this.magic) this.magic.onPlayerDeath();
     this._witherTick = 0;
     this.player.gliding = false;
     if (this.hud) this.hud.setGliding(false);
@@ -3061,6 +3065,9 @@ export class Game {
       aetherDusk: !!this.aetherDusk, // 天域复潮状态跨维透传（批次 D：换维重建不丢）
       bedSpawn: this.bedSpawn ? { ...this.bedSpawn } : null,
       player: playerData,
+      // B54 R3：冷却也跨维透传（**顶层字段**，start 读 loadData.magicCooldowns）——
+      // 否则换维就是免费的冷却刷新（规则见 core/Magic.js 的 MAGIC_LIFECYCLE）
+      magicCooldowns: this.magic ? this.magic.exportCooldowns() : null,
       inventory: this.inventory.serialize(),
       dimensionBlocks: dimBuckets,
       dimensionContainers: contBuckets,

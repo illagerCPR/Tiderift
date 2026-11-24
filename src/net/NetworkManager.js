@@ -1420,7 +1420,12 @@ export class NetworkManager {
     if (rp && rp.applySkinFromURL) rp.applySkinFromURL(msg.data, msg.model);
   }
 
-  sendAttackPlayer(targetId, damage) { this._send(MSG.ATTACK_PLAYER, { targetId, damage }); }
+  // B54 R3：kind = 'magic' 时服务器按法术上限封顶（近战路径不带 kind，行为不变）
+  sendAttackPlayer(targetId, damage, kind = null) {
+    const msg = { targetId, damage };
+    if (kind) msg.kind = String(kind).slice(0, 12);
+    this._send(MSG.ATTACK_PLAYER, msg);
+  }
   sendPlayerDied() {
     // 阶段6：死亡上报死亡位置 + 背包内容（服务器据此生成世界掉落物并广播）；P1 起含盔甲
     const p = this.game.player;

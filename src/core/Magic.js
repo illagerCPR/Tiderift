@@ -160,6 +160,37 @@ export function cooldownLeft(lastCastAt, now, spellId) {
   return left > 0 ? left : 0;
 }
 
+// ── 死亡 / 换维的生命周期规则（B54 R3）──────────────────────────────────
+// 明确口径，避免"顺手清一下"把规则改歪：
+//   · 回响与冷却属于**施法者本人**：死亡与换维都保留（死亡不惩罚资源，也不给跳崖刷新冷却的取巧）；
+//   · 蓄力、弹道、缓降、防护（resistance）是运行态/世界内状态：死亡与换维一律清空；
+//   · 冷却不进存档、不进协议——它只活在本进程的施法者身上（换维用 loadData 透传）。
+export const MAGIC_LIFECYCLE = Object.freeze({
+  death: Object.freeze({
+    keepEcho: true, keepCooldowns: true,
+    clearCharge: true, clearBolts: true, clearSlowFall: true, clearGuard: true,
+  }),
+  dimension: Object.freeze({
+    keepEcho: true, keepCooldowns: true,
+    clearCharge: true, clearBolts: true, clearSlowFall: true, clearGuard: true,
+  }),
+});
+
+// 冷却表清洗：只留合法的「法术 ID → 毫秒时间戳」；脏值丢弃（换维透传与测试共用）
+export function sanitizeCooldowns(raw, spells = SPELLS, now = Date.now()) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, at] of Object.entries(raw)) {
+    if (!spells[id]) continue;
+    const t = Number(at);
+    if (!Number.isFinite(t) || t <= 0) continue;
+    if (t > now + 1000) continue; // 未来时间戳（时钟跳变/伪造）不接受
+    if (now - t > 24 * 3600 * 1000) continue; // 一天前的记录没有意义
+    out[id] = t;
+  }
+  return out;
+}
+
 // 服务器侧形状校验：法术 ID 合法 + 数值在允许区间（轻信任模型的硬约束，不宣称反作弊）
 //   B54：折步可带落点 (x2,y2,z2) 供远端画两团尘；落在允许范围内才透传，否则丢弃该字段。
 export function sanitizeCast(msg) {

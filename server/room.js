@@ -23,7 +23,7 @@ import {
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
 import { roomStats } from './stats.js';
 // B51 R4：四潮回响——法术表与形状校验（本机权威、服务器只做启用/形状/频率硬约束）
-import { sanitizeCast, spellDef, isMagicId } from './magic.js';
+import { sanitizeCast, spellDef, isMagicId, MAGIC_PVP_DAMAGE_CAP } from './magic.js';
 
 // B51：额外内容世界清单（与客户端共用同一份纯模块：规范化/启用列表/序列化）
 import {
@@ -2545,7 +2545,10 @@ export class Room {
     }
     const target = this.players.get(safeInt(msg.targetId));
     if (!target || target.id === player.id || !target.alive) return;
-    const damage = Math.max(0, safeNum(msg.damage, 1));
+    // B54 R3：魔法来源（kind:'magic'）按烬矢满蓄封顶——法术伤害不允许被改包放大；
+    // 近战路径不带 kind，沿用原有轻信任口径（行为不变）。
+    let damage = Math.max(0, safeNum(msg.damage, 1));
+    if (msg.kind === 'magic') damage = Math.min(damage, MAGIC_PVP_DAMAGE_CAP);
     target.health = Math.max(0, target.health - damage);
     this.broadcast(MSG.ATTACK_PLAYER, { fromId: player.id, targetId: target.id, damage });
     if (target.health <= 0) {

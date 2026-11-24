@@ -391,13 +391,45 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 - **作废点**：暂停（Game.loop 的 else 分支）、进入观战、UI 打开、中途换手持物都 `cancelCharge()`；
   `MagicSystem.dispose()`（换维/换档/回菜单）清蓄力与弹道。蓄力不进存档、不进协议。
 
-### 12.3 回归
+### 12.3 R3：死亡 / 换维规则与四类结算分流
+
+**生命周期表**（`src/core/Magic.js` 的 `MAGIC_LIFECYCLE`，不可变；注释与实现同源）：
+
+| 事件 | 回响 | 冷却 | 蓄力 | 弹道 | 缓降 | 防护 |
+|---|---|---|---|---|---|---|
+| 死亡 | 保留 | 保留 | 清 | 清 | 清 | 清（respawn 的 clearEffects） |
+| 换维 | 保留 | 保留 | 清 | 清 | 清 | 清（start 的 clearEffects） |
+
+- 冷却属于**施法者**：换维通过 `_composeSwitchLoadData` 的**顶层** `magicCooldowns` 透传，`start()` 里
+  `importCooldowns()` 恢复；`sanitizeCooldowns()` 丢弃未知法术、脏值、未来时间戳与一天前的记录。
+  **坑**：这个字段必须挂在 loadData 顶层——塞进 `playerData` 时 `start()` 读不到，表现为「换维后冷却清零」
+  （实测复现过；回归里有专门断言守住位置）。
+- 冷却**不进存档**（`SaveSystem` 只写回响）：它是运行态，不该跨进程持久化，也不该借 reload 刷新。
+- 死亡由 `Game.respawn()` 调 `magic.onPlayerDeath()`（清蓄力/弹道/缓降，**不动回响与冷却**），
+  所以「跳崖换冷却」与「死亡蒸发资源」两条捷径都不成立。
+
+**四类结算逐项分流（杜绝双结算）**：
+
+| 类别 | 唯一结算点 | 不做什么 |
+|---|---|---|
+| 自我效果（回潮） | `_castTideMend` 里的 `p.health` / `p.applyEffect` | 全域名只有一处 `applyEffect`；远端回潮只播水汽 |
+| 怪物伤害 | `_updateBolts` 里 `bolt.local` 分支的单次 `attackMob` | 玩家命中后不再对怪物补一刀；命中即 `bolt.dead` |
+| PvP | `sendAttackPlayer(rp.id, def.damage, 'magic')` → 服务器 `onAttack` | 本端不直接改远端血量；PvP 关闭时连检测都跳过 |
+| 远端视觉 | `applyRemoteEffect` → `local:false` 弹道 | 不结算伤害、不扣回响、不挂效果 |
+
+- PvP 前提 `_canPvP()`：`networkMode && net.roomSettings.pvp !== false && 有远端玩家`（与近战同一闸门口径）；
+  命中检测用 `_findRemoteByRay(origin, dir, reach)`，`reach` 已被最近的实心方块裁过 → **墙后的人打不到**。
+- 服务器对 `kind:'magic'` 的攻击按 `MAGIC_PVP_DAMAGE_CAP = SPELLS.ember_bolt.charged.damage`（10）封顶，
+  防止改包把法术伤害放大；近战消息不带 `kind`，沿用原有轻信任口径（行为不变）。
+
+### 12.4 回归
 
 | 套件 | 守什么 |
 |---|---|
 | `tests/build54-four-tides.mjs` | 144/145 ID 钉值、11 语名字、创造分类、魔法配方只认 magic 且不含工业件、四支法术真值表、`planMend` 不溢出/满血拒绝/脏值、`resolveBlinkTarget` 最远可站立点与不越墙不落未加载、落点形状校验、失败不扣回响与折步安全检查的源码绊线 |
 | `tests/build54-charge-feedback.mjs` | 蓄力插值（0→上限/中点取整/脏值钳制/费用冷却不涨/不污染定义表）、四系都有蓄力收益且不破硬上限、9 个失败码都有文案与 HUD 脉冲分路、10 个语言包逐个覆盖反馈文案、蓄力通道与暂停作废/弹体只缩放视觉的源码绊线 |
-| `server/test-magic.mjs` | 新增回潮/折步表现广播、折步落点透传、越界落点被清洗（冷却 6s 必须等满才发第二次） |
+| `tests/build54-lifecycle-split.mjs` | 生命周期表（死亡/换维都留回响与冷却、清蓄力弹道缓降防护）、冷却清洗、自我效果只作用本人、怪物伤害单点一次、PvP 走既有闸门且墙后不打、远端只表现、换维冷却挂在 loadData 顶层的绊线 |
+| `server/test-magic.mjs` | 回潮/折步表现广播、折步落点透传、越界落点被清洗（冷却 6s 必须等满才发第二次）；⑤ 魔法 PvP 伤害走既有闸门并按烬矢满蓄封顶、近战不受影响 |
 
 手动闭环（浏览器实测）：`rain_focus` 施放 hp 9→15、回响 100→80、`resistance` I 6s；满血施放 hp/回响不变、
 冷却仍为 0；`tideless_focus` 平地折跃 8 格（回响 -25）、有墙时停在墙前 3 格；无立足点时原地不动且回响不扣。

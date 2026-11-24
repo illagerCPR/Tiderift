@@ -3,6 +3,7 @@
 //       ② 启用魔法：施法表现只广播给同维其他人（发起者本端已结算）
 //       ③ 服务器独立硬约束：冷却内重复施法不转发、起点离本人太远不转发、非法法术/方向不转发
 //       ④ 回响随 LAN 玩家档案：上报 42 → 断线重连同昵称恢复
+//       ⑤ B54 R3：魔法来源的 PvP 伤害走既有闸门并按烬矢满蓄封顶（近战路径不受影响）
 // 用法：node server/test-magic.mjs（先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
@@ -155,6 +156,22 @@ const BX = 6, BY = 70, BZ = 6;
   send(caster, 'magic_cast', { spell: 'ember_bolt', echo: 50, x: 0, y: 70, z: 0, dx: 0, dy: 0, dz: 0 });
   const bad = await waitFor(watcher, (m) => m.t === 'magic_effect', 600);
   assert('非法法术/零方向都被拒绝', !bad);
+
+  // ⑤ B54 R3：魔法来源的 PvP 伤害——走既有 ATTACK_PLAYER 闸门，服务器按烬矢满蓄封顶
+  send(caster, 'player_state', { x: 0, y: 70, z: 0, yaw: 0, pitch: 0, mode: 'survival' });
+  await sleep(120);
+  watcher.inbox.length = 0;
+  send(caster, 'attack_player', { targetId: watcher.id, damage: 999, kind: 'magic' });
+  const pvp = await waitFor(watcher, (m) => m.t === 'attack_player');
+  assert('魔法 PvP 伤害到达受害者（走既有闸门）', !!pvp && pvp.targetId === watcher.id);
+  assert('魔法来源伤害被服务器封顶到烬矢满蓄', !!pvp && pvp.damage === 10);
+  assert('攻击消息带发起者 id', !!pvp && pvp.fromId === caster.id);
+
+  // 近战路径不带 kind：口径不变（不被魔法封顶影响）
+  watcher.inbox.length = 0;
+  send(caster, 'attack_player', { targetId: watcher.id, damage: 999 });
+  const melee = await waitFor(watcher, (m) => m.t === 'attack_player');
+  assert('近战伤害不受魔法封顶影响', !!melee && melee.damage === 999);
 
   // ④ 回响随玩家档案
   send(caster, 'profile_save', { profile: {

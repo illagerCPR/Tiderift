@@ -12,7 +12,7 @@ import {
 } from '../content/magic/defs.js';
 import {
   clampEcho, checkCast, tuneEcho, resolveDashTarget, resolveBlinkTarget, planMend, cooldownLeft,
-  spellAtCharge, castFeedback,
+  spellAtCharge, castFeedback, sanitizeCooldowns,
 } from '../core/Magic.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { PLAYER_EYE_HEIGHT } from './constants.js';
@@ -86,6 +86,38 @@ export class MagicSystem {
     this.cancelCharge();
     this.castHeld(charge);
     return true;
+  }
+
+  // ── 死亡 / 换维（B54 R3）：规则见 core/Magic.js 的 MAGIC_LIFECYCLE ─────────
+  // 回响与冷却保留（冷却换维靠 loadData 透传，不进存档），蓄力/弹道/缓降/防护清空。
+  exportCooldowns() {
+    const out = {};
+    for (const [id, at] of this._lastCast) out[id] = at;
+    return out;
+  }
+
+  importCooldowns(raw) {
+    this._lastCast.clear();
+    for (const [id, at] of Object.entries(sanitizeCooldowns(raw))) this._lastCast.set(id, at);
+    this._pushHud();
+  }
+
+  // 死亡：清运行态、留资源与冷却（防护由 respawn 的 clearEffects 统一清）
+  onPlayerDeath() {
+    this.cancelCharge();
+    this._clearBolts();
+    const p = this.game.player;
+    if (p) p.slowFall = 0;
+    this._pushHud();
+  }
+
+  _clearBolts() {
+    const g = this.game;
+    for (const bolt of this._bolts) {
+      if (bolt.mesh && g.renderer) g.renderer.scene.remove(bolt.mesh);
+      bolt.mesh = null;
+    }
+    this._bolts = [];
   }
 
   // 每帧：缓降计时 / 脱战回响恢复 / 弹道推进 / HUD 刷新
@@ -347,10 +379,22 @@ export class MagicSystem {
         const reach = Math.min(seg, blockDist);
         let hit = false;
         if (bolt.local && def && reach > 1e-6) {
+          const dir = new THREE.Vector3(dx / seg, dy / seg, dz / seg);
+          // B54 R3：先看玩家（联机 + 房间开着 PvP）——伤害只走既有 PvP 闸门：
+          // 本端只发一次 ATTACK_PLAYER，服务器校验 PvP 并结算/广播，本端不重复扣血。
+          if (this._canPvP()) {
+            const rp = g._findRemoteByRay(new THREE.Vector3(px, py, pz), dir, reach);
+            if (rp) {
+              g.net.sendAttackPlayer(rp.id, def.damage, 'magic');
+              hit = true;
+            }
+          }
           // 怪物伤害走既有 attackMob 链路（受击红光/音效/XP 归属/联机上报全在内），每发只调一次
-          hit = g.mobManager
-            ? g.mobManager.attackMob(new THREE.Vector3(px, py, pz), new THREE.Vector3(dx / seg, dy / seg, dz / seg), reach, def.damage)
-            : false;
+          if (!hit) {
+            hit = g.mobManager
+              ? g.mobManager.attackMob(new THREE.Vector3(px, py, pz), dir, reach, def.damage)
+              : false;
+          }
         }
         bolt.x = px + (dx / (seg || 1)) * reach;
         bolt.y = py + (dy / (seg || 1)) * reach;
@@ -387,6 +431,13 @@ export class MagicSystem {
       if (bd && bd.solid && !bd.passable) return Math.max(0, d - 0.2);
     }
     return maxDist;
+  }
+
+  // 联机且房间没关 PvP 时，烬矢才把玩家当作可命中目标（与近战同一闸门口径）
+  _canPvP() {
+    const g = this.game;
+    return !!(g.networkMode && g.net && g.net.roomSettings && g.net.roomSettings.pvp !== false
+      && g._findRemoteByRay && g.remotePlayers && g.remotePlayers.size > 0);
   }
 
   _impactFx(x, y, z) {
@@ -504,11 +555,7 @@ export class MagicSystem {
 
   dispose() {
     const g = this.game;
-    for (const bolt of this._bolts) {
-      if (bolt.mesh && g.renderer) g.renderer.scene.remove(bolt.mesh);
-      bolt.mesh = null;
-    }
-    this._bolts = [];
+    this._clearBolts();
     this._lastCast.clear();
     this._regenAcc = 0;
     this._charge.active = false;
