@@ -12,7 +12,7 @@ import { readFileSync } from 'fs';
 import {
   SPELLS, SPELL_IDS, CHARGE_FULL_SECONDS, CAST_FAIL_CODES, CAST_FAIL_TEXT,
 } from '../src/content/magic/defs.js';
-import { spellAtCharge, castFeedback } from '../src/core/Magic.js';
+import { spellAtCharge, castFeedback, boltDamage } from '../src/core/Magic.js';
 import { zhTW } from '../src/i18n/locales/zh-TW.js';
 import { en } from '../src/i18n/locales/en.js';
 import { fr } from '../src/i18n/locales/fr.js';
@@ -102,7 +102,26 @@ const HUD_KINDS = ['none', 'echo-low', 'cooldown', 'target'];
     '未知码兜底到 unknown');
 }
 
-// ── ④ 接线绊线 ─────────────────────────────────────────────────────────
+// ── ④ 弹道伤害：发射时定值，推进阶段不回表（R4 实玩抓到的真 bug）─────────
+{
+  const charged = spellAtCharge(SPELLS.ember_bolt, 1);
+  ok(charged.damage === 10 && SPELLS.ember_bolt.damage === 6, '满蓄伤害 10 / 基础 6');
+  ok(boltDamage({ damage: charged.damage }, SPELLS.ember_bolt) === 10,
+    '发光弹体自带蓄力伤害 → 取 10（不被基础值覆盖）');
+  ok(boltDamage({ damage: 6 }, SPELLS.ember_bolt) === 6, '单击弹体自带基础伤害 → 取 6');
+  ok(boltDamage({}, SPELLS.ember_bolt) === 6, '老弹体没有字段 → 回落基础伤害');
+  ok(boltDamage({ damage: 0 }, SPELLS.ember_bolt) === 6, '0/脏值伤害 → 回落基础值');
+  ok(boltDamage({ damage: 'x' }, SPELLS.ember_bolt) === 6, '非数字伤害 → 回落基础值');
+  ok(boltDamage({}, null) === 0, '空定义 → 0（不产生 NaN 伤害）');
+  const magic = src('../src/player/MagicSystem.js');
+  ok(/damage: def\.damage, \/\/ B54 R4/.test(magic), '发射时把伤害钉在弹体上');
+  ok(/const dmg = boltDamage\(bolt, def\)/.test(magic), '推进阶段统一读弹体伤害');
+  ok((magic.match(/boltDamage\(/g) || []).length === 1, '只有一处取伤害（单一入口）');
+  ok(/sendAttackPlayer\(rp\.id, dmg, 'magic'\)/.test(magic) && /reach, dmg\)/.test(magic),
+    'PvP 与怪物伤害都用同一个弹体伤害值（不双口径）');
+}
+
+// ── ⑤ 接线绊线 ─────────────────────────────────────────────────────────
 {
   const magic = src('../src/player/MagicSystem.js');
   const ic = src('../src/player/InteractionController.js');

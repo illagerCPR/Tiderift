@@ -12,7 +12,7 @@ import {
 } from '../content/magic/defs.js';
 import {
   clampEcho, checkCast, tuneEcho, resolveDashTarget, resolveBlinkTarget, planMend, cooldownLeft,
-  spellAtCharge, castFeedback, sanitizeCooldowns,
+  spellAtCharge, castFeedback, sanitizeCooldowns, boltDamage,
 } from '../core/Magic.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { PLAYER_EYE_HEIGHT } from './constants.js';
@@ -258,6 +258,7 @@ export class MagicSystem {
       x: start.x + dir.x * 0.6, y: start.y + dir.y * 0.6, z: start.z + dir.z * 0.6,
       vx: dir.x * def.speed, vy: dir.y * def.speed, vz: dir.z * def.speed,
       life: def.life, dead: false, spell: 'ember_bolt', local: true,
+      damage: def.damage, // B54 R4：蓄力插值出的伤害钉在弹体上（推进阶段不再回表）
     };
     this._spawnBoltMesh(bolt, true, charge);
     this._bolts.push(bolt);
@@ -380,19 +381,20 @@ export class MagicSystem {
         let hit = false;
         if (bolt.local && def && reach > 1e-6) {
           const dir = new THREE.Vector3(dx / seg, dy / seg, dz / seg);
+          const dmg = boltDamage(bolt, def); // 发射时定的伤害（蓄力结果），不回表
           // B54 R3：先看玩家（联机 + 房间开着 PvP）——伤害只走既有 PvP 闸门：
           // 本端只发一次 ATTACK_PLAYER，服务器校验 PvP 并结算/广播，本端不重复扣血。
           if (this._canPvP()) {
             const rp = g._findRemoteByRay(new THREE.Vector3(px, py, pz), dir, reach);
             if (rp) {
-              g.net.sendAttackPlayer(rp.id, def.damage, 'magic');
+              g.net.sendAttackPlayer(rp.id, dmg, 'magic');
               hit = true;
             }
           }
           // 怪物伤害走既有 attackMob 链路（受击红光/音效/XP 归属/联机上报全在内），每发只调一次
           if (!hit) {
             hit = g.mobManager
-              ? g.mobManager.attackMob(new THREE.Vector3(px, py, pz), dir, reach, def.damage)
+              ? g.mobManager.attackMob(new THREE.Vector3(px, py, pz), dir, reach, dmg)
               : false;
           }
         }

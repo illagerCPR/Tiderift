@@ -191,6 +191,15 @@ export function sanitizeCooldowns(raw, spells = SPELLS, now = Date.now()) {
   return out;
 }
 
+// 弹道伤害口径（B54 R4 修）：伤害在**发射时**就定在弹体上（蓄力插值的结果），
+// 推进阶段一律读弹体自带值——别再按法术 ID 回表，否则蓄力伤害会被基础值悄悄覆盖。
+export function boltDamage(bolt, def) {
+  const stored = Number(bolt && bolt.damage);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+  const base = Number(def && def.damage);
+  return Number.isFinite(base) && base > 0 ? base : 0;
+}
+
 // 服务器侧形状校验：法术 ID 合法 + 数值在允许区间（轻信任模型的硬约束，不宣称反作弊）
 //   B54：折步可带落点 (x2,y2,z2) 供远端画两团尘；落在允许范围内才透传，否则丢弃该字段。
 export function sanitizeCast(msg) {

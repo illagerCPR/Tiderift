@@ -105,8 +105,9 @@ const body = (text, header) => {
   const update = body(magic, '_updateBolts(dt) {');
   ok(/g\._findRemoteByRay\(new THREE\.Vector3\(px, py, pz\), dir, reach\)/.test(update),
     '玩家命中用同一段射线（墙后不算）');
-  ok(/g\.net\.sendAttackPlayer\(rp\.id, def\.damage, 'magic'\)/.test(update),
+  ok(/g\.net\.sendAttackPlayer\(rp\.id, dmg, 'magic'\)/.test(update),
     '伤害交给既有 ATTACK_PLAYER 闸门（本端不扣别人血）');
+  ok(/const dmg = boltDamage\(bolt, def\)/.test(update), '伤害取自发光的弹体（蓄力结果）');
   ok(!/rp\.hurt|remotePlayers[\s\S]{0,40}\.health/.test(magic), '本端没有直接改远端血量的路径');
   // 网络层与服务器侧
   ok(/sendAttackPlayer\(targetId, damage, kind = null\)/.test(net), '攻击消息可带来源标记');

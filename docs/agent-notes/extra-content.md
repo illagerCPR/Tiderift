@@ -422,13 +422,31 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 - 服务器对 `kind:'magic'` 的攻击按 `MAGIC_PVP_DAMAGE_CAP = SPELLS.ember_bolt.charged.damage`（10）封顶，
   防止改包把法术伤害放大；近战消息不带 `kind`，沿用原有轻信任口径（行为不变）。
 
-### 12.4 回归
+### 12.4 R4：四系生存实玩与收尾（Build 54 发布）
+
+- **实玩口径**：`gamemode=survival`，材料与经验按探索所得用控制台补齐一次，之后**全程生存规则**——
+  合成走真实 3×3 网格（`inventoryScreen.getCurrentRecipeMatch` + 输出槽 handler 扣料），放置走真实右键，
+  调谐走真实右键盘（仪表台 `magicKind:'table'` 分支），施法走真实通道。
+  实测：1 星髓 → 2 回响尘 ×3、仪台 1、四支焦点各 1（`gale/ember/rain/tideless`）；仪台放置后物品清零；
+  调谐 4 次 25→51→76→100（等级 12→8）；风步（半蓄）x 0.5→−6.5、缓降 3.75、回响 −15；
+  回潮 8→14 血 + 防护 I 6 秒、回响 −20（冷却内再按被拒）；折步 8 格、回响 −25；
+  烬矢满蓄对僵尸**精确 10 点**（含 0.58 的白天燃烧）。
+- **实玩抓到的真 bug（已修）**：`_updateBolts` 原本按 `spellDef(bolt.spell)` 回表读伤害，**蓄力插值出的伤害
+  被基础值覆盖**（满蓄烬矢实际只打 6）。修法：伤害在**发射时钉在弹体上**（`bolt.damage`），
+  推进阶段统一走新纯函数 `boltDamage(bolt, def)`（弹体值优先、脏值回落基础值），PvP 与怪物两条路
+  共用同一个 `dmg`。回归补 `boltDamage` 真值表 + 「只有一处取伤害」的绊线。
+  教训：**只测定义表的插值不算测通过**——效果链路上任何"回表"都可能把插值结果丢掉。
+- **文档**：README 魔法章节改写为四系表（材料、蓄力、反馈与边界），已知限制改为四系齐备 + 死亡/换维规则 +
+  联机 PvP 口径；worldview §10.7 补 B54 交付与「四潮术语沿用既有身份层」。`src/version.js` BUILD=54。
+
+### 12.5 回归
 
 | 套件 | 守什么 |
 |---|---|
 | `tests/build54-four-tides.mjs` | 144/145 ID 钉值、11 语名字、创造分类、魔法配方只认 magic 且不含工业件、四支法术真值表、`planMend` 不溢出/满血拒绝/脏值、`resolveBlinkTarget` 最远可站立点与不越墙不落未加载、落点形状校验、失败不扣回响与折步安全检查的源码绊线 |
 | `tests/build54-charge-feedback.mjs` | 蓄力插值（0→上限/中点取整/脏值钳制/费用冷却不涨/不污染定义表）、四系都有蓄力收益且不破硬上限、9 个失败码都有文案与 HUD 脉冲分路、10 个语言包逐个覆盖反馈文案、蓄力通道与暂停作废/弹体只缩放视觉的源码绊线 |
 | `tests/build54-lifecycle-split.mjs` | 生命周期表（死亡/换维都留回响与冷却、清蓄力弹道缓降防护）、冷却清洗、自我效果只作用本人、怪物伤害单点一次、PvP 走既有闸门且墙后不打、远端只表现、换维冷却挂在 loadData 顶层的绊线 |
+| `tests/build54-charge-feedback.mjs` ④ | `boltDamage` 真值表：发光弹体自带的蓄力伤害优先、脏值回落基础值、PvP 与怪物共用同一个 dmg、全域只有一处取伤害 |
 | `server/test-magic.mjs` | 回潮/折步表现广播、折步落点透传、越界落点被清洗（冷却 6s 必须等满才发第二次）；⑤ 魔法 PvP 伤害走既有闸门并按烬矢满蓄封顶、近战不受影响 |
 
 手动闭环（浏览器实测）：`rain_focus` 施放 hp 9→15、回响 100→80、`resistance` I 6s；满血施放 hp/回响不变、
