@@ -3098,6 +3098,98 @@ for (const facing of ['s', 'e', 'w']) {
   }, { ...FILTER_HOPPER_SVG });
 }
 
+// ── Build 53 R2 收割机（**文件末尾追加**，方块 ID 零漂移，取 234~237）────────────────
+// 语义：刀口（front）= 收割方向（facingAway 背对玩家），背面相邻容器收产物。
+// 视觉上要一眼认出"这是朝田开刀的那一面"：正面下半是一排三角锯齿，顶面是带导槽的台面。
+function harvesterTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.88 + hash2(x, y, seed) * 0.16;
+      if (y < 2 || y > 13) f *= 1.08;
+      px[y * 16 + x] = rgb([96, 100, 108], f);
+    }
+  }
+  fillRect(px, 0, 3, 15, 3, rgb([122, 126, 134], 1.04));   // 前导轨
+  fillRect(px, 0, 12, 15, 12, rgb([122, 126, 134], 1.04)); // 后导轨
+  fillRect(px, 0, 6, 15, 8, rgb([54, 58, 64], 0.98));      // 中间的落料槽
+  for (const [x, y] of [[2, 1], [13, 1], [2, 14], [13, 14]]) setPx(px, x, y, rgb([168, 172, 180]));
+  return pixelSvg(px);
+}
+
+function harvesterSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.88 + hash2(x, y, seed) * 0.16;
+      if (y < 2) f *= 1.1;
+      if (y > 13) f *= 0.8;
+      px[y * 16 + x] = rgb([92, 96, 104], f);
+    }
+  }
+  // 传动带：两道斜纹 + 铆钉排（"后面有东西在动"）
+  for (let i = 0; i < 4; i++) fillRect(px, 2 + i * 4, 10, 3 + i * 4, 11, rgb([62, 66, 72], 0.96));
+  for (let x = 1; x <= 14; x += 3) setPx(px, x, 4, rgb([160, 164, 172]));
+  fillRect(px, 0, 7, 15, 7, rgb([120, 124, 132], 1.02));
+  return pixelSvg(px);
+}
+
+function harvesterBottomTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([70, 74, 80], 0.84 + hash2(x, y, seed) * 0.16);
+  }
+  fillRect(px, 4, 4, 11, 11, rgb([48, 51, 56], 0.96));
+  return pixelSvg(px);
+}
+
+// 刀口面：上半面板 + 下半一排三角锯齿（正对这面就是收割方向）
+function harvesterFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([88, 92, 100], 0.88 + hash2(x, y, seed) * 0.16);
+  }
+  fillRect(px, 0, 0, 15, 5, rgb([104, 108, 116], 1.0));
+  for (const x of [2, 7, 12]) setPx(px, x, 2, rgb([168, 172, 180]));
+  fillRect(px, 0, 7, 15, 8, rgb([150, 154, 162], 1.05)); // 刀背横杆
+  const TOOTH = [13, 12, 11, 12];
+  for (let x = 0; x < 16; x++) {
+    const bottom = TOOTH[x % 4];
+    for (let y = 9; y <= bottom; y++) setPx(px, x, y, rgb([206, 210, 216], 1.0 - (y - 9) * 0.05));
+  }
+  return pixelSvg(px);
+}
+
+const HARVESTER_TEX = {
+  top: 'harvester_top', side: 'harvester_side',
+  bottom: 'harvester_bottom', front: 'harvester_front',
+};
+const HARVESTER_SVG = {
+  harvester_top: harvesterTopTex(301),
+  harvester_side: harvesterSideTex(302),
+  harvester_bottom: harvesterBottomTex(303),
+  harvester_front: harvesterFrontTex(304),
+};
+
+reg('harvester', {
+  displayName: '收割机', hardness: 3.5, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'],
+  textures: HARVESTER_TEX, facing: 'n',
+  baseBlock: 'harvester', facingBase: 'harvester', facingAway: true,
+  harvester: true,
+  lore: ['刀口朝田，出料朝箱：熟一垄，收一垄。'],
+}, { ...HARVESTER_SVG });
+
+for (const facing of ['s', 'e', 'w']) {
+  reg(`harvester_${facing}`, {
+    displayName: '收割机', hardness: 3.5, tool: 'pickaxe', minTier: 1,
+    requiresExtras: ['industry'],
+    textures: HARVESTER_TEX, facing,
+    baseBlock: 'harvester', facingBase: 'harvester', facingAway: true,
+    harvester: true,
+  }, { ...HARVESTER_SVG });
+}
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

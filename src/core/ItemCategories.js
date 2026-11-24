@@ -50,6 +50,7 @@ const MAP = {
   tide_cutter: 'functional', drive_clutch: 'functional', // B52 R1
   hopper: 'functional', // B36 漏斗一直是功能方块（B53 与分拣漏斗同栏）
   filter_hopper: 'functional', // B53 R1（朝向变体是技术方块，不进创造栏，无需登记）
+  harvester: 'functional', // B53 R2（收割机；朝向变体是技术方块）
   redstone_wire: 'redstone', redstone_torch: 'redstone', redstone_torch_item: 'redstone',
   redstone_lamp: 'redstone', redstone_block: 'redstone', lever: 'redstone', stone_button: 'redstone',
   oak_button: 'redstone', piston: 'redstone', sticky_piston: 'redstone', piston_head: 'redstone',

@@ -828,4 +828,6 @@ export const pt = {
   '分拣漏斗': 'Funil classificador',
   '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'A última casela é o filtro: o funil só move o que estiver ali. Vazia = deixa passar tudo.',
   '过滤': 'Filtro',
+  // ── B53 R2 收割机 ──
+  '刀口朝田，出料朝箱：熟一垄，收一垄。': 'A lâmina para o campo, a saída para o baú: uma fileira madura, uma colheita.',
 };

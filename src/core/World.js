@@ -41,6 +41,7 @@ export class World {
     this.dimensionContainers = new Map(); // dimId -> Map("x,y,z" -> 27 槽数组)
     this.dimensionFurnaces = new Map();   // dimId -> Map("x,y,z" -> 熔炉状态 {input,fuel,output,burnTime,burnMax,cookTime})
     this.dimensionHoppers = new Map();    // dimId -> Map("x,y,z" -> 出料口朝向)；B36 F-1 搬运目标集（纯派生自方块账本）
+    this.dimensionHarvesters = new Map(); // dimId -> Map("x,y,z" -> 收割方向)；B53 R2 自动化索引（纯派生自方块账本）
     // B51 R3：工业机器状态（dim -> Map("x,y,z" -> state)）与工业方块索引（dim -> Map(key -> kind)）。
     // 状态（槽位 + 进度）进存档；索引纯派生自方块账本、不落盘。
     this.dimensionIndustry = new Map();
@@ -49,6 +50,7 @@ export class World {
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
     this.hoppers = this.dimBucket(this.dimensionHoppers);
+    this.harvesters = this.dimBucket(this.dimensionHarvesters);
     this.industry = this.dimBucket(this.dimensionIndustry);
     this.industryBlocks = this.dimBucket(this.dimensionIndustryBlocks);
     // T5 容器：打开时惰性生成（结构箱子按 (seed,表名,坐标) 确定性 loot），
@@ -121,6 +123,17 @@ export class World {
       this.dimensionHoppers.set(dim, hm);
     }
     this.hoppers = this.dimBucket(this.dimensionHoppers);
+    // B53 R2：收割机索引同样纯派生自方块账本（不新增存档字段，旧存档天然兼容）
+    this.dimensionHarvesters.clear();
+    for (const [dim, m] of this.dimensionBlocks) {
+      const hm = new Map();
+      for (const [k, id] of m) {
+        const def = BlockRegistry.getById(id);
+        if (def && def.harvester) hm.set(k, def.facing);
+      }
+      this.dimensionHarvesters.set(dim, hm);
+    }
+    this.harvesters = this.dimBucket(this.dimensionHarvesters);
     // B51 R3：工业方块索引纯派生自方块账本（工业方块只会由玩家放下 → 必在账本里）
     this.dimensionIndustryBlocks.clear();
     for (const [dim, m] of this.dimensionBlocks) {
@@ -291,6 +304,7 @@ export class World {
     c.dirty = true;
     if (recordMod) this.modifiedBlocks.set(`${gx},${gy},${gz}`, id);
     this.trackHopper(gx, gy, gz, id); // B36 F-1：漏斗索引随写方块增删（全写入口收口于此）
+    this.trackHarvester(gx, gy, gz, id); // B53 R2：收割机索引同源维护
     this.trackIndustry(gx, gy, gz, id); // B51 R3：工业方块索引（拓扑只在方块变化时标脏重建）
     if (this.onLocalBlockChange) this.onLocalBlockChange(gx, gy, gz, id);
     // 作物登记表维护（种/长/收/破坏/远端同步全路径收口于此）
@@ -367,6 +381,14 @@ export class World {
     const k = `${x},${y},${z}`;
     if (isHopperFamilyDef(def)) this.hoppers.set(k, def.facing);
     else if (this.hoppers.size) this.hoppers.delete(k);
+  }
+
+  // B53 R2：收割机索引（服务器侧不建这张表——联机收割是主机权威，服务器只校验入箱消息）
+  trackHarvester(x, y, z, id) {
+    const def = BlockRegistry.getById(id);
+    const k = `${x},${y},${z}`;
+    if (def && def.harvester) this.harvesters.set(k, def.facing);
+    else if (this.harvesters.size) this.harvesters.delete(k);
   }
 
   // ── 工业机器（B51 R3；状态由 IndustrySystem 推进，这里只做账本存取）──

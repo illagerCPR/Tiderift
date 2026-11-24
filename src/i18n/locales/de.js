@@ -828,4 +828,6 @@ export const de = {
   '分拣漏斗': 'Filtertrichter',
   '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'Der letzte Platz ist der Filter: Nur was dort liegt, wird bewegt. Leer = alles durch.',
   '过滤': 'Filter',
+  // ── B53 R2 收割机 ──
+  '刀口朝田，出料朝箱：熟一垄，收一垄。': 'Die Klinge zum Feld, der Ausgang zur Truhe: eine reife Reihe, eine Ernte.',
 };

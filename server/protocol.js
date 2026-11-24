@@ -45,6 +45,10 @@ export const MSG = {
   // 服务器永远拥有漏斗容器本体（CONTAINER_SET 对它仍然整箱拒绝），这里只写最后一格。
   // C2S {x,y,z,stack:{name,count,data}|null}（null = 清空过滤）；服务器改完广播权威 CONTAINER_SET。
   HOPPER_FILTER: 'hopper_filter',
+  // B53 R2：收割机产物入箱。联机收割是主机权威（服务器看不到地形作物），主机收完上报，
+  // 服务器校验"该格是容器 + 六邻有一台朝外开刀的收割机"后写进权威账本并广播；
+  // C2S {x,y,z,items:[{name,count}]}（items 最多 4 项，溢出部分服务器转成掉落物）。
+  HARVEST_OUTPUT: 'harvest_output',
   // B36 F-2：熔炉内容首次上联机账本（服务器权威烧炼进度与产出，客户端只显示）
   // C2S {x,y,z}：请求该熔炉的权威状态（只回本人）
   FURNACE_OPEN: 'furnace_open',

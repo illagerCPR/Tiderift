@@ -6,7 +6,7 @@ import { PROTOCOL_VERSION } from './protocol.js';
 import { assert, finish, counts } from './test-lib.mjs';
 import '../src/blocks/BlockDefs.js'; // 方块 id 由注册顺序决定：直接读同一份注册表，避免硬编码
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
-import { HOPPER_FACING_BY_ID, FILTER_HOPPER_FACING_BY_ID, FLOW_HOPPER_LIMIT } from './flow.js';
+import { HOPPER_FACING_BY_ID, FILTER_HOPPER_FACING_BY_ID, HARVESTER_FACING_BY_ID, FLOW_HOPPER_LIMIT } from './flow.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -159,6 +159,36 @@ await sleep(350);
 assert('普通漏斗不接受过滤设置',
   B.queue.filter((m) => at(m, 10, 70, 10) && m.items && m.items[26]).length === 0 &&
   B.queue.filter((m) => at(m, 10, 70, 10)).length === beforePlain);
+
+// ── B53 R2 收割机：产物入箱由服务器写权威账本（收割本身是主机权威）──────────────────
+const HARVESTER_S_ID = [...HARVESTER_FACING_BY_ID].find(([, f]) => f === 's')[0];
+const CROP_ID = BlockRegistry.getByName('wheat_crop_7').id;
+send(A, 'block_set', { x: 30, y: 70, z: 10, id: HARVESTER_S_ID });   // 朝 s：前方 z+1、背面 z-1
+send(A, 'block_set', { x: 30, y: 70, z: 9, id: CHEST_ID });          // 背面容器（收割产物入这里）
+send(A, 'block_set', { x: 30, y: 70, z: 11, id: CROP_ID });          // 正前方的成熟作物
+send(A, 'block_set', { x: 31, y: 70, z: 9, id: CHEST_ID });          // 旁边一只无关箱子
+await sleep(300);
+send(A, 'harvest_output', { x: 30, y: 70, z: 9, items: [{ name: 'wheat', count: 1 }, { name: 'wheat_seeds', count: 2 }] });
+const deposited = await waitFor(B, (m) => at(m, 30, 70, 9) &&
+  Array.isArray(m.items) && m.items.some((x) => x && x.name === 'wheat'), 2500);
+assert('收割产物写进权威账本并广播', !!deposited);
+assert('上报多少就写多少（种子×2）', !!deposited && deposited.items.some((x) => x && x.name === 'wheat_seeds' && x.count === 2));
+
+// 没有收割机对着的容器：机器入箱消息被忽略
+const beforeOrphan = B.queue.filter((m) => at(m, 31, 70, 9)).length;
+send(A, 'harvest_output', { x: 31, y: 70, z: 9, items: [{ name: 'diamond', count: 1 }] });
+await sleep(350);
+assert('没有收割机对着的容器不接受机器入箱',
+  B.queue.filter((m) => at(m, 31, 70, 9)).length === beforeOrphan);
+
+// 容器塞满 → 溢出转成掉落物（不吞玩家收成）
+await sleep(1100); // 等过漏斗热窗口（该箱刚被机器写过，客户端改写在 1s 内会被拒）
+const stones = new Array(27).fill(null).map(() => ({ name: 'stone', count: 64 }));
+send(A, 'container_set', { x: 30, y: 70, z: 9, items: stones });
+await sleep(300);
+send(A, 'harvest_output', { x: 30, y: 70, z: 9, items: [{ name: 'wheat', count: 3 }] });
+const overflowDrop = await waitFor(B, (m) => m.t === 'drop_spawn' && m.name === 'wheat' && m.count === 3, 2500);
+assert('容器满 → 溢出转掉落物（不吞收成）', !!overflowDrop);
 
 // 收尾：断线（世界由跑批脚本统一清理）
 for (const c of [A, B, C]) c.ws.close();

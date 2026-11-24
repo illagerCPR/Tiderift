@@ -828,4 +828,6 @@ export const fr = {
   '分拣漏斗': 'Entonnoir filtrant',
   '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'La dernière case est le filtre : cet entonnoir ne déplace que l\'objet qui s\'y trouve. Vide = tout passe.',
   '过滤': 'Filtre',
+  // ── B53 R2 收割机 ──
+  '刀口朝田，出料朝箱：熟一垄，收一垄。': 'La lame vers le champ, la sortie vers le coffre : une rangée mûre, une récolte.',
 };

@@ -19,6 +19,7 @@ import { tickFurnaceState } from '../core/FurnaceTick.js';
 import { doorId, trapdoorId, bedId, furnaceLitId } from '../core/blockShape.js';
 import { audio } from '../audio/AudioEngine.js';
 import { tickHopperFlow, HOPPER_INTERVAL_MS } from '../core/HopperFlow.js';
+import { tickHarvesters, HARVEST_INTERVAL_MS } from '../core/Harvester.js';
 import { parsePosKey } from '../core/posKey.js';
 import { BLOCK_CENTER } from './constants.js';
 
@@ -207,6 +208,42 @@ export class Placement {
       getFurnace: (x, y, z) => world.getFurnace(x, y, z),
       ensureFurnace: (x, y, z) => (isFurnaceAt(x, y, z) ? world.getOrOpenFurnace(x, y, z) : null),
       isFilterHopper: isFilterHopperAt,
+    });
+  }
+
+  // B53 R2：本地收割（单机与联机主机共用同一条门控——作物生长本来就只有主机在跑，
+  // 收割跟着走才不会各端各收一遍把产物翻倍）。非主机早退。
+  updateHarvesters(dt) {
+    const g = this.game;
+    if (!g.world || !g.world.harvesters || !g.world.harvesters.size) return;
+    if (g.networkMode && g.net && !g.net.isHost) return;
+    this._harvestTimer = Math.max(0, (this._harvestTimer || 0) - dt);
+    if (this._harvestTimer > 0) return;
+    this._harvestTimer = HARVEST_INTERVAL_MS / 1000;
+    const world = g.world;
+    const list = [];
+    for (const [key, facing] of world.harvesters) {
+      const p = parsePosKey(key);
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
+      list.push({ x: p.x, y: p.y, z: p.z, facing });
+    }
+    if (!list.length) return;
+    // 固定顺序 → 同一拍内多台机器的结果确定
+    list.sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.z - b.z));
+    const isContainerAt = (x, y, z) => {
+      const def = BlockRegistry.getById(world.getBlock(x, y, z));
+      return !!(def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.filterHopper || def.name === 'shulker_box'));
+    };
+    tickHarvesters(list, {
+      getBlock: (x, y, z) => world.getBlock(x, y, z),
+      isLoaded: (x, z) => !!world.getChunk(x >> 4, z >> 4),
+      ensureContainer: (x, y, z) => (isContainerAt(x, y, z) ? world.getOrOpenContainer(x, y, z) : null),
+      harvest: (x, y, z) => world.setBlock(x, y, z, 0),
+      // 联机：主机本地容器已经写好，这条上报让服务器把产物写进权威账本并广播（避免被
+      // 漏斗管道的 container_set 拒绝口吞掉产物）。单机 noop。
+      onDeposit: (x, y, z, drops) => {
+        if (g.networkMode && g.net && g.net.sendHarvestOutput) g.net.sendHarvestOutput(x, y, z, drops);
+      },
     });
   }
 

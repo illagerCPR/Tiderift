@@ -8,7 +8,8 @@ import { safeBiomeScale } from '../src/world/biomes.js';
 // B35 D：遗迹键/维度作用域与客户端共用同一份纯模块（服务器不重复实现一套键规则）
 import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX } from '../src/core/Ruins.js';
 // B36 F-1：漏斗搬运——方块 id 表与纯搬运算法（服务器权威 tick；客户端只播动画不本地转移）
-import { tickHopperFlow, hopperFacingOf, isHopperId, isFilterHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
+import { tickHopperFlow, hopperFacingOf, isHopperId, isFilterHopperId, isContainerId, harvesterFacingOf, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
+import { insertAllIntoSlots } from '../src/core/Harvester.js';
 // B36 F-2：熔炉账本——方块 id 表与烧炼推进纯算法（服务器权威进度；客户端只显示不推进）
 import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnaceBlockId, FURNACE_LIMIT, FURNACE_SYNC_MS } from './furnace.js';
 // B51 R3：潮工机器——id 表 + 纯算法（服务器权威推进；客户端只显示）
@@ -1354,6 +1355,7 @@ export class Room {
       case MSG.BLOCK_SET_BATCH: this.onBlockSetBatch(player, msg); break;
       case MSG.CONTAINER_SET: this.onContainerSet(player, msg); break;
       case MSG.HOPPER_FILTER: this.onHopperFilter(player, msg); break; // B53 R1
+      case MSG.HARVEST_OUTPUT: this.onHarvestOutput(player, msg); break; // B53 R2
       case MSG.FURNACE_OPEN: this.onFurnaceOpen(player, msg); break;
       case MSG.INDUSTRY_ACTION: this.onIndustryAction(player, msg); break; // B51 R3
       case MSG.INDUSTRY_OPEN: this.onIndustryOpen(player, msg); break;     // B52 R2
@@ -1775,6 +1777,48 @@ export class Room {
     items[26] = st;
     // 广播给全维度（**含发起者**）：发起者的本地视图是乐观写入，由这条权威内容收敛
     this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: player.id, d: dim }, dim);
+    this.saveSoon();
+  }
+
+  // B53 R2：收割机产物入箱。联机收割是**主机权威**（服务器看不到地形作物，只有方块账本），
+  // 所以产物由主机上报，服务器只做三件事：认容器格、认旁边那台朝外开刀的收割机、
+  // 把物品写进权威账本并广播。校验不过就静默丢弃（轻信任模型下与 block_set 同级）；
+  // 装不下的部分转成掉落物——宁可掉在地上，也不吞掉玩家收成。
+  onHarvestOutput(player, msg) {
+    const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
+    if (!Array.isArray(msg.items) || !msg.items.length || msg.items.length > 4) return;
+    const dim = player.dim;
+    const key = `${x},${y},${z}`;
+    const blocks = this.dimBucket(this.dimensionBlocks, dim);
+    if (!isContainerId(blocks.has(key) ? blocks.get(key) : -1)) return;
+    // 容器必须在某台收割机的正背面：机器在「容器 + 朝向」那一格，且机器朝向就是那个方向
+    let fromHarvester = false;
+    for (const [dx, dz, facing] of [[0, 1, 's'], [0, -1, 'n'], [1, 0, 'e'], [-1, 0, 'w']]) {
+      const mid = blocks.get(`${x + dx},${y},${z + dz}`);
+      if (mid && harvesterFacingOf(mid) === facing) { fromHarvester = true; break; }
+    }
+    if (!fromHarvester) return;
+    const drops = [];
+    for (const raw of msg.items) {
+      const st = this.sanitizeStack(raw);
+      if (st) drops.push(st);
+    }
+    if (!drops.length) return;
+    const containers = this.dimBucket(this.dimensionContainers, dim);
+    let items = containers.get(key);
+    if (!items) {
+      items = new Array(27).fill(null);
+      containers.set(key, items);
+    }
+    const leftover = insertAllIntoSlots(items, drops);
+    this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: player.id, d: dim }, dim);
+    this._flowHot.set(`${dim}|${key}`, Date.now()); // 刚被机器写过：客户端旧视图不许覆盖
+    for (const left of leftover) {
+      const did = this.nextDropId++;
+      const entry = { x: x + 0.5, y: y + 0.5, z: z + 0.5, name: left.name, count: left.count, dim, spawnedAt: Date.now() };
+      this.drops.set(did, entry);
+      this.broadcastDim(MSG.DROP_SPAWN, this.dropMessage(did, entry), dim);
+    }
     this.saveSoon();
   }
 

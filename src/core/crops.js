@@ -29,6 +29,21 @@ export function cropIdAtStage(stage) {
   return stageIds[stage];
 }
 
+// B53 R2：成熟判定（收割机只认这一档；手割/催熟也共用同一张阶段表）
+export function isMatureCropId(id) {
+  return id === cropIdAtStage(CROP_MAX_STAGE);
+}
+
+// B53 R2：成熟作物的产物表——手割（Game._blockDrops）与收割机共用这一份，
+// 保证"机器收的和人收的一模一样"。rng 注入以保确定性（默认 Math.random）。
+export function cropHarvestDrops(name, rng = Math.random) {
+  if (name !== `wheat_crop_${CROP_MAX_STAGE}`) return [];
+  return [
+    { name: 'wheat', count: 1 },
+    { name: 'wheat_seeds', count: 1 + Math.floor(rng() * 3) },
+  ];
+}
+
 // 水分：耕地所在层 9×9 方形域内有水（原版 4 格曼哈顿的简化；命中即生长概率翻倍）
 export function isHydrated(world, x, y, z) {
   for (let dx = -4; dx <= 4; dx++) {

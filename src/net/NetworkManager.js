@@ -1325,6 +1325,16 @@ export class NetworkManager {
     });
   }
 
+  // B53 R2：收割机产物入箱（联机主机上报；服务器写权威账本后广播 container_set）
+  sendHarvestOutput(x, y, z, drops) {
+    const items = (drops || [])
+      .filter((d) => d && d.name && d.count > 0)
+      .slice(0, 4)
+      .map((d) => ({ name: d.name, count: d.count }));
+    if (!items.length) return;
+    this._send(MSG.HARVEST_OUTPUT, { x, y, z, items });
+  }
+
   // B36 F-2：熔炉内容上报（只报三个内容槽——进度字段服务器自有，客户端发什么都不采信）
   sendFurnaceSet(x, y, z, st) {
     const pack = (s) => (s ? { name: s.name, count: s.count, data: s.data ?? null } : null);

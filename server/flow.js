@@ -22,6 +22,10 @@ export const CONTAINER_BLOCK_IDS = new Set([
   170, 197, 198, 199, 171, 217, 218, 219, 220, 230, 231, 232, 233,
 ]);
 
+// 收割机家族（B53 R2）：同构朝向表。收割本身是**主机权威**（服务器看不到地形作物），
+// 服务器只在产物入箱时用这张表核对"那格旁边确实有一台朝外开刀的收割机"。
+export const HARVESTER_FACING_BY_ID = new Map([[234, 'n'], [235, 's'], [236, 'e'], [237, 'w']]);
+
 // 每房间漏斗上限（超出拒绝放置并提示；普通漏斗与分拣漏斗合计）
 export const FLOW_HOPPER_LIMIT = 64;
 
@@ -32,3 +36,5 @@ export function hopperFacingOf(id) { return ALL_HOPPER_FACING.get(id) || null; }
 export function isHopperId(id) { return ALL_HOPPER_FACING.has(id); }
 export function isFilterHopperId(id) { return FILTER_HOPPER_FACING_BY_ID.has(id); }
 export function isContainerId(id) { return CONTAINER_BLOCK_IDS.has(id); }
+export function harvesterFacingOf(id) { return HARVESTER_FACING_BY_ID.get(id) || null; }
+export function isHarvesterId(id) { return HARVESTER_FACING_BY_ID.has(id); }

@@ -191,6 +191,13 @@ addShaped('drive_clutch', 1, [
   'iron_ingot', 'stone', 'iron_ingot',
 ], ['industry']);
 
+// ── B53 R2 收割机（同属 industry 归属）：铁框 + 两根传动轴 + 锄刃 + 一只漏斗接箱 ──
+addShaped('harvester', 1, [
+  'iron_ingot', 'iron_ingot', 'iron_ingot',
+  'drive_shaft', 'iron_hoe', 'drive_shaft',
+  'stone', 'hopper', 'stone',
+], ['industry']);
+
 // ── B53 R1 分拣漏斗（同属 industry 归属）：漏斗 + 两锭铜做筛面 + 中间一格空出"过滤口" ──
 addShaped('filter_hopper', 1, [
   'copper_ingot', null, 'copper_ingot',

@@ -828,4 +828,6 @@ export const es = {
   '分拣漏斗': 'Tolva clasificadora',
   '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'La última casilla es el filtro: la tolva solo mueve lo que pongas ahí. Vacía = deja pasar todo.',
   '过滤': 'Filtro',
+  // ── B53 R2 收割机 ──
+  '刀口朝田，出料朝箱：熟一垄，收一垄。': 'La cuchilla al campo, la salida al cofre: una hilera madura, una cosecha.',
 };

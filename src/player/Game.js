@@ -21,7 +21,7 @@ import { SoulView } from './SoulView.js';
 import { AetherFinale } from './AetherFinale.js';
 import { InteractionController } from './InteractionController.js';
 import { TntSystem } from './TntSystem.js';
-import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated } from '../core/crops.js';
+import { CROP_MAX_STAGE, isCropId, cropStageOf, cropIdAtStage, isHydrated, cropHarvestDrops } from '../core/crops.js';
 import { Controls } from './Controls.js';
 import { Inventory } from './Inventory.js';
 import { Raycast, raySphereHit } from './Raycast.js';
@@ -1842,6 +1842,8 @@ export class Game {
     this.updateFurnaces(dt);
     // B36 F-1：单机漏斗搬运（联机时早退，权威在服务器 tick）
     this.updateHopperFlow(dt);
+    // B53 R2：本地收割（单机 + 联机主机；产物写背面相邻容器）
+    this.updateHarvesters(dt);
     // B51 R3：潮工推进（联机时早退，权威在服务器 industry sweep）
     if (this.industry) this.industry.update(dt);
     // B51 R4：回响恢复 / 缓降计时 / 弹道推进 / 回响 HUD
@@ -2203,6 +2205,9 @@ export class Game {
 
   // updateHopperFlow（逻辑在 Placement，见 src/player/Placement.js）
   updateHopperFlow(dt) { return this.placement.updateHopperFlow(dt); }
+
+  // updateHarvesters（逻辑在 Placement，见 src/player/Placement.js）
+  updateHarvesters(dt) { return this.placement.updateHarvesters(dt); }
 
   // syncFurnaceLit（逻辑在 Placement，见 src/player/Placement.js）
   _syncFurnaceLit(key, st) { return this.placement.syncFurnaceLit(key, st); }
@@ -2640,12 +2645,8 @@ export class Game {
     // B27 门/床/活板门家族：任一状态破坏只掉 1 个基础物品（另一半连动消失不重复掉）
     if (def.baseBlock) return [{ name: def.baseBlock, count: 1 }];
     // 小麦成熟：小麦×1 + 种子 1-3（原版式）；未熟：仅种子×1
-    if (def.name === `wheat_crop_${CROP_MAX_STAGE}`) {
-      return [
-        { name: 'wheat', count: 1 },
-        { name: 'wheat_seeds', count: 1 + Math.floor(Math.random() * 3) },
-      ];
-    }
+    // B53 R2：成熟产物表与收割机同源（crops.js），机器收的和人收的必须一模一样
+    if (def.name === `wheat_crop_${CROP_MAX_STAGE}`) return cropHarvestDrops(def.name);
     if (isCropId(BlockRegistry.getId(def.name))) {
       return [{ name: 'wheat_seeds', count: 1 }];
     }

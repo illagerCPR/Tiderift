@@ -828,4 +828,6 @@ export const en = {
   '分拣漏斗': 'Filter Hopper',
   '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'The last slot is the filter: whatever you put there is the only thing this hopper moves. Empty = pass everything.',
   '过滤': 'Filter',
+  // ── B53 R2 收割机 ──
+  '刀口朝田，出料朝箱：熟一垄，收一垄。': 'Blade to the field, output to the chest: one ripe row, one harvest.',
 };
