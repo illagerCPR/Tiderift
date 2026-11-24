@@ -230,7 +230,7 @@
 | 原初之潮 / 原初纹章 | 身份层 | Primordial Tide / Primordial Emblem | **已定型**（F1 入码 names.js 11 列 + 纹章 lore 承载终章；候潮 = 状态章 tide_waiting） |
 | 鲸骨冢 / 鲸骨块 / 归云 | 身份层 | Whalebone Barrow / Whalebone Block / Returned-to-Cloud | **已定型**（Build 19 K1 入码 names.js 11 列；设计方案 docs/archives/whale-barrow-design.md） |
 | 长明灯石（荧石重释）/ 溺亡骨泥（灵魂沙重释） | 来历层 | 仅 lore 文案，不改 item id / displayName | 随 P1 |
-| 潮工 / 潮压 / 回响 / 回响焦点 | 身份层 | Tidework / Tide Pressure / Echo / Echo Focus | **已定型**（Build 51 R3/R4 入码：`tide_boiler` 潮压锅炉 / `drive_shaft` 传动轴 / `crusher` 碎石机 / `resonance_table` 回响仪台 / `echo_dust` 回响尘 / `gale_focus` 风潮焦点 / `ember_focus` 坠潮焦点；界面主模块名仍用用户指定的「工业 / 魔法」） |
+| 潮工 / 潮压 / 回响 / 回响焦点 | 身份层 | Tidework / Tide Pressure / Echo / Echo Focus | **已定型**（Build 51 R3/R4 入码：`tide_boiler` 潮压锅炉 / `drive_shaft` 传动轴 / `crusher` 碎石机 / `tide_cutter` 切割机 / `drive_clutch` 离合闸 / `resonance_table` 回响仪台 / `echo_dust` 回响尘 / `gale_focus` 风潮焦点 / `ember_focus` 坠潮焦点；界面主模块名仍用用户指定的「工业 / 魔法」） |
 
 ---
 

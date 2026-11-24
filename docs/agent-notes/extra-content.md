@@ -227,3 +227,62 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 - 代码 ID（`industry` / `magic`，方块/物品名、协议字段）一经落地不随显示名变动；显示名走 i18n 键
   （`EXTRA_LABEL_KEYS`，界面主模块名始终是用户指定的「工业 / 魔法」）。
 - 候选叙事术语（潮工 / 潮压 / 回响 / 回响焦点）在 R3/R4 落地前先登记，不边写边改。
+
+## 十、B52 工业生产网络（切割机 / 离合闸 / 机器界面 / 网络不变量）
+
+### 10.1 内容与数值（单点真相）
+
+- `src/content/industry/defs.js` 是唯一数值来源：`MACHINE_DEMAND`（crusher 2 / cutter 3，boiler/shaft/clutch 0）、
+  `CRUSH_TIME=4`、`CUT_TIME=3`、`MACHINE_SLOTS`、`CUT_RECIPES`（原木→6 板 / 骨→3 骨粉 / 石→石砖）、
+  `CRUSH_BYPRODUCTS`（圆石→燧石、砾石→粘土球，每 8 个 +1）、`recipesFor(kind)`（界面与算法同源）。
+- **切割表与碎石表互不回退**：`processorRecipeFor(kind, name)` 按机器种类选表；碎石机拿原木 = 无配方
+  （进度回退），切割机拿圆石同理。别写成"两张表合并"。
+- 副产物进独立的 `bonus` 槽：不与主产物混栈；每完成一个成品 `cycles++`，`cycles % every === 0` 才给 1 个；
+  副产槽满就丢掉这一次（**不欠账、不吞主产物**）。`cycles` 随状态持久化，清洗钳到 ≤1e9。
+
+### 10.2 离合闸 = 网络闸门（不是机器）
+
+- 状态 `{kind:'clutch', manual, powered}`；`clutchEngaged(st) = manual !== false && powered !== true`，
+  **红石信号优先**（通电必断，手动拗不过），缺状态按接通（不静默断网）。
+- `buildNetworks(blocks, states)` 里断开的闸**自身留在网内但不导流**（`conducts()` 早退）——等于把轴锯断，
+  两侧成为两个连通分量；不要用"删掉这个节点"实现，会让界面节点数对不上。
+- `pendingClutchSignals(blocks, states, powerAt)` 是红石观察的纯函数：只产出"本地观测 ≠ 已知状态"的条目。
+  单机写状态 + `markDirty()`；联机只 `sendIndustryAction(op:'signal')`（服务器权威），1.5s 防重复等回执。
+- 红石**只控制通断**，不控制转速：转速仍由全网供给/需求决定。
+
+### 10.3 机器界面（B52 R2）
+
+- 右键机器（锅炉/碎石机/切割机）→ `MachineScreen`；**潜行+右键**保留 B51 快捷投料/取物；离合闸右键直接拨杆。
+- 界面数据：`machineStatus(kind, st, net)` 派生 `recipe / progress / reason / supply / demand / efficiency`；
+  `reason` 是稳定代码（running/ready/no-input/no-recipe/output-full/no-fuel/no-water/no-power/over-limit/
+  disengaged/stalled/idle），文案在 `MachineScreen.reasonText()` 用静态 `t('…')` 分支。
+- 交互是**点格投/取**：点背包物品 → `insert`（自动路由到能收的槽，带 `inv` 让回执扣对应槽）；
+  点机器槽位 → `extract`（按 `slot`）。不做拖拽游标（与 FurnaceScreen 不同，别照抄 CursorOverlay）。
+- 联机：`INDUSTRY_OPEN`（打开 + 每 0.9s）由服务器**定向**回一条 `INDUSTRY_STATE`（无 `res`，带 `net`）。
+- **槽位校验**：服务器对显式给的 `slot` 做 `isMachineSlot` 校验，不属于该机器直接回 `invalid`；
+  **不要**回落到输出槽（一次点错会取走别的东西）。
+- `net`（供需摘要）由 `netInfoFor(networks, key)` 提供；`buildNetworks` 建图时就会调 `evaluateNetworks`
+  ——否则刚重建拓扑的一瞬间界面会读到 supply=0（服务器 tick 之窗）。
+
+### 10.4 网络不变量（回归守着）
+
+- 环路：BFS 去重，节点只计一次；`comp.nodes.length > 128` → `overLimit`，整网效率强制 0。
+- 跨维隔离：每维各一张 `dimensionIndustryBlocks` / 拓扑缓存，`tickIndustrySweep` 按维遍历，绝不跨维并图。
+- 拆轴：只让被切断的一侧失去供给；另一侧继续推进（进度保温，不丢料、不产出）。
+- 断开期间：进度**保温**（不推进也不回退），上游锅炉照常燃烧（`burnTime` 继续走）；重新接通继续。
+- 魔法关闭的世界不影响工业：`server/test-industry.mjs` 整轮就是 `{industry:true}`（magic 未启用）。
+
+### 10.5 i18n 教训（B51 遗留，R2 修）
+
+- 机器回执文案曾是模块级 `CODE_TEXT` 表 + `t(text)` 动态键 → `tests/i18n-parity.mjs` 扫不到，
+  10 个语言包全漏（界面静默回落中文）。**规则**：UI 文案表一律写成 `switch` 里的字面量 `t('…')`；
+  只有"表由别处导出、并在 parity 测试里登记"的动态键（如 `SAVE_IMPORT_ERROR_KEYS`）才允许动态。
+
+### 10.6 回归
+
+| 套件 | 守什么 |
+|---|---|
+| `tests/build52-industry-unit.mjs` | 228/229 ID 钉值、切割/碎石配方类型、网络闸门与环路与跨维、副产物确定性、指定槽位、机器状态原因、清洗与存档、纹理键 |
+| `tests/build52-machine-ui.mjs` | 原因/槽位文案全覆盖、界面数据同源、右键与潜行分流、INDUSTRY_OPEN 与槽位校验、生命周期接线 |
+| `tests/build52-network.mjs` | 红石观察纯函数、断开保温、两线并行、拆轴只影响子网、源码绊线 |
+| `server/test-industry.mjs`（第七段） | INDUSTRY_OPEN 权威状态+网络摘要、指定槽位、切割机产出、离合闸红石优先 |
