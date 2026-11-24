@@ -5,6 +5,7 @@
 //       ④ 两人同时取物不复制（一份产物只能被取走一次）
 //       ⑤ 拆机器 → 方块消失 + 剩余内容散落
 //       ⑥ 落盘快照携带工业账本，重启恢复后一致
+//       ⑦ B52：机器界面协议（INDUSTRY_OPEN 权威状态+网络摘要 / 指定槽位 / 切割机 / 离合闸通断）
 // 用法：node server/test-industry.mjs（先启动 server/index.mjs，端口 3001）
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from './protocol.js';
@@ -21,7 +22,7 @@ const ROOM_OFF = `ind-off-${STAMP}`;
 const BOTH = { schema: 1, ids: ['industry', 'magic'] };
 
 // 方块 id（与 BlockDefs 注册顺序一致，tests/industry-unit.mjs 有钉值断言）
-const ID = { boiler: 224, shaft: 225, crusher: 226, air: 0 };
+const ID = { boiler: 224, shaft: 225, crusher: 226, cutter: 228, clutch: 229, air: 0 };
 const BX = 8, BY = 70, BZ = 8; // 测试用坐标（远离出生点即可）
 
 const CONNS = [];
@@ -66,9 +67,9 @@ const waitRes = (p, timeout = 3000) => {
   return waitFor(p, (m) => m.t === 'industry_state' && !!m.res, timeout);
 };
 
-async function act(p, x, y, z, op, name = null, count = 1) {
+async function act(p, x, y, z, op, name = null, count = 1, slot = null) {
   p.inbox.length = 0;
-  send(p, 'industry_action', { x, y, z, op, name, count });
+  send(p, 'industry_action', { x, y, z, op, name, count, ...(slot ? { slot } : {}) });
   return waitRes(p);
 }
 
@@ -172,6 +173,82 @@ const host = await connect(`host-${STAMP}`);
   // 账本条目应已删除：再投料不会再起炉
   const orphan = await act(host, BX, BY, BZ, 'insert', 'coal', 1);
   assert('锅炉账本已清（幽灵机器不会复活）', !orphan);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ⑦ B52：机器界面协议（打开拉状态 / 指定槽位 / 切割机 / 离合闸）
+// ══════════════════════════════════════════════════════════════════════════
+{
+  // 打开机器界面：定向回一条不带 res 的权威状态 + 网络摘要
+  async function openAt(p, x, y, z, timeout = 2500) {
+    p.inbox.length = 0;
+    p.waiters.length = 0;
+    send(p, 'industry_open', { x, y, z });
+    return waitFor(p, (m) => m.t === 'industry_state' && m.x === x && m.y === y && m.z === z && !m.res, timeout);
+  }
+  const CZ = BZ + 4; // 与前面测试错开的一排
+  place(host, BX, BY, CZ, ID.boiler);
+  place(host, BX + 1, BY, CZ, ID.shaft);
+  place(host, BX + 2, BY, CZ, ID.cutter);
+  await sleep(300);
+  const c1 = await act(host, BX, BY, CZ, 'insert', 'coal', 2);
+  const c2 = await act(host, BX, BY, CZ, 'insert', 'water_bucket', 2);
+  assert('切割线：锅炉投料成功', !!c1 && c1.res.code === 'inserted' && !!c2 && c2.res.code === 'inserted');
+
+  // 指定槽位投料（机器界面点输入槽）+ 背包槽位回显
+  host.inbox.length = 0;
+  send(host, 'industry_action', { x: BX + 2, y: BY, z: CZ, op: 'insert', slot: 'input', name: 'oak_log', count: 4, inv: 5 });
+  const c3 = await waitRes(host);
+  assert('指定输入槽投原木', !!c3 && c3.res.code === 'inserted' && c3.res.applied === 4);
+  assert('回执回显背包槽位（客户端扣料用）', !!c3 && c3.res.inv === 5);
+  const c4 = await act(host, BX + 2, BY, CZ, 'insert', 'oak_log', 1, 'bonus');
+  assert('副产槽只出不进（指定槽位被拒）', !!c4 && c4.res.code === 'invalid');
+
+  // 界面打开：拿到状态与网络摘要
+  await sleep(400);
+  const opened = await openAt(host, BX + 2, BY, CZ);
+  assert('INDUSTRY_OPEN 回一条权威状态（无 res）', !!opened && !!opened.state);
+  assert('INDUSTRY_OPEN 带网络摘要', !!opened && !!opened.net && opened.net.nodes >= 3);
+  assert('网络供给来自在烧锅炉', !!opened && opened.net.supply > 0);
+
+  // 等切割完成，按指定槽位取主产物
+  await sleep(3600);
+  const cut = await act(host, BX + 2, BY, CZ, 'extract', null, 64, 'output');
+  assert('切割机产出木板（按槽位取出）', !!cut && cut.res.code === 'extracted' && cut.res.items[0].name === 'oak_planks');
+  const wrongSlot = await act(host, BX + 2, BY, CZ, 'extract', null, 1, 'water');
+  assert('切割机没有 water 槽（非法槽位被拒）', !!wrongSlot && wrongSlot.res.code === 'invalid');
+
+  // 离合闸：串在锅炉与碎石机之间，断开 → 下游无供给
+  const DZ = BZ + 8;
+  place(host, BX, BY, DZ, ID.boiler);
+  place(host, BX + 1, BY, DZ, ID.shaft);
+  place(host, BX + 2, BY, DZ, ID.clutch);
+  place(host, BX + 3, BY, DZ, ID.crusher);
+  await sleep(300);
+  await act(host, BX, BY, DZ, 'insert', 'coal', 2);
+  await act(host, BX, BY, DZ, 'insert', 'water_bucket', 2);
+  await sleep(500);
+  const supplyOn = await openAt(host, BX + 3, BY, DZ);
+  assert('离合闸接通：下游有潮压', !!supplyOn && !!supplyOn.net && supplyOn.net.supply > 0);
+  const tog = await act(host, BX + 2, BY, DZ, 'toggle');
+  assert('离合闸手动拨到断开（服务器回执 switched）', !!tog && tog.res.code === 'switched');
+  const supplyOff = await openAt(host, BX + 3, BY, DZ);
+  assert('离合闸断开：下游没有潮压（网络被锯断）', !!supplyOff && !!supplyOff.net && supplyOff.net.supply === 0);
+
+  // 红石信号优先：手动拨回接通后，通电仍为断开
+  await act(host, BX + 2, BY, DZ, 'toggle');
+  const signalAt = async (on) => {
+    host.inbox.length = 0;
+    send(host, 'industry_action', { x: BX + 2, y: BY, z: DZ, op: 'signal', on });
+    return waitRes(host);
+  };
+  const sigOn = await signalAt(true);
+  assert('红石信号写入回执', !!sigOn && sigOn.res.code === 'switched');
+  const supplySig = await openAt(host, BX + 3, BY, DZ);
+  assert('红石信号优先：手动接通也被切断', !!supplySig && !!supplySig.net && supplySig.net.supply === 0);
+  await signalAt(false);
+  const supplyBack = await openAt(host, BX + 3, BY, DZ);
+  assert('红石断电后恢复手动接通', !!supplyBack && !!supplyBack.net && supplyBack.net.supply > 0);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

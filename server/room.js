@@ -15,6 +15,7 @@ import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnac
 import {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor, sanitizeMachineState,
   machineSig, spillStacks, industryKindOf, isIndustryId, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
+  netInfoFor, toggleClutch, setClutchPowered, isMachineSlot,
 } from './industry.js';
 
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
@@ -1354,6 +1355,7 @@ export class Room {
       case MSG.CONTAINER_SET: this.onContainerSet(player, msg); break;
       case MSG.FURNACE_OPEN: this.onFurnaceOpen(player, msg); break;
       case MSG.INDUSTRY_ACTION: this.onIndustryAction(player, msg); break; // B51 R3
+      case MSG.INDUSTRY_OPEN: this.onIndustryOpen(player, msg); break;     // B52 R2
       case MSG.MAGIC_CAST: this.onMagicCast(player, msg); break;          // B51 R4
       case MSG.FURNACE_SET: this.onFurnaceSet(player, msg); break;
       case MSG.DROP_SPAWN: this.onDropSpawn(player, msg); break;
@@ -1988,8 +1990,17 @@ export class Room {
 
   // ── B51 R3 潮工账本（服务器权威推进与内容同步）───────────────────────────────
   // 消息形状：{x,y,z,d,by,state,res?}；res 只随发起者的那一份下发（投料/取物回执）。
-  industryMessage(x, y, z, dim, st, by) {
-    return { x, y, z, d: dim, by, state: st };
+  industryMessage(x, y, z, dim, st, by, net = null) {
+    const msg = { x, y, z, d: dim, by, state: st };
+    if (net) msg.net = net; // B52 R2：供机器界面显示供需（省略字段 = 不提供，旧客户端忽略）
+    return msg;
+  }
+
+  // 某台机器所在网络的供需摘要（机器界面用；只读，不重建拓扑）
+  _industryNetInfo(dim, key) {
+    const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
+    if (!idx.has(key)) return null;
+    return netInfoFor(this._industryNetworks(dim), key);
   }
 
   // 方块索引与账本同步（单格与批量路径共用）：进入/离开工业家族都要更新
@@ -2040,18 +2051,56 @@ export class Room {
       }
       return;
     }
+    // B52 R2：离合闸——手动拨杆 / 红石信号（红石优先）都只改通断，不动任何槽位
+    if (kind === 'clutch') {
+      let ok = false;
+      if (msg.op === 'toggle') { toggleClutch(st); ok = true; }
+      else if (msg.op === 'signal') ok = setClutchPowered(st, msg.on === true || msg.on === 1);
+      if (!ok) return;
+      this._industryVersion++; // 导流可能变化 → 下游拓扑缓存作废
+      const payload = this.industryMessage(x, y, z, dim, st, player.id, null);
+      this.broadcastDim(MSG.INDUSTRY_STATE, payload, dim, player.id);
+      this.sendTo(player, MSG.INDUSTRY_STATE, { ...payload, res: { ok: true, code: 'switched', applied: 0, items: [], name: null, inv: -1 } });
+      this._industrySyncAt.set(`${dim}|${key}`, Date.now());
+      this._industrySig.set(`${dim}|${key}`, machineSig(st));
+      this.saveSoon();
+      return;
+    }
     const op = msg.op === 'extract' ? 'extract' : (msg.op === 'insert' ? 'insert' : null);
     if (!op) return;
     const name = typeof msg.name === 'string' ? msg.name.slice(0, 64) : null;
     // 不允许带 data 的物品进机器（潜影盒等；工业槽位是无 data 的 64 堆叠）
     if (op === 'insert' && msg.data) return;
-    const res = applyIndustryAction(kind, st, op, name, safeInt(msg.count, 1));
-    const payload = this.industryMessage(x, y, z, dim, st, player.id);
+    // B52 R2：指定槽位（机器界面点格）。显式给了不属于这台机器的槽位 → 直接拒，
+    // 不悄悄回落到输出槽（否则一次点错会取走别的东西）
+    const inv = safeInt(msg.inv, -1);
+    if (typeof msg.slot === 'string' && msg.slot && !isMachineSlot(kind, msg.slot)) {
+      const payload = this.industryMessage(x, y, z, dim, st, player.id, this._industryNetInfo(dim, key));
+      this.sendTo(player, MSG.INDUSTRY_STATE,
+        { ...payload, res: { ok: false, code: 'invalid', applied: 0, items: [], name, inv } });
+      return;
+    }
+    const slot = typeof msg.slot === 'string' && msg.slot ? msg.slot : null;
+    const res = applyIndustryAction(kind, st, op, name, safeInt(msg.count, 1), slot);
+    const payload = this.industryMessage(x, y, z, dim, st, player.id, this._industryNetInfo(dim, key));
     this.broadcastDim(MSG.INDUSTRY_STATE, payload, dim, player.id);
-    this.sendTo(player, MSG.INDUSTRY_STATE, { ...payload, res: { ...res, name } });
+    this.sendTo(player, MSG.INDUSTRY_STATE, { ...payload, res: { ...res, name, inv } });
     this._industrySyncAt.set(`${dim}|${key}`, Date.now());
     this._industrySig.set(`${dim}|${key}`, machineSig(st));
     if (res.ok) this.saveSoon();
+  }
+
+  // B52 R2：机器界面打开/刷新——只回给发起者一条权威状态 + 网络摘要，不广播
+  onIndustryOpen(player, msg) {
+    const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
+    const dim = player.dim;
+    const key = `${x},${y},${z}`;
+    const kind = this._industryKindAt(dim, key);
+    if (!kind || kind === 'shaft') return;
+    const states = this.dimBucket(this.dimensionIndustry, dim);
+    const st = states.get(key) || emptyStateFor(kind);
+    this.sendTo(player, MSG.INDUSTRY_STATE,
+      this.industryMessage(x, y, z, dim, st, 0, this._industryNetInfo(dim, key)));
   }
 
   // 机器方块消失 → 账本条目删除 + 内容物散落（联机端不再本地散落，避免双份）
@@ -2085,7 +2134,8 @@ export class Room {
     let entry = this._industryNetCache.get(dim);
     if (entry && entry.version === this._industryVersion) return entry.networks;
     const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
-    const networks = buildNetworks(idx);
+    // 传状态：离合闸通断参与导流，且建图即算供需（界面摘要不会读到 0）
+    const networks = buildNetworks(idx, this.dimBucket(this.dimensionIndustry, dim));
     entry = { version: this._industryVersion, networks };
     this._industryNetCache.set(dim, entry);
     return networks;
@@ -2124,7 +2174,8 @@ export class Room {
         this._industrySyncAt.set(syncKey, now);
         const parts = key.split(',');
         const x = Number(parts[0]), y = Number(parts[1]), z = Number(parts[2]);
-        this.broadcastDim(MSG.INDUSTRY_STATE, this.industryMessage(x, y, z, dim, st, 0), dim);
+        this.broadcastDim(MSG.INDUSTRY_STATE,
+          this.industryMessage(x, y, z, dim, st, 0, netInfoFor(networks, key)), dim);
         dirty = true;
       }
     }

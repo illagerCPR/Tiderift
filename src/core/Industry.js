@@ -151,7 +151,33 @@ export function buildNetworks(blocks, states = null) {
     comp.overLimit = comp.nodes.length > NETWORK_MAX_NODES;
     comps.push(comp);
   }
-  return { compOf, comps };
+  const nets = { compOf, comps };
+  if (states) evaluateNetworks(nets, states); // 新图立即带上供需（机器界面/服务器摘要不会读到 0）
+  return nets;
+}
+
+// 供需与效率：全网一致口径；超限网络整体停摆。
+// 建图即调用一次（供界面/摘要读），tick 里再算一次（锅炉刚点火的那一帧要反映出来）。
+export function evaluateNetworks(nets, states) {
+  if (!nets || !states) return nets;
+  for (const comp of nets.comps) {
+    let supply = 0;
+    let demand = 0;
+    if (!comp.overLimit) {
+      for (const key of comp.boilers) {
+        const st = states.get(key);
+        if (st && st.burnTime > 0) supply += BOILER_SUPPLY;
+      }
+      for (const key of comp.machines) {
+        const st = states.get(key);
+        if (st && processorCanWork(st)) demand += MACHINE_DEMAND[st.kind] || 0;
+      }
+    }
+    comp.supply = supply;
+    comp.demand = demand;
+    comp.efficiency = demand > 0 ? Math.max(0, Math.min(1, supply / demand)) : 0;
+  }
+  return nets;
 }
 
 // 某台机器所在网络的供需摘要（机器界面读它；不返回节点列表，避免每帧拷贝）
@@ -190,23 +216,7 @@ export function tickIndustry(blocks, states, dtSec, networks = null) {
   }
 
   // 2) 供给 / 需求 / 效率（全网一致口径；超限网络整体停摆）
-  for (const comp of nets.comps) {
-    let supply = 0;
-    let demand = 0;
-    if (!comp.overLimit) {
-      for (const key of comp.boilers) {
-        const st = states.get(key);
-        if (st && st.burnTime > 0) supply += BOILER_SUPPLY;
-      }
-      for (const key of comp.machines) {
-        const st = ensureState(states, key, blocks.get(key));
-        if (processorCanWork(st)) demand += MACHINE_DEMAND[st.kind] || 0;
-      }
-    }
-    comp.supply = supply;
-    comp.demand = demand;
-    comp.efficiency = demand > 0 ? Math.max(0, Math.min(1, supply / demand)) : 0;
-  }
+  evaluateNetworks(nets, states);
 
   // 3) 加工机推进（按所在网络的效率降速；超限网络效率强制 0）
   for (const comp of nets.comps) {

@@ -1426,9 +1426,15 @@ export class NetworkManager {
   }
 
   // B51 R3：潮工机器动作（投料/取产物）——服务器权威结算并回执
-  sendIndustryAction(x, y, z, op, name, count) {
-    this._send(MSG.INDUSTRY_ACTION, { x, y, z, op, name: name || null, count: count | 0 });
+  // B52 R2：slot = 指定槽位（机器界面点格），inv = 背包槽位（服务器原样回显，供客户端扣料）
+  sendIndustryAction(x, y, z, op, name, count, slot = null, inv = -1, on = null) {
+    const msg = { x, y, z, op, name: name || null, count: count | 0, inv: inv | 0 };
+    if (slot) msg.slot = slot;
+    if (on !== null) msg.on = !!on;
+    this._send(MSG.INDUSTRY_ACTION, msg);
   }
+  // B52 R2：机器界面打开/刷新（服务器定向回一条权威状态 + 网络摘要）
+  sendIndustryOpen(x, y, z) { this._send(MSG.INDUSTRY_OPEN, { x, y, z }); }
   sendSetTime(t) { this._send(MSG.SET_TIME, { time: t }); }
   // B38 L3：ch = 'room'（缺省）| 'team' | 'dm'；dm 需带目标昵称 to
   sendChat(text, ch = 'room', to = null) {

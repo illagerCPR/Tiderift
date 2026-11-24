@@ -130,8 +130,9 @@ export const MSG = {
   BLUEPRINT_DENY: 'blueprint_deny',         // S2C {id, reason}：保存/删除被拒
 
   // B51 R3：潮工机器（服务器权威推进；客户端只提交动作并显示权威回执，不本地改状态）
-  INDUSTRY_ACTION: 'industry_action', // C2S {x,y,z,op:'insert'|'extract',name?,count?}
-  INDUSTRY_STATE: 'industry_state',   // S2C {x,y,z,d,by,state,res?}（res 只随发起者的那一份下发）
+  INDUSTRY_ACTION: 'industry_action', // C2S {x,y,z,op:'insert'|'extract'|'toggle'|'signal',slot?,name?,count?,inv?,on?}
+  INDUSTRY_OPEN: 'industry_open',     // C2S {x,y,z}（B52 R2：机器界面打开/刷新 → 定向回一条权威状态 + 网络摘要）
+  INDUSTRY_STATE: 'industry_state',   // S2C {x,y,z,d,by,state,net?,res?}（res 只随发起者的那一份下发）
 
   // B51 R4：四潮回响（本机权威结算；服务器只做启用/形状/频率硬约束后转发表现事件）
   MAGIC_CAST: 'magic_cast',     // C2S {spell, echo, x,y,z, dx,dy,dz}

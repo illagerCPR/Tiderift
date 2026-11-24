@@ -3,14 +3,14 @@
 // 本表由 tests/industry-unit.mjs 的钉值断言守住：任何在 BlockDefs 中部插入的方块都会让这里失配。
 import {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
-  sanitizeMachineState, spillStacks, machineSig, netInfoFor,
+  sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
   clutchEngaged, toggleClutch, setClutchPowered, isMachineSlot, slotInsertable,
 } from '../src/core/Industry.js';
 import { INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS } from '../src/content/industry/defs.js';
 
 export {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
-  sanitizeMachineState, spillStacks, machineSig, netInfoFor,
+  sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
   clutchEngaged, toggleClutch, setClutchPowered, isMachineSlot, slotInsertable,
   INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
 };

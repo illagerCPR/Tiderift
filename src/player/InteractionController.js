@@ -272,10 +272,23 @@ export class InteractionController {
           return CLICK_CONSUMED;
         }
       }
-      // B51 R3：潮工机器——手持物品=投料，空手=取产物（联机只发动作，等服务器回执）
+      // B52 R2：潮工机器——右键打开机器界面（槽位/配方/供需/进度/停转原因）；
+      // 潜行+右键 = 快捷投料/取物（B51 口径）；离合闸右键 = 拨杆通断（无界面）。
       const machineDef = furnaceHit ? BlockRegistry.getById(furnaceHit.id) : null;
       if (machineDef && machineDef.industryKind && g.industry && !g.player.spectator) {
-        if (g.industry.interact(furnaceHit.block)) {
+        const kind = machineDef.industryKind;
+        if (kind === 'clutch') {
+          g.industry.toggleClutchAt(furnaceHit.block.x, furnaceHit.block.y, furnaceHit.block.z);
+          g.controls.mouseRight = false;
+          return CLICK_CONSUMED;
+        }
+        if (g.controls.isSneaking()) {
+          if (g.industry.interact(furnaceHit.block)) {
+            g.controls.mouseRight = false;
+            return CLICK_CONSUMED;
+          }
+        } else if (kind !== 'shaft' && g.machineScreen) {
+          g.machineScreen.show(furnaceHit.block.x, furnaceHit.block.y, furnaceHit.block.z);
           g.controls.mouseRight = false;
           return CLICK_CONSUMED;
         }

@@ -44,6 +44,7 @@ import { t } from '../i18n/index.js';
 import { tName } from '../i18n/name.js';
 import { getDisplayName } from '../ui/itemName.js';
 import { FurnaceScreen } from '../ui/FurnaceScreen.js';
+import { MachineScreen } from '../ui/MachineScreen.js'; // B52 R2：潮工机器界面
 import { RecipeViewer } from '../ui/RecipeViewer.js';
 import { TradeScreen } from '../ui/TradeScreen.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
@@ -271,6 +272,7 @@ export class Game {
       (this.inventoryScreen && this.inventoryScreen.visible) ||
       (this.chestScreen && this.chestScreen.visible) ||
       (this.furnaceScreen && this.furnaceScreen.visible) ||
+      (this.machineScreen && this.machineScreen.visible) ||
       (this.tradeScreen && this.tradeScreen.visible) ||
       (this.beaconScreen && this.beaconScreen.visible) ||
       (this.steleScreen && this.steleScreen.visible) ||
@@ -410,6 +412,7 @@ export class Game {
     this._raceHudAt = 0;
     this._raceCheckAt = 0;
     if (this.furnaceScreen) { this.furnaceScreen.dispose(); this.furnaceScreen = null; }
+    if (this.machineScreen) { this.machineScreen.dispose(); this.machineScreen = null; } // B52 R2
     if (this.recipeViewer) { this.recipeViewer.dispose(); this.recipeViewer = null; }
     if (this.tradeScreen) { this.tradeScreen.dispose(); this.tradeScreen = null; }
     if (this.pauseMenu) { this.pauseMenu.el.remove(); this.pauseMenu = null; }
@@ -746,6 +749,7 @@ export class Game {
     this.steleScreen = new SteleScreen(this); // 天域批次 A：风纹石碑浮层（新建型：_disposeWorld 移除）
     this.playerListScreen = new PlayerListScreen(this); // B38 L1：Tab 玩家列表（按住显示；DOM 惰性创建）
     this.furnaceScreen = new FurnaceScreen(this);
+    this.machineScreen = new MachineScreen(this); // B52 R2：潮工机器界面（新建型：_disposeWorld 移除）
     this.recipeViewer = new RecipeViewer(this);
     this.tradeScreen = new TradeScreen(this);
     this.pauseMenu = new PauseMenu(this);
@@ -845,6 +849,7 @@ export class Game {
         if (this.steleScreen && this.steleScreen.visible) { this.steleScreen.hide(); return; }
         if (this.journalScreen && this.journalScreen.visible) { this.journalScreen.hide(); return; }
         if (this.furnaceScreen && this.furnaceScreen.visible) { this.furnaceScreen.hide(); return; }
+        if (this.machineScreen && this.machineScreen.visible) { this.machineScreen.hide(); return; }
         if (this.tradeScreen && this.tradeScreen.visible) { this.tradeScreen.hide(); return; }
         if (this.inventoryScreen) {
           this.inventoryScreen.toggle(2);
@@ -898,6 +903,7 @@ export class Game {
           (this.chestScreen && this.chestScreen.visible) ||
           (this.beaconScreen && this.beaconScreen.visible) ||
           (this.furnaceScreen && this.furnaceScreen.visible) ||
+          (this.machineScreen && this.machineScreen.visible) ||
           (this.tradeScreen && this.tradeScreen.visible);
         if (containerOpen) {
           this.recipeViewer.togglePanel();
@@ -1024,6 +1030,10 @@ export class Game {
         }
         if (this.furnaceScreen && this.furnaceScreen.visible) {
           this.furnaceScreen.hide();
+          return;
+        }
+        if (this.machineScreen && this.machineScreen.visible) {
+          this.machineScreen.hide();
           return;
         }
         if (this.tradeScreen && this.tradeScreen.visible) {
@@ -1837,6 +1847,7 @@ export class Game {
     // B51 R4：回响恢复 / 缓降计时 / 弹道推进 / 回响 HUD
     if (this.magic) this.magic.update(dt);
     if (this.furnaceScreen && this.furnaceScreen.visible) this.furnaceScreen.tick();
+    if (this.machineScreen && this.machineScreen.visible) this.machineScreen.tick(dt); // B52 R2
     // JEI 伴随面板：跟随容器界面（背包/箱子/合成台/熔炉/交易）显隐
     if (this.recipeViewer) this.recipeViewer.updateFrame();
     // 滚轮切换
@@ -2177,7 +2188,7 @@ export class Game {
 
   // 各物品 UI 当前悬浮的物品名（R/U 配方查询的作用目标）
   _uiHoverName() {
-    const screens = [this.inventoryScreen, this.chestScreen, this.furnaceScreen, this.tradeScreen];
+    const screens = [this.inventoryScreen, this.chestScreen, this.furnaceScreen, this.machineScreen, this.tradeScreen];
     for (const s of screens) {
       if (s && s.visible && s._hoverName) return s._hoverName;
     }

@@ -1,9 +1,10 @@
-// player/IndustrySystem.js -- 潮工（工业）客户端域：本地推进 / 交互 / 网络回执（Build 51 R3）
+// player/IndustrySystem.js -- 潮工（工业）客户端域：本地推进 / 交互 / 网络回执（Build 51 R3；B52 R2 扩机器界面）
 // 单机：本地按固定节拍调用纯算法（core/Industry.js），槽位与进度随存档持久化。
-// 联机：**不本地推进**（服务器是唯一权威），只提交投料/取物动作并显示权威回执。
+// 联机：**不本地推进**（服务器是唯一权威），只提交动作并显示权威回执；机器界面靠 INDUSTRY_OPEN 拉状态。
 // 生命周期：新建型——每次 Game.start 重建，_disposeWorld 释放（无 Three 资源、无 DOM、无监听器）。
 import {
   tickIndustry, buildNetworks, applyIndustryAction, spillStacks, sanitizeMachineState,
+  netInfoFor, toggleClutch,
 } from '../core/Industry.js';
 import { INDUSTRY_TICK_MS } from '../content/industry/defs.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
@@ -11,30 +12,36 @@ import { t } from '../i18n/index.js';
 import * as THREE from 'three';
 import { BLOCK_CENTER } from './constants.js';
 
-// 交互回执码 → 提示文案（服务器与本地共用同一套码）
-const CODE_TEXT = {
-  inserted: '已投入',
-  extracted: '已取出',
-  full: '槽位已满',
-  invalid: '这台机器不收这个',
-  empty: '没有可取的东西',
-};
+// 交互回执码 → 提示文案（静态 t() 字面量：i18n 静态扫描能查到，语言包不会漏键）
+function codeText(code) {
+  switch (code) {
+    case 'inserted': return t('已投入');
+    case 'extracted': return t('已取出');
+    case 'full': return t('槽位已满');
+    case 'invalid': return t('这台机器不收这个');
+    case 'empty': return t('没有可取的东西');
+    case 'switched': return t('离合闸已切换');
+    default: return null;
+  }
+}
 
 export class IndustrySystem {
   constructor(game) {
     this.game = game;
     this._acc = 0;                 // 单机节拍累加（秒）
     this._networks = null;         // 拓扑缓存 {compOf, comps}
-    this._dirty = true;            // 方块变化后置位，下一 tick 重建拓扑
+    this._dirty = true;            // 方块/离合闸变化后置位，下一 tick 重建拓扑
     this._warnedLimit = false;     // 超限提示只播一次
+    this._net = new Map();         // B52 R2：联机权威网络摘要（"x,y,z" -> net）
   }
 
-  // 方块变化（放置/破坏/远端同步）→ 拓扑标脏
+  // 方块变化（放置/破坏/远端同步/离合闸切换）→ 拓扑标脏
   markDirty() { this._dirty = true; }
 
   _networksFor(world) {
     if (this._dirty || !this._networks) {
-      this._networks = buildNetworks(world.dumpIndustryBlocks());
+      // B52 R1：离合闸断开会锯断网络——拓扑必须读状态里的通断
+      this._networks = buildNetworks(world.dumpIndustryBlocks(), world.industry);
       this._dirty = false;
     }
     return this._networks;
@@ -72,38 +79,107 @@ export class IndustrySystem {
     }
   }
 
-  // 玩家手持物品投料 / 空手取产物。返回 true = 本次右键已被机器消费
+  // 某台机器所在网络的供需摘要：单机从本地拓扑算，联机读服务器下发的权威摘要
+  netInfoAt(x, y, z) {
+    const g = this.game;
+    const world = g.world;
+    if (!world) return null;
+    const key = `${x},${y},${z}`;
+    if (g.networkMode) return this._net.get(key) || null;
+    if (!world.industryBlocks || !world.industryBlocks.has(key)) return null;
+    return netInfoFor(this._networksFor(world), key);
+  }
+
+  // 机器种类（界面标题/槽位布局用）
+  kindAt(x, y, z) {
+    const world = this.game.world;
+    if (!world) return null;
+    return world.industryKindAt(x, y, z);
+  }
+
+  // 界面打开/刷新：联机向服务器要一条权威状态（单机无需，状态本来就在本地）
+  requestOpen(block) {
+    const g = this.game;
+    if (!g.networkMode || !g.net) return;
+    g.net.sendIndustryOpen(block.x, block.y, block.z);
+  }
+
+  // 机器界面动作：op='insert'|'extract'，slot 指定槽位（null=自动路由/输出槽），inv 是背包槽位（联机回显）
+  // 返回 true = 已提交（单机立即结算，联机等服务器回执）
+  requestAction(block, op, slot, name, count, inv = -1) {
+    const g = this.game;
+    const world = g.world;
+    if (!world || g.player.spectator) return false;
+    const kind = world.industryKindAt(block.x, block.y, block.z);
+    if (!kind || kind === 'shaft') return false;
+    if (g.networkMode) {
+      if (g.net) g.net.sendIndustryAction(block.x, block.y, block.z, op, name, count, slot, inv);
+      return true;
+    }
+    const st = world.getOrOpenIndustry(block.x, block.y, block.z);
+    if (!st) return false;
+    const res = applyIndustryAction(kind, st, op, name, count, slot);
+    this._settle(res, inv);
+    return true;
+  }
+
+  // 快捷动作（B51 口径：手持物品投入 / 空手取出；离合闸为拨杆切换）
   interact(block) {
     const g = this.game;
     const world = g.world;
     if (!world || g.player.spectator) return false;
     const kind = world.industryKindAt(block.x, block.y, block.z);
-    if (!kind || kind === 'shaft') return false; // 传动轴不可交互
+    if (!kind || kind === 'shaft') return false;
+    if (kind === 'clutch') { this.toggleClutchAt(block.x, block.y, block.z); return true; }
     const sel = g.inventory.getSelected();
     const op = sel ? 'insert' : 'extract';
     const name = sel ? sel.name : null;
     const count = sel ? sel.count : 0;
-
     if (g.networkMode) {
-      if (g.net) g.net.sendIndustryAction(block.x, block.y, block.z, op, name, count);
+      if (g.net) g.net.sendIndustryAction(block.x, block.y, block.z, op, name, count, null, sel ? g.inventory.hotbarSelected : -1);
       return true; // 结果由服务器回执驱动（客户端不本地改状态）
     }
     const st = world.getOrOpenIndustry(block.x, block.y, block.z);
     if (!st) return false;
     const res = applyIndustryAction(kind, st, op, name, count);
-    this._settle(res);
+    this._settle(res, sel ? g.inventory.hotbarSelected : -1);
+    return true;
+  }
+
+  // 离合闸拨杆：手动拨动（红石信号优先，通电时拨杆不改变导流）
+  toggleClutchAt(x, y, z) {
+    const g = this.game;
+    const world = g.world;
+    if (!world) return false;
+    if (g.networkMode) {
+      if (g.net) g.net.sendIndustryAction(x, y, z, 'toggle');
+      return true;
+    }
+    const st = world.getOrOpenIndustry(x, y, z);
+    if (!st) return false;
+    toggleClutch(st);
+    this.markDirty(); // 通断变化 → 拓扑重建
+    const engaged = st.powered !== true && st.manual !== false;
+    if (g.hud) {
+      const base = t(engaged ? '离合闸：接通' : '离合闸：断开');
+      g.hud.showToast(st.powered ? `${base}${t('（红石信号优先）')}` : base);
+    }
     return true;
   }
 
   // 回执结算（单机与服务器回执共用）：扣/加背包 + 提示
-  _settle(res) {
+  // inv >= 0 = 背包槽位（机器界面点背包投入），否则扣当前选中槽
+  _settle(res, inv = -1) {
     const g = this.game;
     if (!res) return;
-    const text = CODE_TEXT[res.code] || null;
+    const text = codeText(res.code);
     if (res.ok) {
       if (res.code === 'inserted') {
         const n = Math.max(0, res.applied | 0);
-        if (n > 0) g.inventory.removeSelected(n);
+        if (n > 0) {
+          if (inv >= 0 && inv < g.inventory.size) g.inventory.removeSlot(inv, n);
+          else g.inventory.removeSelected(n);
+        }
       } else if (res.code === 'extracted') {
         for (const it of res.items || []) {
           if (it && it.count > 0) g.inventory.add(it.name, it.count);
@@ -118,19 +194,20 @@ export class IndustrySystem {
     }
   }
 
-  // 联机：服务器权威状态（含仅发给本人的回执 res）
+  // 联机：服务器权威状态（含仅发给本人的回执 res / 打开时下发的网络摘要 net）
   applyRemoteState(msg) {
     const g = this.game;
     const world = g.world;
     if (!world || !world.industry) return;
     if (msg.d && msg.d !== world.dimension) return; // 异维状态不落到当前世界
     const key = `${msg.x | 0},${msg.y | 0},${msg.z | 0}`;
+    if (msg.net) this._net.set(key, msg.net);
     const kind = world.industryBlocks.get(key);
-    if (!kind || kind === 'shaft') { world.industry.delete(key); return; }
+    if (!kind || kind === 'shaft') { world.industry.delete(key); this._net.delete(key); return; }
     const st = sanitizeMachineState(kind, msg.state);
     if (!st) world.industry.delete(key);
     else world.industry.set(key, st);
-    if (msg.res) this._settle(msg.res);
+    if (msg.res) this._settle(msg.res, msg.res.inv ?? -1);
   }
 
   // 破坏机器：清账本 + 内容物散落（联机由服务器权威散落，客户端不再散第二次）
@@ -143,6 +220,8 @@ export class IndustrySystem {
     if (!kind) return;
     const st = world.getIndustry(block.x, block.y, block.z);
     world.removeIndustry(block.x, block.y, block.z);
+    this._net.delete(key);
+    this.markDirty();
     if (!st || g.networkMode) return;
     const pos = new THREE.Vector3(block.x + BLOCK_CENTER, block.y + BLOCK_CENTER, block.z + BLOCK_CENTER);
     for (const it of spillStacks(st)) {
@@ -152,6 +231,7 @@ export class IndustrySystem {
 
   dispose() {
     this._networks = null;
+    this._net.clear();
     this._acc = 0;
     this._dirty = true;
   }
