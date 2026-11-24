@@ -847,4 +847,10 @@ export const en = {
   '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'One shaft cut and the whole line slows — so the clutch must be sturdier than the shaft: when redstone lights up, let go.',
   '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'A hopper must know how to choose: whatever the sieve accepts is the only thing it carries; choose wrong and it refuses even when the chest is empty.',
   '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'You who come after: do not do as we did and run the shaft out of sight in one stretch. One hundred and twenty-eight segments is where it turns on you.',
+  // ── B54 R1 四潮齐备（雨潮 / 无潮焦点 lore + 失败提示）──
+  "雨潮的回响：雨没有落下，只是一直悬在那儿，等你伸手。": "Echo of the Rain Tide: the rain never fell; it only hangs there, waiting for your hand.",
+  "无潮的回响：末地没有潮，于是距离本身成了一条路。": "Echo of the Tideless: the End has no tide, so distance itself became a road.",
+  "那里没有可落的空隙": "There is no open patch to land on there",
+  "身上没有需要回潮的伤": "You have no wounds for the tide to close",
+  "回潮：生命 +{n}": "Tide Mend: +{n} health",
 };

@@ -847,4 +847,10 @@ export const de = {
   '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'Ein Wellenstück durchtrennt, und die ganze Linie wird langsam — also muss die Kupplung fester sein als die Welle: leuchtet Redstone auf, lass los.',
   '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'Ein Trichter muss wählen können: Was das Sieb annimmt, nur das trägt er; wähle falsch, und er verweigert selbst bei leerem Kasten.',
   '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'Ihr, die ihr später kommt: Tut nicht wie wir und zieht die Welle in einem Zug außer Sicht. Einhundertachtundzwanzig Stücke — dort dreht sie sich gegen euch.',
+  // ── B54 R1 四潮齐备（雨潮 / 无潮焦点 lore + 失败提示）──
+  "雨潮的回响：雨没有落下，只是一直悬在那儿，等你伸手。": "Echo der Regenflut: Der Regen fiel nie; er hängt nur da und wartet auf deine Hand.",
+  "无潮的回响：末地没有潮，于是距离本身成了一条路。": "Echo der Gezeitenlosigkeit: Das Ende hat keine Flut, also wurde die Ferne selbst zum Weg.",
+  "那里没有可落的空隙": "Dort ist keine freie Stelle zum Landen",
+  "身上没有需要回潮的伤": "Du hast keine Wunden, die die Flut schließen könnte",
+  "回潮：生命 +{n}": "Flutheilung: +{n} Leben",
 };

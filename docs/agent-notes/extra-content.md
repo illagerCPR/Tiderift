@@ -348,3 +348,38 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 | `tests/build53-soak.mjs` | 切割机 64 原木精确守恒、断网保温、槽满即停；12000 步整线扰动（投料/取货/拨闸/拆装轴/收割）不变量与确定性 |
 | `server/test-flow.mjs` | 分拣漏斗过滤格广播与只搬同名物品、清空后全通、整箱改写仍被拒、收割产物入箱、溢出转掉落 |
 | `server/test-industry.mjs` ⑧ | 第 129 节轴被拒并回滚、系统提示、128 节点网络读数正常且未超限 |
+
+## 十二、B54 四潮齐备（雨潮回潮 / 无潮折步 / 蓄力与反馈 / 持久化与分流）
+
+### 12.1 R1：雨潮与无潮落地（四系基础能力齐备）
+
+| 项 | 值 |
+|---|---|
+| 物品 | `rain_focus` id **144**、`tideless_focus` id **145**（尾部追加，11 语名字，`requiresExtras:['magic']`，stack 1） |
+| 配方 | 雨潮 = 4 `clay_ball` + 1 `echo_dust`；无潮 = 4 `ender_pearl` + 1 `echo_dust`（**不含任何工业件**，四系各自从基础材料起手） |
+| 法术 | `tide_mend` 回潮：cost 20 / cd 8s / heal 6 / `resistance` I 6s；`void_step` 折步：cost 25 / cd 6s / 8 格 / standDepth 3 |
+
+口径与不变量：
+
+- **回潮只恢复自己且永不越上限**：治疗量走 `planMend(health, maxHealth, heal)` 裁剪；满血（或治疗量为 0）返回
+  `ok:false` → 提示「身上没有需要回潮的伤」，**不扣回响、不进冷却**。防护复用 `Player.effects` 的 `resistance`
+  （每级 -20% 伤害），不新造第四套 buff 系统；死亡 `respawn()` 已经 `clearEffects()`，不需要额外清理。
+- **折步 = 沿视线找最远的可站立点**：纯函数 `resolveBlinkTarget(distance, probe, step)`，与风步的
+  `resolveDashTarget` **不是同一个语义**——折步遇到任何被挡点（实心格 / 未加载区块）就整段停住，且终点必须
+  `standable`（脚下 `standDepth` 格内有实心非可通行方块），所以不会折进半空、虚空或墙里；找不到落点（0）时
+  提示「目标处没有可落的空隙」，同样不扣回响。落点还要求 AABB 无碰撞，落定后清速度与缓降（不留惯性）。
+- **失败不扣费用的结构保证**：`castHeld()` 先 `checkCast` 五关，再 `_execute`，只有返回 `ok:true` 才
+  `p.echo -= cost` 并写 `_lastCast` 冷却。提示统一走 `_feedback(code)`（`FAIL_TEXT` 一张码表）。
+- **远端表现分流**：`MAGIC_EFFECT` 里回潮只播水汽（`_mendFxAt`，不替别人回血），折步画起止两团尘；折步落点
+  `x2/y2/z2` 是**可选字段**（`sanitizeCast` 校验三点齐全、距起点 ≤16 格、高度带内才透传，非法则整字段丢弃），
+  服务器 `onMagicCast` 原样随表现转发。协议不升版本，旧端缺字段即退化为只画起点。
+
+### 12.2 回归
+
+| 套件 | 守什么 |
+|---|---|
+| `tests/build54-four-tides.mjs` | 144/145 ID 钉值、11 语名字、创造分类、魔法配方只认 magic 且不含工业件、四支法术真值表、`planMend` 不溢出/满血拒绝/脏值、`resolveBlinkTarget` 最远可站立点与不越墙不落未加载、落点形状校验、失败不扣回响与折步安全检查的源码绊线 |
+| `server/test-magic.mjs` | 新增回潮/折步表现广播、折步落点透传、越界落点被清洗（冷却 6s 必须等满才发第二次） |
+
+手动闭环（浏览器实测）：`rain_focus` 施放 hp 9→15、回响 100→80、`resistance` I 6s；满血施放 hp/回响不变、
+冷却仍为 0；`tideless_focus` 平地折跃 8 格（回响 -25）、有墙时停在墙前 3 格；无立足点时原地不动且回响不扣。

@@ -1,10 +1,13 @@
-// core/Magic.js -- 四潮回响的纯逻辑（Build 51 R4）
+// core/Magic.js -- 四潮回响的纯逻辑（Build 51 R4 / B54 R1 四系齐备）
 // 回响资源的存取与调谐、施法校验（费用/冷却/模式/世界开关）、风步落点求解（碰撞安全）、
+// 回潮治疗裁剪（不溢出生命上限）、折步落点求解（必须已加载 + 有立足面 + 不在实心格里）、
 // 烬矢弹道推进与球体命中。无 DOM / 无 Three：落点与命中都用标量/回调，node 可测。
 //
 // 边界（计划 §6.4 红线）：
 //   · 风步：沿视线短距冲刺，**不穿墙、不变成飞行**；落点必须已加载且有站立空间。
 //   · 烬矢：直线灼热弹，**不点燃地形、不炸方块**；每发只结算一次伤害。
+//   · 回潮：只恢复自己，**不超过生命上限**、不生成水；满血时拒绝且不扣回响。
+//   · 折步：向可见落点短距折跃，**不跨维、不穿墙、不落未加载区块/实心格**；找不到落点时不扣回响。
 //   · 所有施法都要先过「世界启用魔法 + 手持对应焦点 + 回响足够 + 冷却已过 + 非创造/旁观」五关。
 import {
   ECHO_MAX, ECHO_PER_LEVEL, spellDef, SPELLS,
@@ -57,6 +60,36 @@ export function resolveDashTarget(distance, probe) {
   return Math.min(distance, last);
 }
 
+// 折步落点（B54）：沿视线找**最远的可站立点**。与风步的区别：
+//   · 任何一处被挡（实心格 / 未加载区块）就整段停下 —— 不越过障碍取巧；
+//   · 终点必须有立足面，悬空点不作数（不把人折进半空或虚空）。
+//   probe(distanceAlongRay) -> { blocked:boolean, free:boolean, standable:boolean }
+export function resolveBlinkTarget(distance, probe, step = 0.25) {
+  let best = 0;
+  for (let d = step; d <= distance + 1e-9; d += step) {
+    const r = probe(d);
+    if (!r) break;
+    if (r.blocked || r.free === false) break;
+    if (r.standable) best = d;
+  }
+  return best;
+}
+
+// 回潮（B54）：把治疗量裁剪到「不超过生命上限」，满血时明确拒绝（调用方据此不扣回响）。
+//   返回 { ok, code, heal, health }；code: ok | full | unknown
+export function planMend(health, maxHealth, heal) {
+  const hp = Number(health);
+  const max = Number(maxHealth);
+  const amount = Number(heal);
+  if (!Number.isFinite(hp) || !Number.isFinite(max) || max <= 0 || !Number.isFinite(amount)) {
+    return { ok: false, code: 'unknown', heal: 0, health: 0 };
+  }
+  if (hp >= max) return { ok: false, code: 'full', heal: 0, health: max };
+  const gain = Math.min(Math.max(0, amount), max - hp);
+  if (!(gain > 0)) return { ok: false, code: 'full', heal: 0, health: hp };
+  return { ok: true, code: 'ok', heal: gain, health: hp + gain };
+}
+
 // 烬矢推进一段：pos/vel 原地推进，返回 { hit: 'none'|'block'|'mob', mobIndex, dist }
 //   trace(a, b) -> { block:boolean, mobIndex:number|-1 } 由调用方提供（世界与怪物查询）
 export function advanceBolt(bolt, dt, trace) {
@@ -96,6 +129,7 @@ export function cooldownLeft(lastCastAt, now, spellId) {
 }
 
 // 服务器侧形状校验：法术 ID 合法 + 数值在允许区间（轻信任模型的硬约束，不宣称反作弊）
+//   B54：折步可带落点 (x2,y2,z2) 供远端画两团尘；落在允许范围内才透传，否则丢弃该字段。
 export function sanitizeCast(msg) {
   const def = spellDef(msg && msg.spell);
   if (!def) return null;
@@ -107,12 +141,21 @@ export function sanitizeCast(msg) {
   if (!(len > 1e-6)) return null;
   const echo = typeof msg.echo === 'number' && Number.isFinite(msg.echo) ? msg.echo : -1;
   if (echo < 0 || echo > ECHO_MAX) return null;
-  return {
+  const out = {
     spell: def.id,
     x: msg.x, y: msg.y, z: msg.z,
     dx: msg.dx / len, dy: msg.dy / len, dz: msg.dz / len,
     echo,
   };
+  // 落点（可选）：必须三点齐全、在起点附近且在同一高度带内，否则不携带
+  const to = [msg.x2, msg.y2, msg.z2];
+  if (to.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    const span = Math.hypot(msg.x2 - msg.x, msg.y2 - msg.y, msg.z2 - msg.z);
+    if (msg.y2 >= -300 && msg.y2 <= 1000 && span <= 16) {
+      out.x2 = msg.x2; out.y2 = msg.y2; out.z2 = msg.z2;
+    }
+  }
+  return out;
 }
 
 export const MAGIC_SPELL_COUNT = Object.keys(SPELLS).length;

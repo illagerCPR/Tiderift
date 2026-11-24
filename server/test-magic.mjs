@@ -1,5 +1,5 @@
 // test-magic.mjs -- Build 51 R4 四潮回响（服务器侧）回归
-// 覆盖：① 未启用魔法的世界：仪台写入被拒绝、施法事件被丢弃
+// 覆盖：① 未启用魔法的世界：仪台写入被拒绝、施法事件被丢弃（B54 R1 起扩到四系：回潮/折步同样受门控）
 //       ② 启用魔法：施法表现只广播给同维其他人（发起者本端已结算）
 //       ③ 服务器独立硬约束：冷却内重复施法不转发、起点离本人太远不转发、非法法术/方向不转发
 //       ④ 回响随 LAN 玩家档案：上报 42 → 断线重连同昵称恢复
@@ -114,6 +114,33 @@ const BX = 6, BY = 70, BZ = 6;
   send(caster, 'magic_cast', { spell: 'gale_step', echo: 50, x: 0, y: 70, z: 0, dx: 0, dy: 0, dz: -1 });
   const gale = await waitFor(watcher, (m) => m.t === 'magic_effect' && m.spell === 'gale_step');
   assert('不同法术各有独立冷却', !!gale);
+
+  // B54 R1：四系齐备——回潮与折步也走同一条表现通道
+  await sleep(1300);
+  watcher.inbox.length = 0;
+  send(caster, 'magic_cast', { spell: 'tide_mend', echo: 50, x: 0, y: 70, z: 0, dx: 0, dy: 0, dz: -1 });
+  const mend = await waitFor(watcher, (m) => m.t === 'magic_effect' && m.spell === 'tide_mend');
+  assert('回潮表现广播给同维其他人', !!mend);
+
+  await sleep(1300);
+  watcher.inbox.length = 0;
+  send(caster, 'magic_cast', {
+    spell: 'void_step', echo: 50, x: 0, y: 70, z: 0, dx: 0, dy: 0, dz: -1,
+    x2: 0, y2: 70, z2: -6,
+  });
+  const blink = await waitFor(watcher, (m) => m.t === 'magic_effect' && m.spell === 'void_step');
+  assert('折步表现广播给同维其他人', !!blink);
+  assert('折步落点被透传（远端画起止两点）', !!blink && blink.z2 === -6);
+
+  // 落点离谱时只丢落点、不丢法术本身（折步冷却 6 秒，必须等满）
+  await sleep(6300);
+  watcher.inbox.length = 0;
+  send(caster, 'magic_cast', {
+    spell: 'void_step', echo: 50, x: 0, y: 70, z: 0, dx: 0, dy: 0, dz: -1,
+    x2: 0, y2: 70, z2: -500,
+  });
+  const blinkFar = await waitFor(watcher, (m) => m.t === 'magic_effect' && m.spell === 'void_step');
+  assert('越界的折步落点被清洗掉', !!blinkFar && blinkFar.z2 === undefined);
 
   // 位置形状：起点离本人太远 → 不转发
   await sleep(1300);

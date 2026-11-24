@@ -1103,6 +1103,35 @@ reg('ember_focus', { stack: 1, requiresExtras: ['magic'], lore: ['坠潮的回�
   g.s(8, 3, ember); g.s(8, 13, 'rgb(160, 90, 60)');
 }));
 
+// ── Build 54 R1 魔法四系齐备（**文件末尾追加**，物品 ID 零漂移）────────────────────
+// 雨潮焦点：一枚含着一滴未落之雨的陶环——水停在半空，替人把伤口收好。
+reg('rain_focus', { stack: 1, requiresExtras: ['magic'], lore: ['雨潮的回响：雨没有落下，只是一直悬在那儿，等你伸手。'] }, art(g => {
+  const clayP = 'rgb(178, 183, 198)', clayD = 'rgb(118, 124, 142)', water = 'rgb(120, 196, 220)';
+  const paleW = 'rgb(196, 236, 244)';
+  for (let y = 4; y <= 12; y++) for (let x = 4; x <= 12; x++) {
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 17 && d2 >= 10) g.s(x, y, d2 >= 15 ? clayD : clayP);
+  }
+  g.d(8, 9, 2, 3, water);   // 悬着的雨滴
+  g.s(8, 6, paleW); g.s(8, 7, paleW); g.s(9, 9, paleW);
+  g.s(8, 3, 'rgb(150, 210, 226)'); g.s(13, 8, 'rgb(150, 210, 226)');
+}));
+
+// 无潮焦点：一圈没有内芯的环——它记得的是「少掉的那一块」。
+reg('tideless_focus', { stack: 1, requiresExtras: ['magic'], lore: ['无潮的回响：末地没有潮，于是距离本身成了一条路。'] }, art(g => {
+  const voidP = 'rgb(120, 112, 150)', voidD = 'rgb(70, 64, 96)', spark = 'rgb(196, 186, 236)';
+  // 环上三处缺口：留白比实体更醒目（缺口靠不落笔实现，透明色覆盖在新画布上是空操作）
+  const gap = (x, y) => (x >= 7 && x <= 9 && y <= 4) || (x <= 4 && y >= 7 && y <= 9) || (x >= 12 && y >= 8 && y <= 10);
+  for (let y = 3; y <= 13; y++) for (let x = 3; x <= 13; x++) {
+    if (gap(x, y)) continue;
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 26 && d2 >= 13) g.s(x, y, d2 >= 21 ? voidD : voidP);
+  }
+  g.s(8, 5, spark); g.s(5, 8, spark); g.s(12, 11, spark);
+}));
+
 export const ItemSVGDefinitions = svgMap;
 
 export function getItemCount() {

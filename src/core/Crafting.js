@@ -231,6 +231,19 @@ addShaped('ember_focus', 1, [
   null, 'blaze_powder', null,
 ], ['magic']);
 
+// ── B54 R1 雨潮 / 无潮焦点（同属 magic）：四系都不依赖工业材料 ──
+// 雨潮取岸泥里未干的水意；无潮取末影珍珠的「未抵达」。
+addShaped('rain_focus', 1, [
+  null, 'clay_ball', null,
+  'clay_ball', 'echo_dust', 'clay_ball',
+  null, 'clay_ball', null,
+], ['magic']);
+addShaped('tideless_focus', 1, [
+  null, 'ender_pearl', null,
+  'ender_pearl', 'echo_dust', 'ender_pearl',
+  null, 'ender_pearl', null,
+], ['magic']);
+
 // 匹配函数：输入是 grid 二维数组（每行一个数组），返回匹配结果或 null
 // manifest 缺省 = 双关（fail-closed）：带归属需求的配方不会在未声明清单的世界里命中
 export function matchRecipe(grid, manifest) {

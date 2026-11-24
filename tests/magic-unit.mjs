@@ -66,9 +66,9 @@ const NONE = normalizeExtraContent(null);
     ['feather', 'echo_dust', 'feather'],
     [null, 'feather', null],
   ], MAGIC)?.name === GALE_FOCUS_ITEM, '风潮焦点配方形状正确');
-  // 法术表
-  ok(SPELL_IDS.length === 2 && SPELL_IDS.includes('gale_step') && SPELL_IDS.includes('ember_bolt'),
-    'R4 只交付风步与烬矢两个基础方向');
+  // 法术表（B54 R1 起四系齐备）
+  ok(SPELL_IDS.length === 4 && ['gale_step', 'ember_bolt', 'tide_mend', 'void_step'].every((id) => SPELL_IDS.includes(id)),
+    '四潮回响四个基础方向各一支');
   ok(FOCUS_SPELL[GALE_FOCUS_ITEM] === 'gale_step' && FOCUS_SPELL[EMBER_FOCUS_ITEM] === 'ember_bolt',
     '焦点 → 法术映射正确');
   ok(SPELLS.gale_step.cost > 0 && SPELLS.gale_step.cooldown > 0 && SPELLS.gale_step.distance <= 8,
@@ -171,7 +171,7 @@ const NONE = normalizeExtraContent(null);
   ok(/if \(!this\.enabled\) \{ g\.hud\.setEcho\(0, 0, 0, false\); return; \}/.test(magic),
     '关闭魔法的世界不显示回响 HUD');
   ok(/if \(g\.networkMode && g\.net\) g\.net\.sendMagicCast/.test(magic), '只有联机才广播施法事件');
-  ok(/远端施法表现（不结算伤害、不扣回响）/.test(magic), '远端表现不参与结算');
+  ok(/远端施法表现（不结算伤害、不扣回响、不替他回血\/位移）/.test(magic), '远端表现不参与结算');
   ok(/slowFall = 0/.test(game) && /slowFall/.test(physics), '风步缓降接进物理重力分支');
   ok(/case MSG\.MAGIC_CAST: this\.onMagicCast/.test(room), '服务器路由施法事件');
   ok(/if \(!this\.extraContent \|\| this\.extraContent\.magic !== true\) return;/.test(room),

@@ -847,4 +847,10 @@ export const fr = {
   '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'Un arbre coupé et toute la ligne ralentit — l\'embrayage doit donc être plus solide que l\'arbre : quand la redstone s\'allume, lâche.',
   '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'Un entonnoir doit savoir choisir : ce que le tamis accepte, il ne transporte que cela ; choisis mal et il refuse même coffre vide.',
   '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'Vous qui venez après : ne faites pas comme nous, à tirer l\'arbre d\'un trait hors de vue. Cent vingt-huit segments, voilà où il se retourne contre vous.',
+  // ── B54 R1 四潮齐备（雨潮 / 无潮焦点 lore + 失败提示）──
+  "雨潮的回响：雨没有落下，只是一直悬在那儿，等你伸手。": "Écho de la marée de pluie : la pluie n'est jamais tombée ; elle reste suspendue, attendant ta main.",
+  "无潮的回响：末地没有潮，于是距离本身成了一条路。": "Écho de la sans-marée : l'End n'a pas de marée, alors la distance elle-même est devenue un chemin.",
+  "那里没有可落的空隙": "Il n'y a là aucun espace libre pour se poser",
+  "身上没有需要回潮的伤": "Tu n'as aucune blessure à refermer",
+  "回潮：生命 +{n}": "Marée salvatrice : +{n} de vie",
 };

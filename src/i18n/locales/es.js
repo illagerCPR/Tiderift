@@ -847,4 +847,10 @@ export const es = {
   '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'Un eje cortado y toda la línea se frena: por eso el embrague debe ser más fuerte que el eje; si la redstone se enciende, suelta.',
   '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'Una tolva debe saber elegir: lo que el tamiz acepta es lo único que lleva; elige mal y se negará incluso con el cofre vacío.',
   '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'Vosotros que venís después: no hagáis como nosotros y tendáis el eje de un tirón hasta donde no se ve. Ciento veintiocho tramos: ahí se vuelve contra vosotros.',
+  // ── B54 R1 四潮齐备（雨潮 / 无潮焦点 lore + 失败提示）──
+  "雨潮的回响：雨没有落下，只是一直悬在那儿，等你伸手。": "Eco de la marea de lluvia: la lluvia nunca cayó; solo cuelga ahí, esperando tu mano.",
+  "无潮的回响：末地没有潮，于是距离本身成了一条路。": "Eco de la sin-marea: el End no tiene marea, así que la distancia misma se volvió un camino.",
+  "那里没有可落的空隙": "No hay hueco libre donde aterrizar ahí",
+  "身上没有需要回潮的伤": "No tienes heridas que la marea pueda cerrar",
+  "回潮：生命 +{n}": "Marea sanadora: +{n} de vida",
 };

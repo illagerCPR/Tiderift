@@ -2300,12 +2300,14 @@ export class Room {
     const dist = Math.hypot(cast.x - px, cast.y - py, cast.z - pz);
     if (dist > 12) return;
     this._magicCastAt.set(key, now);
-    // 只广播表现给同维其他人（发起者本端已自行结算）
-    this.broadcastDim(MSG.MAGIC_EFFECT, {
+    // 只广播表现给同维其他人（发起者本端已自行结算）；折步可带落点供远端画起止两团尘
+    const fx = {
       by: player.id, spell: cast.spell,
       x: cast.x, y: cast.y, z: cast.z,
       dx: cast.dx, dy: cast.dy, dz: cast.dz,
-    }, player.dim, player.id);
+    };
+    if (typeof cast.x2 === 'number') { fx.x2 = cast.x2; fx.y2 = cast.y2; fx.z2 = cast.z2; }
+    this.broadcastDim(MSG.MAGIC_EFFECT, fx, player.dim, player.id);
   }
 
   // 掉落物：客户端请求生成 -> 服务器分配唯一 id 并广播（含发起者，各端据此创建同一实体；M4：同维度广播）

@@ -1436,12 +1436,15 @@ export class NetworkManager {
   sendRespawn(x, y, z) { this._send(MSG.RESPAWN, { x, y, z }); }
   sendGamemode(mode) { this._send(MSG.GAMEMODE, { mode }); }
   // B51 R4：施法事件广播（本机权威结算；服务器只校验并转发表现）
-  sendMagicCast(spell, echo, pos, dir) {
-    this._send(MSG.MAGIC_CAST, {
+  // B54 R1：折步附带落点 to（可选，便于远端画起止两团尘）
+  sendMagicCast(spell, echo, pos, dir, to = null) {
+    const msg = {
       spell, echo: echo | 0,
       x: pos.x, y: pos.y, z: pos.z,
       dx: dir.x, dy: dir.y, dz: dir.z,
-    });
+    };
+    if (to) { msg.x2 = to.x; msg.y2 = to.y; msg.z2 = to.z; }
+    this._send(MSG.MAGIC_CAST, msg);
   }
 
   // B51 R3：潮工机器动作（投料/取产物）——服务器权威结算并回执

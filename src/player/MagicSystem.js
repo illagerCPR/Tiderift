@@ -1,8 +1,9 @@
-// player/MagicSystem.js -- 四潮回响的客户端域：回响/冷却/施法/弹道表现/HUD（Build 51 R4）
+// player/MagicSystem.js -- 四潮回响的客户端域：回响/冷却/施法/弹道表现/HUD（Build 51 R4 / B54 R1）
 // 单机：本地权威（校验→扣回响→生效），怪物伤害走既有 mobManager.attackMob 链路。
 // 联机：本机施法仍是**本端权威结算**（回响与背包沿用项目轻信任模型），另广播 MAGIC_EFFECT
-//       给同维其他人做纯表现（远端不扣回响、不重复结算伤害）。
-// 边界：风步不穿墙、不变成飞行；烬矢不点燃地形、不炸方块、每发只结算一次。
+//       给同维其他人做纯表现（远端不扣回响、不重复结算伤害、不替他回血/位移）。
+// 边界：风步不穿墙、不变成飞行；烬矢不点燃地形、不炸方块、每发只结算一次；
+//       回潮只恢复自己且不超过生命上限；折步不跨维、不穿墙、不落未加载区块或实心格。
 // 生命周期：新建型——每次 Game.start 重建，_disposeWorld 释放（弹道 mesh 逐个 dispose）。
 import * as THREE from 'three';
 import {
@@ -10,7 +11,7 @@ import {
   ECHO_REGEN_SECONDS, ECHO_REGEN_DELAY, ECHO_PER_LEVEL,
 } from '../content/magic/defs.js';
 import {
-  clampEcho, checkCast, tuneEcho, resolveDashTarget, cooldownLeft,
+  clampEcho, checkCast, tuneEcho, resolveDashTarget, resolveBlinkTarget, planMend, cooldownLeft,
 } from '../core/Magic.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { PLAYER_EYE_HEIGHT } from './constants.js';
@@ -29,6 +30,8 @@ const FAIL_TEXT = {
   mode: '创造/旁观模式不能施法',
   echo: '回响不足',
   cooldown: '法术还在冷却',
+  target: '目标处没有可落的空隙',
+  wounded: '身上没有需要回潮的伤',
   unknown: '未知的法术',
 };
 
@@ -115,16 +118,30 @@ export class MagicSystem {
       spectator: p.spectator,
       creative: p.creative,
     });
-    if (!check.ok) {
-      g.hud && g.hud.showToast(t(FAIL_TEXT[check.code] || FAIL_TEXT.unknown));
-      return true;
-    }
-    const ok = spellId === 'gale_step' ? this._castGaleStep(def) : this._castEmberBolt(def);
-    if (!ok) return true;
+    if (!check.ok) { this._feedback(check.code); return true; }
+    // 本体施法可能因「目标无效」（满血 / 没有落脚点）而失败：失败不扣回响、不进冷却
+    const res = this._execute(spellId, def);
+    if (!res.ok) { this._feedback(res.code); return true; }
     p.echo = clampEcho(p.echo - def.cost, p.echoMax);
     this._lastCast.set(spellId, Date.now());
     this._lastSpendAt = Date.now();
     return true;
+  }
+
+  // 施法失败码 → 统一提示（B54 R1：本体失败与施法五关共用同一张码表，R2 再补 HUD 表现）
+  _feedback(code) {
+    const g = this.game;
+    g.hud && g.hud.showToast(t(FAIL_TEXT[code] || FAIL_TEXT.unknown));
+  }
+
+  _execute(spellId, def) {
+    switch (spellId) {
+      case 'gale_step': return this._castGaleStep(def);
+      case 'ember_bolt': return this._castEmberBolt(def);
+      case 'tide_mend': return this._castTideMend(def);
+      case 'void_step': return this._castVoidStep(def);
+      default: return { ok: false, code: 'unknown' };
+    }
   }
 
   // 风潮·风步：沿视线短距冲刺（碰撞裁剪，不穿墙；落点必须有站立空间），随后短暂缓降
@@ -143,19 +160,11 @@ export class MagicSystem {
       const blocked = !this._aabbFree(x, y, z, half, height);
       if (blocked) return { blocked: true, standable: false };
       // 脚下 3 格内要有可站立面（否则不前进——不把人送进虚空）
-      let standable = false;
-      for (let dy = 1; dy <= 3; dy++) {
-        const below = g.world.getBlock(Math.floor(x), Math.floor(y - dy), Math.floor(z));
-        const bd = BlockRegistry.getById(below);
-        if (bd && bd.solid && !bd.passable) { standable = true; break; }
-      }
+      const standable = this._hasFloor(x, y, z);
       return { blocked: false, standable };
     };
     const dist = resolveDashTarget(def.distance, probe);
-    if (!(dist > 0.3)) {
-      g.hud && g.hud.showToast(t('前方没有落脚的地方'));
-      return false;
-    }
+    if (!(dist > 0.3)) return { ok: false, code: 'target' };
     p.position.x += dir.x * dist;
     p.position.y += dir.y * dist;
     p.position.z += dir.z * dist;
@@ -163,7 +172,7 @@ export class MagicSystem {
     p.slowFall = def.slowFall;
     p.onGround = false;
     if (g.networkMode && g.net) g.net.sendMagicCast('gale_step', p.echo, this._eyeStart(), dir);
-    return true;
+    return { ok: true };
   }
 
   // 坠潮·烬矢：沿视线射出灼热弹（只伤人、不点燃地形/不炸方块/单次结算）
@@ -180,7 +189,63 @@ export class MagicSystem {
     this._spawnBoltMesh(bolt, true);
     this._bolts.push(bolt);
     if (g.networkMode && g.net) g.net.sendMagicCast('ember_bolt', p.echo, start, dir);
-    return true;
+    return { ok: true };
+  }
+
+  // 雨潮·回潮：只恢复自己（裁剪到生命上限）+ 短暂防护；满血直接拒绝（不扣回响）
+  _castTideMend(def) {
+    const g = this.game;
+    const p = g.player;
+    const plan = planMend(p.health, p.maxHealth, def.heal);
+    if (!plan.ok) return { ok: false, code: 'wounded' };
+    p.health = plan.health;
+    p.applyEffect(def.guardEffect, def.guardLevel, def.guardSeconds);
+    this._mendFx();
+    g.hud && g.hud.showToast(t('回潮：生命 +{n}', { n: plan.heal }));
+    if (g.networkMode && g.net) g.net.sendMagicCast('tide_mend', p.echo, this._eyeStart(), this._viewDir());
+    return { ok: true };
+  }
+
+  // 无潮·折步：向可见落点短距折跃（必须已加载、AABB 空、脚下有立足面；不越过任何障碍）
+  _castVoidStep(def) {
+    const g = this.game;
+    const p = g.player;
+    const dir = this._viewDir();
+    const half = 0.3;
+    const height = 1.8;
+    const probe = (d) => {
+      const x = p.position.x + dir.x * d;
+      const y = p.position.y + dir.y * d;
+      const z = p.position.z + dir.z * d;
+      // 未加载区块不落（不把人折进还没生成的空白）
+      if (!g.world.getChunk(Math.floor(x) >> 4, Math.floor(z) >> 4)) return { blocked: true };
+      const free = this._aabbFree(x, y, z, half, height);
+      if (!free) return { blocked: true, free: false };
+      return { blocked: false, free: true, standable: this._hasFloor(x, y, z, def.standDepth) };
+    };
+    const dist = resolveBlinkTarget(def.distance, probe, def.step);
+    if (!(dist > 0.5)) return { ok: false, code: 'target' };
+    const from = { x: p.position.x, y: p.position.y, z: p.position.z };
+    p.position.x += dir.x * dist;
+    p.position.y += dir.y * dist;
+    p.position.z += dir.z * dist;
+    p.velocity.set(0, 0, 0);  // 折跃不留惯性：落地即站住
+    p.slowFall = 0;
+    p.onGround = false;
+    const to = { x: p.position.x, y: p.position.y, z: p.position.z };
+    this._blinkFx(from); this._blinkFx(to);
+    if (g.networkMode && g.net) g.net.sendMagicCast('void_step', p.echo, from, dir, to);
+    return { ok: true };
+  }
+
+  // 脚下 standDepth 格内是否有可站立面（风步与折步共用口径）
+  _hasFloor(x, y, z, standDepth = 3) {
+    const w = this.game.world;
+    for (let dy = 1; dy <= standDepth; dy++) {
+      const bd = BlockRegistry.getById(w.getBlock(Math.floor(x), Math.floor(y - dy), Math.floor(z)));
+      if (bd && bd.solid && !bd.passable) return true;
+    }
+    return false;
   }
 
   _viewDir() {
@@ -295,6 +360,41 @@ export class MagicSystem {
     }
   }
 
+  // 回潮：贴着身体的青白色水汽（纯表现，不参与判定）
+  _mendFx() {
+    const g = this.game;
+    const ps = g.particles;
+    if (!ps || !ps.spawn) return;
+    const p = g.player;
+    const n = Math.max(4, Math.round(12 * (ps.densityScale || 1)));
+    for (let i = 0; i < n; i++) {
+      ps.spawn(
+        p.position.x + (Math.random() - 0.5) * 0.8,
+        p.position.y + 0.2 + Math.random() * 1.5,
+        p.position.z + (Math.random() - 0.5) * 0.8,
+        (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.9, (Math.random() - 0.5) * 0.6,
+        0.46, 0.86, 0.9,
+        0.5 + Math.random() * 0.35, -1.2, 0.94,
+      );
+    }
+  }
+
+  // 折步：起止两点各一团淡紫空隙尘（纯表现）
+  _blinkFx(pos) {
+    const g = this.game;
+    const ps = g.particles;
+    if (!ps || !ps.spawn) return;
+    const n = Math.max(3, Math.round(9 * (ps.densityScale || 1)));
+    for (let i = 0; i < n; i++) {
+      ps.spawn(
+        pos.x + (Math.random() - 0.5) * 0.5, pos.y + 0.3 + Math.random() * 1.2, pos.z + (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4,
+        0.62, 0.52, 0.86,
+        0.3 + Math.random() * 0.3, -3, 0.95,
+      );
+    }
+  }
+
   // ── 仪台调谐 ────────────────────────────────────────────────────────────
   tuneTable() {
     const g = this.game;
@@ -310,7 +410,7 @@ export class MagicSystem {
     return true;
   }
 
-  // ── 联机：远端施法表现（不结算伤害、不扣回响）───────────────────────────
+  // ── 联机：远端施法表现（不结算伤害、不扣回响、不替他回血/位移）─────────────────
   applyRemoteEffect(msg) {
     if (!msg || !spellDef(msg.spell)) return;
     if (!this.enabled) return;
@@ -322,6 +422,17 @@ export class MagicSystem {
       this._impactFx(msg.x, msg.y, msg.z);
       return;
     }
+    if (msg.spell === 'tide_mend') {
+      // 远端回潮：只播水汽（血量由对方本端结算，远端不替他回血）
+      this._mendFxAt(msg.x, msg.y, msg.z);
+      return;
+    }
+    if (msg.spell === 'void_step') {
+      // 远端折步：起止两团尘；落点缺失时只画起点
+      this._blinkFx({ x: msg.x, y: msg.y, z: msg.z });
+      if (Number.isFinite(msg.x2)) this._blinkFx({ x: msg.x2, y: msg.y2, z: msg.z2 });
+      return;
+    }
     const def = spellDef(msg.spell);
     const bolt = {
       x: msg.x, y: msg.y, z: msg.z,
@@ -330,6 +441,21 @@ export class MagicSystem {
     };
     this._spawnBoltMesh(bolt, false);
     this._bolts.push(bolt);
+  }
+
+  // 远端回潮水汽（位置来自事件，不读本端玩家）
+  _mendFxAt(x, y, z) {
+    const ps = this.game.particles;
+    if (!ps || !ps.spawn) return;
+    const n = Math.max(3, Math.round(9 * (ps.densityScale || 1)));
+    for (let i = 0; i < n; i++) {
+      ps.spawn(
+        x + (Math.random() - 0.5) * 0.8, y + 0.2 + Math.random() * 1.4, z + (Math.random() - 0.5) * 0.8,
+        (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.9, (Math.random() - 0.5) * 0.6,
+        0.46, 0.86, 0.9,
+        0.5 + Math.random() * 0.3, -1.2, 0.94,
+      );
+    }
   }
 
   dispose() {
