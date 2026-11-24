@@ -853,4 +853,5 @@ export const fr = {
   "那里没有可落的空隙": "Il n'y a là aucun espace libre pour se poser",
   "身上没有需要回潮的伤": "Tu n'as aucune blessure à refermer",
   "回潮：生命 +{n}": "Marée salvatrice : +{n} de vie",
+  "蓄力 {p}%": "Charge {p} %",
 };

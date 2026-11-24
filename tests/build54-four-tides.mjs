@@ -221,7 +221,7 @@ const INDUSTRY_NAMES = [
 
   // 失败路径：提示在前、扣回响在后（目标无效/满血不扣费用、不进冷却）
   const feedbackAt = magic.indexOf('this._feedback(res.code)');
-  const spendAt = magic.indexOf('p.echo = clampEcho(p.echo - def.cost, p.echoMax)');
+  const spendAt = magic.indexOf('p.echo = clampEcho(p.echo - base.cost, p.echoMax)');
   ok(feedbackAt > 0 && spendAt > feedbackAt, '本体施法失败在扣回响之前就返回（失败不扣费用）');
   ok(/_castTideMend\(def\)/.test(magic) && /_castVoidStep\(def\)/.test(magic), '两个新法术各有施法入口');
   ok(/this\._lastCast\.set\(spellId, Date\.now\(\)\)/.test(magic) && spendAt < magic.indexOf('this._lastCast.set(spellId'),

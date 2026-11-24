@@ -8,32 +8,24 @@
 import * as THREE from 'three';
 import {
   SPELLS, SPELL_IDS, FOCUS_SPELL, spellDef, ECHO_MAX,
-  ECHO_REGEN_SECONDS, ECHO_REGEN_DELAY, ECHO_PER_LEVEL,
+  ECHO_REGEN_SECONDS, ECHO_REGEN_DELAY, ECHO_PER_LEVEL, CHARGE_FULL_SECONDS,
 } from '../content/magic/defs.js';
 import {
   clampEcho, checkCast, tuneEcho, resolveDashTarget, resolveBlinkTarget, planMend, cooldownLeft,
+  spellAtCharge, castFeedback,
 } from '../core/Magic.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { PLAYER_EYE_HEIGHT } from './constants.js';
 import { t } from '../i18n/index.js';
+import { audio } from '../audio/AudioEngine.js';
 
 // 弹道视觉资源（模块级懒建、永不 dispose——与箭矢同款；despawn 只摘 scene）
 let boltGeo = null;
 let boltMatLocal = null;
 let boltMatRemote = null;
 
-// 施法失败码 → 提示
-const FAIL_TEXT = {
-  disabled: '这个世界没有回响',
-  'no-focus': '需要手持回响焦点',
-  'wrong-focus': '手中的焦点不对应这个法术',
-  mode: '创造/旁观模式不能施法',
-  echo: '回响不足',
-  cooldown: '法术还在冷却',
-  target: '目标处没有可落的空隙',
-  wounded: '身上没有需要回潮的伤',
-  unknown: '未知的法术',
-};
+// 施法失败码 → 提示（B54 R2：文案与 HUD 脉冲都从 core/Magic.js 的 castFeedback 统一取，
+// 这里不再自带一份码表，避免两处文案走样）
 
 export class MagicSystem {
   constructor(game) {
@@ -43,6 +35,7 @@ export class MagicSystem {
     this._regenAcc = 0;
     this._lastSpendAt = 0;
     this._hudAt = 0;
+    this._charge = { active: false, t: 0 }; // B54 R2：按住右键蓄力（0..CHARGE_FULL_SECONDS）
   }
 
   // 世界是否启用魔法（关闭的世界：不生成弹道、不回复、不扣减、无 HUD）
@@ -55,6 +48,44 @@ export class MagicSystem {
 
   cooldownLeft(spellId) {
     return cooldownLeft(this._lastCast.get(spellId) || 0, Date.now(), spellId);
+  }
+
+  // ── 蓄力（B54 R2）─────────────────────────────────────────────────────
+  // 语义：按住右键蓄力、松手施放。单击 = charge≈0，走基础值；蓄满 = charged 上限值。
+  get isCharging() { return this._charge.active; }
+
+  chargeFrac() {
+    if (!this._charge.active) return 0;
+    return Math.max(0, Math.min(1, this._charge.t / CHARGE_FULL_SECONDS));
+  }
+
+  beginCharge() {
+    if (!this.enabled) return false;
+    this._charge.active = true;
+    this._charge.t = 0;
+    this._pushHud();
+    return true;
+  }
+
+  advanceCharge(dt) {
+    if (!this._charge.active) return;
+    this._charge.t = Math.min(CHARGE_FULL_SECONDS, this._charge.t + Math.max(0, dt || 0));
+  }
+
+  cancelCharge() {
+    if (!this._charge.active) return;
+    this._charge.active = false;
+    this._charge.t = 0;
+    this._pushHud();
+  }
+
+  // 松手：按当前蓄力施放（返回 true = 本次右键已消费）
+  releaseCharge() {
+    if (!this._charge.active) return false;
+    const charge = this.chargeFrac();
+    this.cancelCharge();
+    this.castHeld(charge);
+    return true;
   }
 
   // 每帧：缓降计时 / 脱战回响恢复 / 弹道推进 / HUD 刷新
@@ -97,18 +128,22 @@ export class MagicSystem {
     const spellId = held ? FOCUS_SPELL[held.name] : null;
     const cd = spellId ? this.cooldownLeft(spellId) : 0;
     const cdFrac = spellId ? Math.max(0, Math.min(1, cd / (SPELLS[spellId].cooldown || 1))) : 0;
-    g.hud.setEcho(clampEcho(p.echo, p.echoMax), p.echoMax, cdFrac, true);
+    // 第 5 参：蓄力进度（-1 = 未蓄力，回响条显示资源；0..1 = 蓄力中，改显示蓄力条与百分比）
+    const charge = this._charge.active ? this.chargeFrac() : -1;
+    g.hud.setEcho(clampEcho(p.echo, p.echoMax), p.echoMax, cdFrac, true, charge);
   }
 
   // 手持焦点时右键：施放该焦点对应的法术。返回 true = 本次右键已消费
-  castHeld() {
+  //   charge 0..1（B54 R2）：基础值 → 满蓄上限值（费用与冷却不变）
+  castHeld(charge = 0) {
     const g = this.game;
     const p = g.player;
     const held = g.inventory ? g.inventory.getSelected() : null;
     if (!held) return false;
     const spellId = FOCUS_SPELL[held.name];
     if (!spellId) return false;
-    const def = spellDef(spellId);
+    const base = spellDef(spellId);
+    const def = spellAtCharge(base, charge);
     const check = checkCast({
       spellId,
       held: held.name,
@@ -120,24 +155,29 @@ export class MagicSystem {
     });
     if (!check.ok) { this._feedback(check.code); return true; }
     // 本体施法可能因「目标无效」（满血 / 没有落脚点）而失败：失败不扣回响、不进冷却
-    const res = this._execute(spellId, def);
+    const res = this._execute(spellId, def, charge);
     if (!res.ok) { this._feedback(res.code); return true; }
-    p.echo = clampEcho(p.echo - def.cost, p.echoMax);
+    p.echo = clampEcho(p.echo - base.cost, p.echoMax);
     this._lastCast.set(spellId, Date.now());
     this._lastSpendAt = Date.now();
+    audio.spellCast(spellId, charge);
+    this._pushHud(); // 施放当帧就把回响与冷却画对（否则最多晚 0.1s）
     return true;
   }
 
-  // 施法失败码 → 统一提示（B54 R1：本体失败与施法五关共用同一张码表，R2 再补 HUD 表现）
+  // 施法失败统一反馈（B54 R2）：提示文案 + 回响条脉冲 + 拒绝音，三处同源（castFeedback）
   _feedback(code) {
     const g = this.game;
-    g.hud && g.hud.showToast(t(FAIL_TEXT[code] || FAIL_TEXT.unknown));
+    const fb = castFeedback(code);
+    g.hud && g.hud.showToast(t(fb.text));
+    if (g.hud && g.hud.pulseEcho) g.hud.pulseEcho(fb.hud);
+    audio.spellDeny();
   }
 
-  _execute(spellId, def) {
+  _execute(spellId, def, charge = 0) {
     switch (spellId) {
       case 'gale_step': return this._castGaleStep(def);
-      case 'ember_bolt': return this._castEmberBolt(def);
+      case 'ember_bolt': return this._castEmberBolt(def, charge);
       case 'tide_mend': return this._castTideMend(def);
       case 'void_step': return this._castVoidStep(def);
       default: return { ok: false, code: 'unknown' };
@@ -176,7 +216,8 @@ export class MagicSystem {
   }
 
   // 坠潮·烬矢：沿视线射出灼热弹（只伤人、不点燃地形/不炸方块/单次结算）
-  _castEmberBolt(def) {
+  //   charge 只影响伤害与弹体大小（视觉跟着伤害走，判定仍是一发一次）
+  _castEmberBolt(def, charge = 0) {
     const g = this.game;
     const p = g.player;
     const dir = this._viewDir();
@@ -186,7 +227,7 @@ export class MagicSystem {
       vx: dir.x * def.speed, vy: dir.y * def.speed, vz: dir.z * def.speed,
       life: def.life, dead: false, spell: 'ember_bolt', local: true,
     };
-    this._spawnBoltMesh(bolt, true);
+    this._spawnBoltMesh(bolt, true, charge);
     this._bolts.push(bolt);
     if (g.networkMode && g.net) g.net.sendMagicCast('ember_bolt', p.echo, start, dir);
     return { ok: true };
@@ -277,12 +318,15 @@ export class MagicSystem {
   }
 
   // ── 弹道 ────────────────────────────────────────────────────────────────
-  _spawnBoltMesh(bolt, local) {
+  // charge 只缩放弹体（满蓄 1.0 → 1.5 倍），不改判定半径与伤害链
+  _spawnBoltMesh(bolt, local, charge = 0) {
     if (!boltGeo) boltGeo = new THREE.SphereGeometry(0.18, 8, 6);
     if (!boltMatLocal) boltMatLocal = new THREE.MeshBasicMaterial({ color: 0xffb060 });
     if (!boltMatRemote) boltMatRemote = new THREE.MeshBasicMaterial({ color: 0xff9a4a, transparent: true, opacity: 0.85 });
     const mesh = new THREE.Mesh(boltGeo, local ? boltMatLocal : boltMatRemote);
     mesh.position.set(bolt.x, bolt.y, bolt.z);
+    const c = Math.max(0, Math.min(1, Number(charge) || 0));
+    if (c > 0) mesh.scale.setScalar(1 + 0.5 * c);
     this.game.renderer.scene.add(mesh);
     bolt.mesh = mesh;
   }
@@ -467,6 +511,8 @@ export class MagicSystem {
     this._bolts = [];
     this._lastCast.clear();
     this._regenAcc = 0;
+    this._charge.active = false;
+    this._charge.t = 0;
     if (g.hud && g.hud.setEcho) g.hud.setEcho(0, 0, 0, false);
   }
 }

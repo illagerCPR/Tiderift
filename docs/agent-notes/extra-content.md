@@ -374,11 +374,29 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
   `x2/y2/z2` 是**可选字段**（`sanitizeCast` 校验三点齐全、距起点 ≤16 格、高度带内才透传，非法则整字段丢弃），
   服务器 `onMagicCast` 原样随表现转发。协议不升版本，旧端缺字段即退化为只画起点。
 
-### 12.2 回归
+### 12.2 R2：焦点蓄力与失败反馈统一
+
+- **蓄力 = 按住右键、松手施放**（与弓蓄力同构的独立通道）：`_handleFocusChannel` 排在弓通道之后；
+  蓄力中 `CLICK_ABORT`（不置位 `mouseRight`），每次 `advanceCharge(dt)` 累到 `CHARGE_FULL_SECONDS=1.0`；
+  松手 `releaseCharge()` → `castHeld(charge)`。**单击 = charge≈0** 走基础值，所以老手感不变。
+  早退守卫要放行「手持焦点 + 右键」（`focusLikeHeld`），否则对空按右键进不到右键链。
+- **蓄力只买效果、不买费用**：`spellAtCharge(def, charge)` 只在 `def.charged` 列出的字段上线性插值
+  （整数基值/整数上限取整），费用与冷却永远取基础表；`p.echo -= base.cost`、冷却按 spellId 记账。
+  满蓄上限：风步 6→8 格、缓降 2.5→5 秒；烬矢 6→10 伤害（弹体同步放大 1.5 倍，判定半径不变）；
+  回潮 6→10 血、防护 6→10 秒；折步 8→10 格。
+- **失败反馈三处同源**：`CAST_FAIL_TEXT`（defs，9 个码）→ `castFeedback(code)`（core）给出
+  `{ text, hud }`，客户端只做「toast + 回响条脉冲 + 拒绝音」。脉冲分路：回响不足红、冷却白、
+  目标无效/无伤可回琥珀、开关/模式类不脉冲。文案键是 `t()` 动态路径，不在 `i18n-parity` 的 master 里，
+  所以 R2 套件自己导入 10 个语言包逐个断言（曾经 `target` 文案与语言包键不一致，靠这条才抓出来）。
+- **作废点**：暂停（Game.loop 的 else 分支）、进入观战、UI 打开、中途换手持物都 `cancelCharge()`；
+  `MagicSystem.dispose()`（换维/换档/回菜单）清蓄力与弹道。蓄力不进存档、不进协议。
+
+### 12.3 回归
 
 | 套件 | 守什么 |
 |---|---|
 | `tests/build54-four-tides.mjs` | 144/145 ID 钉值、11 语名字、创造分类、魔法配方只认 magic 且不含工业件、四支法术真值表、`planMend` 不溢出/满血拒绝/脏值、`resolveBlinkTarget` 最远可站立点与不越墙不落未加载、落点形状校验、失败不扣回响与折步安全检查的源码绊线 |
+| `tests/build54-charge-feedback.mjs` | 蓄力插值（0→上限/中点取整/脏值钳制/费用冷却不涨/不污染定义表）、四系都有蓄力收益且不破硬上限、9 个失败码都有文案与 HUD 脉冲分路、10 个语言包逐个覆盖反馈文案、蓄力通道与暂停作废/弹体只缩放视觉的源码绊线 |
 | `server/test-magic.mjs` | 新增回潮/折步表现广播、折步落点透传、越界落点被清洗（冷却 6s 必须等满才发第二次） |
 
 手动闭环（浏览器实测）：`rain_focus` 施放 hp 9→15、回响 100→80、`resistance` I 6s；满血施放 hp/回响不变、

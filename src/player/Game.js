@@ -1068,7 +1068,10 @@ export class Game {
     this.frame++;
     this.renderer.resetStats(); // B49：帧首清零渲染统计（多 pass 累计，调试屏读本帧总量）
     if (!this.paused) this.update(dt);
-    else if (this._bowCharging) this._cancelBowCharge(); // 暂停/死亡：蓄力作废（防恢复后误射）
+    else {
+      if (this._bowCharging) this._cancelBowCharge(); // 暂停/死亡：蓄力作废（防恢复后误射）
+      if (this.magic) this.magic.cancelCharge();      // B54 R2：法术蓄力同理
+    }
     this.renderer.render();
     // B49：F3 调试屏在 render 之后刷新——渲染统计取的是刚刚这一帧的累计值
     if (this.debugScreen && this.debugScreen.visible) this.debugScreen.update(this, now);
@@ -1891,6 +1894,7 @@ export class Game {
     // 鼠标交互（观战模式 / 灵魂出窍不操作方块/物品）
     if (this.spectating || this.soulView.active) {
       if (this._bowCharging) this._cancelBowCharge(); // 进入观战：蓄力作废
+      if (this.magic) this.magic.cancelCharge();      // B54 R2：法术蓄力同理
       this.controls.mouseLeft = false;
       this.controls.mouseRight = false;
       this.breakingProgress = 0;

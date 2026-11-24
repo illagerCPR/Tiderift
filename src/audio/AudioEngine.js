@@ -193,6 +193,40 @@ class AudioEngine {
     this._tone({ dur: 0.09, from: 520, to: 880, type: 'sine', gain: 0.22 });
   }
 
+  // —— B54 四潮回响（施法音按潮系分流；被拒音统一）——
+
+  // 施法起手：charge 0..1 只调音高/时长，不改变音色归属（听感上"蓄得越满越沉"）
+  spellCast(spellId, charge = 0) {
+    if (!this.ctx) return;
+    const c = Math.max(0, Math.min(1, Number(charge) || 0));
+    switch (spellId) {
+      case 'gale_step': // 风潮：一段掠过耳边的气流
+        this._noise({ dur: 0.18 + c * 0.14, filter: 'bandpass', freq: 700 + c * 700, q: 1.2, gain: 0.15, rate: 1.2 });
+        this._tone({ dur: 0.12, from: 320 + c * 160, to: 620, type: 'sine', gain: 0.13 });
+        break;
+      case 'ember_bolt': // 坠潮：低而短的一记
+        this._tone({ dur: 0.16, from: 240 - c * 50, to: 110, type: 'sawtooth', gain: 0.17 });
+        this._noise({ dur: 0.14, filter: 'lowpass', freq: 780 + c * 240, gain: 0.13, rate: 1.3 });
+        break;
+      case 'tide_mend': // 雨潮：上行的两滴水
+        this._tone({ dur: 0.3, from: 420, to: 660 + c * 120, type: 'sine', gain: 0.15 });
+        this._tone({ when: 0.06, dur: 0.26, from: 630, to: 880, type: 'sine', gain: 0.09 });
+        break;
+      case 'void_step': // 无潮：向下抽走的空腔
+        this._tone({ dur: 0.22, from: 180, to: 60, type: 'sine', gain: 0.16 });
+        this._noise({ dur: 0.1, filter: 'highpass', freq: 2400, gain: 0.07, rate: 1.6 });
+        break;
+      default:
+        this._tone({ dur: 0.14, from: 300, to: 200, type: 'sine', gain: 0.13 });
+    }
+  }
+
+  // 施法被拒（回响不足/冷却/无落点共用）：短促下坠的闷声，带 120ms 限频防连点轰炸
+  spellDeny() {
+    if (!this.ctx || !this._gate('spellDeny', 0.12)) return;
+    this._tone({ dur: 0.11, from: 190, to: 120, type: 'square', gain: 0.1 });
+  }
+
   // —— B48 TNT ——
 
   // 引信点燃：高频"嘶"一声 + 一点低频闷响（24 格距离衰减）

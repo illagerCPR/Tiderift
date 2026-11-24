@@ -48,6 +48,18 @@ export class Hud {
     this.echoBar.appendChild(this.echoText);
     document.body.appendChild(this.echoBar);
 
+    // B54 R2：蓄力条（回响条下方一条细条，仅在按住焦点蓄力时显示）
+    this.chargeBar = document.createElement('div');
+    this.chargeBar.style.cssText = `
+      position: absolute; bottom: 30px; left: calc(50% - 390px);
+      width: 170px; height: 4px; background: rgba(0,0,0,0.5); border: 1px solid #4a3a22;
+      z-index: 9; display: none;
+    `;
+    this.chargeFill = document.createElement('div');
+    this.chargeFill.style.cssText = 'width: 0%; height: 100%; background: linear-gradient(90deg, #b07a30, #ffd08a);';
+    this.chargeBar.appendChild(this.chargeFill);
+    document.body.appendChild(this.chargeBar);
+
     // 氧气泡（水下显示）
     this.airBar = document.createElement('div');
     this.airBar.style.cssText = `
@@ -215,17 +227,45 @@ export class Hud {
   // 全部状态栏隐藏（返回主菜单时调用；Hud 是跨存档共享实例，
   // 不隐藏会让血量/饥饿/经验条/氧气/准星残留在菜单界面上）
   // B51 R4：回响条（visible=false 时整条隐藏——关闭魔法的世界不显示任何回响 UI）
-  setEcho(echo, max, cooldownFrac = 0, visible = true) {
+  // B54 R2：第 5 参 charge = 蓄力进度（-1/缺省 = 未蓄力；0..1 = 蓄力中）——
+  //         蓄力时多显示一条蓄力条，并把条顶文字换成百分比（资源仍在条内可见）。
+  setEcho(echo, max, cooldownFrac = 0, visible = true, charge = -1) {
     if (!this.echoBar) return;
     if (!visible || !(max > 0)) {
       this.echoBar.style.display = 'none';
+      if (this.chargeBar) this.chargeBar.style.display = 'none';
       return;
     }
     this.echoBar.style.display = 'block';
     const pct = Math.max(0, Math.min(100, (echo / max) * 100));
     this.echoFill.style.width = `${pct}%`;
     this.echoCd.style.width = `${Math.max(0, Math.min(1, cooldownFrac)) * 100}%`;
-    this.echoText.textContent = t('回响 {n}/{m}', { n: echo | 0, m: max });
+    const charging = Number.isFinite(charge) && charge >= 0;
+    if (this.chargeBar) {
+      this.chargeBar.style.display = charging ? 'block' : 'none';
+      if (charging && this.chargeFill) {
+        const c = Math.max(0, Math.min(1, charge));
+        this.chargeFill.style.width = `${c * 100}%`;
+      }
+    }
+    this.echoText.textContent = charging
+      ? t('蓄力 {p}%', { p: Math.round(Math.max(0, Math.min(1, charge)) * 100) })
+      : t('回响 {n}/{m}', { n: echo | 0, m: max });
+  }
+
+  // B54 R2：施法被拒时回响条脉冲一次（kind: echo-low | cooldown | target | none）
+  // 纯视觉、零布局变化：只临时加一圈 boxShadow，220ms 后撤掉。
+  pulseEcho(kind) {
+    if (!this.echoBar || this.echoBar.style.display === 'none') return;
+    if (!kind || kind === 'none') return;
+    const color = kind === 'echo-low' ? 'rgba(255,96,86,0.9)'
+      : kind === 'cooldown' ? 'rgba(255,255,255,0.8)'
+        : 'rgba(255,196,110,0.85)';
+    this.echoBar.style.boxShadow = `0 0 0 2px ${color}`;
+    if (this._echoPulseTimer) clearTimeout(this._echoPulseTimer);
+    this._echoPulseTimer = setTimeout(() => {
+      if (this.echoBar) this.echoBar.style.boxShadow = 'none';
+    }, 220);
   }
 
   hideAll() {
@@ -241,6 +281,8 @@ export class Hud {
     this.versionTag.style.display = 'none';
     this.toast.style.display = 'none';
     if (this.echoBar) this.echoBar.style.display = 'none'; // B51 R4：回菜单/退出世界不残留回响条
+    if (this.chargeBar) this.chargeBar.style.display = 'none'; // B54 R2：蓄力条同理
+    if (this.echoBar) this.echoBar.style.boxShadow = 'none';   // B54 R2：撤掉失败脉冲
     this.toast.style.opacity = '0';
     this.witherOverlay.style.opacity = '0'; // 回菜单复位凋零滤镜（防上一存档残留）
   }

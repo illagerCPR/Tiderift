@@ -853,4 +853,5 @@ export const en = {
   "那里没有可落的空隙": "There is no open patch to land on there",
   "身上没有需要回潮的伤": "You have no wounds for the tide to close",
   "回潮：生命 +{n}": "Tide Mend: +{n} health",
+  "蓄力 {p}%": "Charge {p}%",
 };

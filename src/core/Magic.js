@@ -10,7 +10,7 @@
 //   · 折步：向可见落点短距折跃，**不跨维、不穿墙、不落未加载区块/实心格**；找不到落点时不扣回响。
 //   · 所有施法都要先过「世界启用魔法 + 手持对应焦点 + 回响足够 + 冷却已过 + 非创造/旁观」五关。
 import {
-  ECHO_MAX, ECHO_PER_LEVEL, spellDef, SPELLS,
+  ECHO_MAX, ECHO_PER_LEVEL, spellDef, SPELLS, CAST_FAIL_TEXT,
 } from '../content/magic/defs.js';
 
 // 回响资源（纯函数式存取；上限内钳制，绝不透支）
@@ -18,6 +18,38 @@ export function clampEcho(v, max = ECHO_MAX) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(max, Math.floor(n)));
+}
+
+// 蓄力插值（B54 R2）：charge 0 → 基础值，1 → def.charged 里的上限值。
+//   · 基值与上限值都是整数时结果取整（生命/伤害不留小数）；
+//   · 未列入 charged 的字段（费用/冷却/速度等）原样保留，蓄力只买效果不买费用；
+//   · 非有限 charge 按 0 处理，越界钳到 [0,1]。
+export function spellAtCharge(def, charge) {
+  if (!def) return null;
+  const c = Number.isFinite(Number(charge)) ? Math.max(0, Math.min(1, Number(charge))) : 0;
+  if (!def.charged) return def;
+  const out = { ...def };
+  for (const [key, target] of Object.entries(def.charged)) {
+    const base = Number(def[key]);
+    const to = Number(target);
+    if (!Number.isFinite(base) || !Number.isFinite(to)) continue;
+    const mixed = base + (to - base) * c;
+    out[key] = Number.isInteger(base) && Number.isInteger(to) ? Math.round(mixed) : mixed;
+  }
+  return out;
+}
+
+// 施法失败反馈的统一出口（B54 R2）：码 → { code, text(文案键), hud(回响条脉冲种类) }
+//   hud: none | echo-low（回响不足）| cooldown（冷却中）| target（目标无效）
+const FEEDBACK_HUD = Object.freeze({
+  echo: 'echo-low',
+  cooldown: 'cooldown',
+  target: 'target',
+  wounded: 'target',
+});
+export function castFeedback(code) {
+  const text = CAST_FAIL_TEXT[code] || CAST_FAIL_TEXT.unknown;
+  return { code: CAST_FAIL_TEXT[code] ? code : 'unknown', text, hud: FEEDBACK_HUD[code] || 'none' };
 }
 
 // 施法前校验：返回 { ok, code }

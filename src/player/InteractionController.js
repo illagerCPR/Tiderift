@@ -81,12 +81,15 @@ export class InteractionController {
     // 弓蓄力通道（Idea-2A）：独立于下方单击分支——蓄力中吞掉全部右键语义防中途误触，
     // 松手在此检测（mouseup 后 controls.mouseRight 变 false，下方 mouseRight 块不会再进）。
     if (exitsMethod(this._handleBowChannel(dt))) return;
+    // 焦点蓄力通道（B54 R2）：与弓同构——按住右键蓄力、松手才施放（单击≈基础值）
+    if (exitsMethod(this._handleFocusChannel(dt))) return;
     if (g._anyInputBlockingUI()) return; // 信标/石碑同样阻断（清单唯一入口）
     // 对空可持弓/掷眼（分支不依赖命中）——放宽未命中早退
     const heldNow = g.inventory.getSelected();
     const bowLikeHeld = !!heldNow && (heldNow.name === 'bow' || heldNow.name === 'ender_eye');
+    const focusLikeHeld = !!heldNow && !!g.magic && g.magic.isFocus(heldNow.name); // B54 R2
     if (!g.selectedBlock && !(g.controls.mouseLeft && g.mobManager) &&
-        !(g.controls.mouseRight && bowLikeHeld)) return;
+        !(g.controls.mouseRight && bowLikeHeld) && !(g.controls.mouseRight && focusLikeHeld)) return;
 
     if (exitsMethod(this._handleLeftClick(dt))) return;
     // 末段：右键链路（交互 → 放置 → 弓/掷眼），出口由段内协议自行收口
@@ -115,6 +118,31 @@ export class InteractionController {
       }
     }
     return CLICK_PASS; // 未蓄力 / 已取消（UI 或换物）/ 已松手：交后续段
+  }
+
+  // 段①b：焦点蓄力通道（B54 R2）。CLICK_ABORT = 蓄力接管（不置位 mouseRight，需持续按住）；
+  // 松手 → releaseCharge()（按蓄力百分比施放）。UI 打开/换手持物即时作废，不误放。
+  _handleFocusChannel(dt) {
+    const g = this.game;
+    if (!g.magic || !g.magic.isCharging) return CLICK_PASS;
+    const sel = g.inventory.getSelected();
+    if (g._anyInputBlockingUI()) {
+      g.magic.cancelCharge();
+      g.controls.mouseRight = false;
+      return CLICK_CONSUMED_PASS;
+    }
+    if (!sel || !g.magic.isFocus(sel.name)) { // 中途换手持物：本次蓄力作废
+      g.magic.cancelCharge();
+      g.controls.mouseRight = false;
+      return CLICK_CONSUMED_PASS;
+    }
+    if (!g.controls.mouseRight) { // 松手：施放
+      g.magic.releaseCharge();
+      g.controls.mouseRight = false;
+      return CLICK_CONSUMED;
+    }
+    g.magic.advanceCharge(dt);
+    return CLICK_ABORT; // 蓄力接管：按住期间不置位
   }
 
   // 段②：左键链（联机互殴 → 怪物 → 创造瞬破 → 生存挖掘 → 旁观）。
@@ -517,11 +545,12 @@ export class InteractionController {
         }
       }
       
-      // B51 R4：手持回响焦点 → 施法（不依赖准星命中方块；失败也消费本次右键，防误放/连发）
+      // B51 R4 / B54 R2：手持回响焦点 → 起手蓄力（不依赖准星命中方块）。
+      // 不置位 mouseRight：按住期间由顶部蓄力通道累计，松手在通道里施放；
+      // 单击等于 charge≈0，走基础值——失败提示与冷却都在施放时统一给出。
       if (sel && g.magic && g.magic.isFocus(sel.name)) {
-        g.magic.castHeld();
-        g.controls.mouseRight = false;
-        return CLICK_CONSUMED;
+        g.magic.beginCharge();
+        return CLICK_ABORT;
       }
 
       if (sel && hit) {

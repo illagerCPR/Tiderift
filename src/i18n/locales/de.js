@@ -853,4 +853,5 @@ export const de = {
   "那里没有可落的空隙": "Dort ist keine freie Stelle zum Landen",
   "身上没有需要回潮的伤": "Du hast keine Wunden, die die Flut schließen könnte",
   "回潮：生命 +{n}": "Flutheilung: +{n} Leben",
+  "蓄力 {p}%": "Aufladung {p} %",
 };
