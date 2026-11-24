@@ -15,6 +15,12 @@ import { normalizeExtraContent, serializeExtraContent, NONE_EXTRA_CONTENT } from
 import { sanitizeMachineState, emptyStateFor } from './Industry.js';
 import { INDUSTRY_BLOCK_KIND } from '../content/industry/defs.js';
 
+// 漏斗家族（普通漏斗 + B53 分拣漏斗）：都进同一张搬运索引；两者语义差异（过滤）
+// 由 HopperFlow 的 io.isFilterHopper 注入判定，不在这里分叉。
+function isHopperFamilyDef(def) {
+  return !!def && (def.baseBlock === 'hopper' || def.filterHopper === true);
+}
+
 export class World {
   constructor(seed = 0, dimension = DEFAULT_DIMENSION, worldOpts = null) {
     this.seed = seed;
@@ -110,7 +116,7 @@ export class World {
       const hm = new Map();
       for (const [k, id] of m) {
         const def = BlockRegistry.getById(id);
-        if (def && def.baseBlock === 'hopper') hm.set(k, def.facing);
+        if (isHopperFamilyDef(def)) hm.set(k, def.facing);
       }
       this.dimensionHoppers.set(dim, hm);
     }
@@ -359,7 +365,7 @@ export class World {
   trackHopper(x, y, z, id) {
     const def = BlockRegistry.getById(id);
     const k = `${x},${y},${z}`;
-    if (def && def.baseBlock === 'hopper') this.hoppers.set(k, def.facing);
+    if (isHopperFamilyDef(def)) this.hoppers.set(k, def.facing);
     else if (this.hoppers.size) this.hoppers.delete(k);
   }
 

@@ -3001,6 +3001,103 @@ reg('drive_clutch', {
   drive_clutch_cap: clutchCapTex(287),
 });
 
+// ── Build 53 R1 分拣漏斗（**文件末尾追加**，方块 ID 零漂移，取 230~233）────────────────
+// 与漏斗家族同构（facingAway 出料口背对玩家），区别只在语义：
+// 27 槽数组的**最后一格**是过滤槽——放什么，这一格就只搬什么（进/出都认），空着 = 全通。
+// 视觉上要一眼看出"这只斗会挑东西"：顶面进料口盖筛网、正面出料口是栅栏、侧面有一道拨杆槽。
+function filterHopperTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+      if (d < 3) {
+        // 进料口：暗底 + 十字筛网（与普通漏斗的"空洞"区分开）
+        const mesh = (x % 3 === 0) || (y % 3 === 0);
+        px[y * 16 + x] = rgb(mesh ? [126, 130, 138] : [30, 32, 36], 0.92 + hash2(x, y, seed) * 0.12);
+      } else if (d < 5) px[y * 16 + x] = rgb([112, 116, 124], 0.9 + hash2(x, y, seed + 1) * 0.16);
+      else px[y * 16 + x] = rgb([76, 80, 88], 0.86 + hash2(x, y, seed + 2) * 0.18);
+    }
+  }
+  return pixelSvg(px);
+}
+
+function filterHopperSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.9 + hash2(x, y, seed) * 0.14;
+      if (y < 3) f *= 1.12;
+      if (y > 13) f *= 0.78;
+      px[y * 16 + x] = rgb([82, 86, 94], f);
+    }
+  }
+  // 拨杆槽：竖槽 + 铜色滑块（"这里能调"的直觉提示）
+  fillRect(px, 6, 4, 9, 12, rgb([46, 50, 56], 0.98));
+  fillRect(px, 7, 5, 8, 8, rgb([168, 122, 62], 1.0));
+  for (const [x, y] of [[3, 5], [12, 5], [3, 10], [12, 10]]) setPx(px, x, y, rgb([152, 156, 164]));
+  return pixelSvg(px);
+}
+
+function filterHopperBottomTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([62, 66, 72], 0.84 + hash2(x, y, seed) * 0.16);
+  }
+  fillRect(px, 5, 5, 10, 10, rgb([44, 47, 52], 0.96));
+  return pixelSvg(px);
+}
+
+// 出料口面：漏斗同款吐口 + 一道横向栅栏（筛过才落下去）
+function filterHopperFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.9 + hash2(x, y, seed) * 0.14;
+      if (y < 3) f *= 1.12;
+      px[y * 16 + x] = rgb([82, 86, 94], f);
+    }
+  }
+  for (let i = 0; i < 5; i++) {
+    const half = 5 - i;
+    fillRect(px, 7 - half, 8 + i, 8 + half, 8 + i, rgb([34, 36, 40], 0.9 + hash2(i, 1, seed) * 0.12));
+  }
+  // 筛面栅栏：三道横杆横跨吐口（普通漏斗是空的黑洞，这里一眼看出"会筛东西"）
+  for (const [row, half] of [[8, 5], [10, 3], [12, 1]]) {
+    fillRect(px, 7 - half, row, 8 + half, row, rgb([132, 136, 144], 1.0));
+  }
+  return pixelSvg(px);
+}
+
+const FILTER_HOPPER_TEX = {
+  top: 'filter_hopper_top', side: 'filter_hopper_side',
+  bottom: 'filter_hopper_bottom', front: 'filter_hopper_front',
+};
+const FILTER_HOPPER_SVG = {
+  filter_hopper_top: filterHopperTopTex(291),
+  filter_hopper_side: filterHopperSideTex(292),
+  filter_hopper_bottom: filterHopperBottomTex(293),
+  filter_hopper_front: filterHopperFrontTex(294),
+};
+
+reg('filter_hopper', {
+  displayName: '分拣漏斗', hardness: 3, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'],
+  textures: FILTER_HOPPER_TEX, facing: 'n',
+  baseBlock: 'filter_hopper', facingBase: 'filter_hopper', facingAway: true,
+  filterHopper: true,
+  lore: ['筛子只认一件东西：往最后一格放什么，这一格就只搬什么。'],
+}, { ...FILTER_HOPPER_SVG });
+
+for (const facing of ['s', 'e', 'w']) {
+  reg(`filter_hopper_${facing}`, {
+    displayName: '分拣漏斗', hardness: 3, tool: 'pickaxe', minTier: 1,
+    requiresExtras: ['industry'],
+    textures: FILTER_HOPPER_TEX, facing,
+    baseBlock: 'filter_hopper', facingBase: 'filter_hopper', facingAway: true,
+    filterHopper: true,
+  }, { ...FILTER_HOPPER_SVG });
+}
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

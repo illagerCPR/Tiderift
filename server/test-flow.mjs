@@ -6,7 +6,7 @@ import { PROTOCOL_VERSION } from './protocol.js';
 import { assert, finish, counts } from './test-lib.mjs';
 import '../src/blocks/BlockDefs.js'; // 方块 id 由注册顺序决定：直接读同一份注册表，避免硬编码
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
-import { HOPPER_FACING_BY_ID, FLOW_HOPPER_LIMIT } from './flow.js';
+import { HOPPER_FACING_BY_ID, FILTER_HOPPER_FACING_BY_ID, FLOW_HOPPER_LIMIT } from './flow.js';
 
 const URL = 'ws://127.0.0.1:3001/ws';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -114,6 +114,51 @@ assert('拒绝时给出系统提示', !!limitChat, limitChat ? limitChat.text : 
 assert(`前 ${FLOW_HOPPER_LIMIT} 个漏斗正常入账`,
   C.queue.filter((m) => m.t === 'block_change' && m.by === undefined && m.x >= 100 && m.x < overX).length === 0 ||
   !C.queue.some((m) => m.t === 'block_change' && m.by === 0 && m.x < overX));
+
+// ── B53 R1 分拣漏斗：过滤格是设置，容器本体仍归服务器 ─────────────────────────────
+const FILTER_HOPPER_S_ID = [...FILTER_HOPPER_FACING_BY_ID].find(([, f]) => f === 's')[0];
+const latestAt = (c, x, y, z) => c.queue.filter((m) => at(m, x, y, z)).pop();
+send(A, 'block_set', { x: 20, y: 71, z: 10, id: CHEST_ID });
+send(A, 'block_set', { x: 20, y: 70, z: 10, id: FILTER_HOPPER_S_ID });
+send(A, 'block_set', { x: 20, y: 70, z: 11, id: CHEST_ID });
+await sleep(200);
+assert('B 收到分拣漏斗方块广播',
+  !!B.queue.find((m) => m.t === 'block_change' && m.x === 20 && m.y === 70 && m.z === 10 && m.id === FILTER_HOPPER_S_ID));
+
+const setFilterMsg = (client, stack) => send(client, 'hopper_filter', { x: 20, y: 70, z: 10, stack });
+setFilterMsg(A, { name: 'iron_ingot', count: 1 });
+const filterBroadcast = await waitFor(B, (m) => at(m, 20, 70, 10) && m.items && m.items[26] && m.items[26].name === 'iron_ingot', 2500);
+assert('过滤格设置被广播（第 27 格 = 铁锭）', !!filterBroadcast);
+
+send(A, 'container_set', { x: 20, y: 71, z: 10, items: items([{ name: 'bread', count: 5 }, { name: 'iron_ingot', count: 7 }]) });
+const ironLanded = await waitFor(B, (m) => at(m, 20, 70, 11) && countOf(m) === 7, 5000);
+assert('只搬过滤认定的物品（铁锭 7 个进目标箱）', !!ironLanded, ironLanded ? `count=${countOf(ironLanded)}` : '超时未到');
+assert('面包一个都没到目标箱',
+  !B.queue.some((m) => at(m, 20, 70, 11) && Array.isArray(m.items) && m.items.some((x) => x && x.name === 'bread')));
+assert('过滤格在搬运后仍然留在容器里', !!(latestAt(B, 20, 70, 10) || {}).items?.[26] || !!filterBroadcast);
+
+// 清空过滤 → 全通：上游剩下的面包应当被搬过去
+setFilterMsg(A, null);
+await sleep(300);
+const cleared = latestAt(B, 20, 70, 10);
+assert('清空过滤被广播（第 27 格为空）', !!cleared && Array.isArray(cleared.items) && !cleared.items[26],
+  cleared && Array.isArray(cleared.items) ? JSON.stringify(cleared.items[26]) : '无消息');
+const breadLanded = await waitFor(B, (m) => at(m, 20, 70, 11) &&
+  Array.isArray(m.items) && m.items.some((x) => x && x.name === 'bread'), 5000);
+assert('清空过滤后面包也能通过', !!breadLanded);
+
+// 容器本体仍归服务器：整箱改写照旧被拒
+const denyFilterPromise = waitFor(A, (m) => m.t === 'container_deny' && m.x === 20 && m.y === 70 && m.z === 10, 2500);
+send(A, 'container_set', { x: 20, y: 70, z: 10, items: items([{ name: 'diamond', count: 64 }]) });
+assert('分拣漏斗仍拒绝客户端整箱改写', !!await denyFilterPromise);
+
+// 普通漏斗不接受过滤设置（服务端静默忽略，不产生瓶子格广播）
+const beforePlain = B.queue.filter((m) => at(m, 10, 70, 10)).length;
+send(A, 'hopper_filter', { x: 10, y: 70, z: 10, stack: { name: 'diamond', count: 1 } });
+await sleep(350);
+assert('普通漏斗不接受过滤设置',
+  B.queue.filter((m) => at(m, 10, 70, 10) && m.items && m.items[26]).length === 0 &&
+  B.queue.filter((m) => at(m, 10, 70, 10)).length === beforePlain);
 
 // 收尾：断线（世界由跑批脚本统一清理）
 for (const c of [A, B, C]) c.ws.close();

@@ -2,9 +2,11 @@
 // 27 格容器 + 玩家背包/快捷栏；拖放/合并逻辑与 InventoryScreen 同款。
 // 容器内容来自 World.containers（惰性生成），任何修改经 Game.onContainerChanged 上报（联机同步）。
 import { ItemRegistry } from '../core/ItemRegistry.js';
+import { BlockRegistry } from '../core/BlockRegistry.js';
 import { drawIconInto } from '../render/BlockIcon.js';
 import { t } from '../i18n/index.js';
 import { CursorOverlay } from './CursorOverlay.js';
+import { FILTER_SLOT } from '../core/HopperFlow.js';
 
 export class ChestScreen {
   constructor(game) {
@@ -12,6 +14,7 @@ export class ChestScreen {
     this.visible = false;
     this.pos = null;      // 容器方块坐标 {x,y,z}
     this.items = null;    // 27 槽数组（World.containers 内的引用，直接改）
+    this.filterHopper = false; // B53 R1：分拣漏斗（最后一格 = 过滤槽）
     this._changed = false;
 
     this.el = document.createElement('div');
@@ -55,6 +58,8 @@ export class ChestScreen {
     if (!this.game.world) return;
     this.titleKey = titleKey;
     this.pos = { x, y, z };
+    const def = BlockRegistry.getById(this.game.world.getBlock(x, y, z));
+    this.filterHopper = !!(def && def.filterHopper);
     this.items = this.game.world.getOrOpenContainer(x, y, z);
     this._changed = false;
     this.visible = true;
@@ -107,6 +112,14 @@ export class ChestScreen {
     title.textContent = t(this.titleKey || '箱子');
     title.style.cssText = 'font-size: 14px; margin-bottom: 8px; color: #333;';
     this.panel.appendChild(title);
+
+    // B53 R1：分拣漏斗的最后一格是过滤槽（放什么就只搬什么，空着 = 全通）
+    if (this.filterHopper) {
+      const hint = document.createElement('div');
+      hint.textContent = t('最后一格是过滤槽：放什么就只搬什么，空着 = 全通');
+      hint.style.cssText = 'font-size: 11px; color: #555; margin-bottom: 6px; max-width: 420px; line-height: 1.4;';
+      this.panel.appendChild(hint);
+    }
 
     this.panel.appendChild(this.makeGrid(9, 3, 'chest'));
     const main = this.makeGrid(9, 3, 'main');
@@ -176,6 +189,18 @@ export class ChestScreen {
       this.bindSlotEvents(el, 'chest', idx);
       this.cursor.bindHover(el, stack ? stack.name : null);
     });
+    // 过滤格徽标（每次重绘后补一次，节点被清空时随之重建）
+    if (this.filterHopper) {
+      const el = this.panel.querySelector('[data-slot="chest-26"]');
+      const tag = el && el.querySelector('.filter-tag');
+      if (el && !tag) {
+        const badge = document.createElement('div');
+        badge.className = 'filter-tag';
+        badge.textContent = t('过滤');
+        badge.style.cssText = 'position: absolute; left: 1px; top: 1px; font-size: 9px; line-height: 1.2; color: #2c2008; background: #e8c87a; padding: 0 2px; border-radius: 2px;';
+        el.appendChild(badge);
+      }
+    }
     const mainSlots = this.panel.querySelectorAll('[data-slot^="main-"]');
     mainSlots.forEach((el, i) => {
       const slotIdx = 9 + i;
@@ -212,11 +237,36 @@ export class ChestScreen {
   }
 
   bindSlotEvents(el, type, idx) {
+    // B53 R1：分拣漏斗的过滤格是"设置"不是搬运内容——它不走容器整箱上报，
+    // 而是走单开的 HOPPER_FILTER（联机）。左右键都按"与光标整摞交换"处理（不拆半）。
+    if (type === 'chest' && this.filterHopper && idx === FILTER_SLOT) {
+      el.onmousedown = (e) => {
+        e.preventDefault();
+        if (e.button === 0 || e.button === 2) this.swapFilterSlot();
+      };
+      return;
+    }
     el.onmousedown = (e) => {
       e.preventDefault();
       if (e.button === 0) this.swapCursorWithSlot(type, idx);
       else if (e.button === 2) this.rightClickSlot(type, idx);
     };
+  }
+
+  // 过滤格：与光标整摞交换（过滤只认物品名，摞数只是"这件物品放在这里"）
+  swapFilterSlot() {
+    const cur = this.items[FILTER_SLOT] || null;
+    const next = this.cursorItem
+      ? { name: this.cursorItem.name, count: this.cursorItem.count, data: this.cursorItem.data ?? null }
+      : null;
+    if (this.game.networkMode && this.game.net && this.pos) {
+      this.game.net.sendHopperFilter(this.pos.x, this.pos.y, this.pos.z, next);
+    }
+    this.items[FILTER_SLOT] = next; // 乐观写入：联机由服务器广播的权威 CONTAINER_SET 收敛
+    this.cursorItem = cur;
+    this.cursor.setItem(this.cursorItem);
+    this.bindSlots();
+    if (next) this.game.hotbar.update();
   }
 
   swapCursorWithSlot(type, idx) {

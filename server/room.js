@@ -8,7 +8,7 @@ import { safeBiomeScale } from '../src/world/biomes.js';
 // B35 D：遗迹键/维度作用域与客户端共用同一份纯模块（服务器不重复实现一套键规则）
 import { isValidRuinKey, parseRuinKey, ruinKindForDim, RUIN_LIMIT, RUIN_NAME_MAX } from '../src/core/Ruins.js';
 // B36 F-1：漏斗搬运——方块 id 表与纯搬运算法（服务器权威 tick；客户端只播动画不本地转移）
-import { tickHopperFlow, hopperFacingOf, isHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
+import { tickHopperFlow, hopperFacingOf, isHopperId, isFilterHopperId, isContainerId, FLOW_HOPPER_LIMIT, FLOW_HOT_MS } from './flow.js';
 // B36 F-2：熔炉账本——方块 id 表与烧炼推进纯算法（服务器权威进度；客户端只显示不推进）
 import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnaceBlockId, FURNACE_LIMIT, FURNACE_SYNC_MS } from './furnace.js';
 // B51 R3：潮工机器——id 表 + 纯算法（服务器权威推进；客户端只显示）
@@ -1353,6 +1353,7 @@ export class Room {
       case MSG.BLOCK_SET: this.onBlockSet(player, msg); break;
       case MSG.BLOCK_SET_BATCH: this.onBlockSetBatch(player, msg); break;
       case MSG.CONTAINER_SET: this.onContainerSet(player, msg); break;
+      case MSG.HOPPER_FILTER: this.onHopperFilter(player, msg); break; // B53 R1
       case MSG.FURNACE_OPEN: this.onFurnaceOpen(player, msg); break;
       case MSG.INDUSTRY_ACTION: this.onIndustryAction(player, msg); break; // B51 R3
       case MSG.INDUSTRY_OPEN: this.onIndustryOpen(player, msg); break;     // B52 R2
@@ -1754,6 +1755,29 @@ export class Room {
     this.saveSoon();
   }
 
+  // B53 R1：分拣漏斗的过滤槽设置。漏斗容器本体仍归服务器（CONTAINER_SET 对它整箱拒绝），
+  // 这里只允许写最后一格——过滤槽是"设置"，不是搬运内容，所以单独开一条消息。
+  // 校验：目标必须是本维度的分拣漏斗；stack 走 sanitizeStack（name 限长 / count 1-64）；
+  // data 不被采信（过滤只认物品名，带 data 也按名字判定，写进去没有意义）。
+  onHopperFilter(player, msg) {
+    const x = safeInt(msg.x), y = safeInt(msg.y), z = safeInt(msg.z);
+    const dim = player.dim;
+    const key = `${x},${y},${z}`;
+    const blocks = this.dimBucket(this.dimensionBlocks, dim);
+    if (!isFilterHopperId(blocks.has(key) ? blocks.get(key) : -1)) return; // 只认分拣漏斗本身
+    const containers = this.dimBucket(this.dimensionContainers, dim);
+    let items = containers.get(key);
+    if (!items) {
+      items = new Array(27).fill(null);
+      containers.set(key, items);
+    }
+    const st = msg.stack ? this.sanitizeStack({ name: msg.stack.name, count: msg.stack.count }) : null;
+    items[26] = st;
+    // 广播给全维度（**含发起者**）：发起者的本地视图是乐观写入，由这条权威内容收敛
+    this.broadcastDim(MSG.CONTAINER_SET, { x, y, z, items, by: player.id, d: dim }, dim);
+    this.saveSoon();
+  }
+
   // ── B36 F-1 漏斗搬运（服务器权威节拍）────────────────────────────────────────
   // 漏斗索引随方块账本维护：写入/挖掉/批量同步/世界重建/快照恢复五条入口全部收敛到 trackHopperBlock。
   trackHopperBlock(dim, key, id) {
@@ -1815,6 +1839,8 @@ export class Room {
           containers.set(k, items);
           return items;
         },
+        // B53 R1：搬运算法需要的"这一格是不是分拣漏斗"（过滤槽 = 容器最后一格）
+        isFilterHopper: (x, y, z) => isFilterHopperId(blocks.has(`${x},${y},${z}`) ? blocks.get(`${x},${y},${z}`) : -1),
       };
       // B36 F-2：熔炉接线（出料口进内容槽，正上方熔炉只取产物）
       const furnaces = this.dimBucket(this.dimensionFurnaces, dim);

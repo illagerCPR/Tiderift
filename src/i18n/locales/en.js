@@ -823,4 +823,9 @@ export const en = {
   '这台机器不收这个': 'This machine does not accept that',
   '没有可取的东西': 'Nothing to take',
   '离合闸已切换': 'Clutch switched',
+  // ── B53 R1 分拣漏斗（过滤槽）──
+  '筛子只认一件东西：往最后一格放什么，这一格就只搬什么。': 'A sieve knows one thing: whatever sits in the last slot is the only thing this hopper will carry.',
+  '分拣漏斗': 'Filter Hopper',
+  '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'The last slot is the filter: whatever you put there is the only thing this hopper moves. Empty = pass everything.',
+  '过滤': 'Filter',
 };

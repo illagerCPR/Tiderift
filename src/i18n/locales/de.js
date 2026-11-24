@@ -823,4 +823,9 @@ export const de = {
   '这台机器不收这个': 'Diese Maschine nimmt das nicht an',
   '没有可取的东西': 'Nichts zu entnehmen',
   '离合闸已切换': 'Kupplung umgeschaltet',
+  // ── B53 R1 分拣漏斗（过滤槽）──
+  '筛子只认一件东西：往最后一格放什么，这一格就只搬什么。': 'Ein Sieb kennt nur eines: Was im letzten Platz liegt, und sonst nichts.',
+  '分拣漏斗': 'Filtertrichter',
+  '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'Der letzte Platz ist der Filter: Nur was dort liegt, wird bewegt. Leer = alles durch.',
+  '过滤': 'Filter',
 };

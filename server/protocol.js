@@ -41,6 +41,10 @@ export const MSG = {
   CONTAINER_SET: 'container_set',
   // B36 F-1：漏斗管理中的容器拒绝客户端改写（S2C 带服务器权威内容，客户端据此回滚本地）
   CONTAINER_DENY: 'container_deny',
+  // B53 R1：分拣漏斗的过滤槽是**设置**而不是搬运内容，所以单开一条消息——
+  // 服务器永远拥有漏斗容器本体（CONTAINER_SET 对它仍然整箱拒绝），这里只写最后一格。
+  // C2S {x,y,z,stack:{name,count,data}|null}（null = 清空过滤）；服务器改完广播权威 CONTAINER_SET。
+  HOPPER_FILTER: 'hopper_filter',
   // B36 F-2：熔炉内容首次上联机账本（服务器权威烧炼进度与产出，客户端只显示）
   // C2S {x,y,z}：请求该熔炉的权威状态（只回本人）
   FURNACE_OPEN: 'furnace_open',

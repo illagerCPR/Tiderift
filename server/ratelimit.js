@@ -44,6 +44,7 @@ export function tierOf(msgType, MSG) {
   if (msgType === MSG.PLAYER_STATE) return 'state';
   // B52 R2：机器动作与界面刷新（界面打开时约 1 条/秒；动作与右键同频）
   if (msgType === MSG.INDUSTRY_ACTION || msgType === MSG.INDUSTRY_OPEN) return 'state';
+  if (msgType === MSG.HOPPER_FILTER) return 'state'; // B53 R1：过滤槽设置（低频人工操作）
   // S6：重操作档位——每条 create/join/switch 都触发一次整账本回放
   if (msgType === MSG.CREATE_ROOM || msgType === MSG.JOIN_ROOM || msgType === MSG.SWITCH_ROOM) return 'join';
   if (msgType === MSG.SKIN_SET) return 'skin';         // 16KB 皮肤数据向全房广播

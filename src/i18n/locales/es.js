@@ -823,4 +823,9 @@ export const es = {
   '这台机器不收这个': 'Esta máquina no acepta eso',
   '没有可取的东西': 'No hay nada que retirar',
   '离合闸已切换': 'Embrague conmutado',
+  // ── B53 R1 分拣漏斗（过滤槽）──
+  '筛子只认一件东西：往最后一格放什么，这一格就只搬什么。': 'Un tamiz solo conoce una cosa: lo que descansa en la última casilla.',
+  '分拣漏斗': 'Tolva clasificadora',
+  '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'La última casilla es el filtro: la tolva solo mueve lo que pongas ahí. Vacía = deja pasar todo.',
+  '过滤': 'Filtro',
 };

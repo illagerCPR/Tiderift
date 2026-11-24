@@ -823,4 +823,9 @@ export const pt = {
   '这台机器不收这个': 'Esta máquina não aceita isso',
   '没有可取的东西': 'Nada para retirar',
   '离合闸已切换': 'Embreagem alternada',
+  // ── B53 R1 分拣漏斗（过滤槽）──
+  '筛子只认一件东西：往最后一格放什么，这一格就只搬什么。': 'Uma peneira só conhece uma coisa: o que está na última casela.',
+  '分拣漏斗': 'Funil classificador',
+  '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'A última casela é o filtro: o funil só move o que estiver ali. Vazia = deixa passar tudo.',
+  '过滤': 'Filtro',
 };

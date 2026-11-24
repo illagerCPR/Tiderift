@@ -20,7 +20,8 @@ for (const [id, facing] of HOPPER_FACING_BY_ID) {
 ok(HOPPER_FACING_BY_ID.size === 4, '漏斗朝向表恰好四档');
 for (const id of CONTAINER_BLOCK_IDS) {
   const def = BlockRegistry.getById(id);
-  const isContainer = !!def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.name === 'shulker_box');
+  // B53 R1 起容器表还含分拣漏斗家族（def.filterHopper 标记）
+  const isContainer = !!def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.filterHopper || def.name === 'shulker_box');
   ok(isContainer, `容器 id ${id} 仍是容器方块（${def ? def.name : 'MISSING'}）`);
 }
 ok(FLOW_HOPPER_LIMIT === 64, '每房间漏斗上限 64');

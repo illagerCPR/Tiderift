@@ -154,7 +154,7 @@ export class InteractionController {
       if (g.player.creative) {
         if (g.particles) g.particles.burstBlockBreak(hit.block.x + BLOCK_CENTER, hit.block.y, hit.block.z + BLOCK_CENTER, def, g.world);
         audio.blockBreak(def);
-        if (def.baseBlock === 'chest' || def.baseBlock === 'hopper') g._breakChest(hit.block, false); // B28 家族（四朝向）+ B36 漏斗
+        if (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.filterHopper) g._breakChest(hit.block, false); // B28 家族（四朝向）+ B36 漏斗 + B53 分拣漏斗
         if (def.name === 'beacon') g._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
         if (def.name === 'shulker_box') g._breakShulkerBox(hit.block, false); // Idea-2C：创造也掉盒（内容跟随）
         if (def.baseBlock === 'furnace') g._breakFurnace(hit.block); // B28 家族（四朝向 × 点燃态）
@@ -196,7 +196,7 @@ export class InteractionController {
         if (g.breakingProgress >= 1) {
           if (g.particles) g.particles.burstBlockBreak(hit.block.x + BLOCK_CENTER, hit.block.y, hit.block.z + BLOCK_CENTER, def, g.world);
           audio.blockBreak(def);
-          if (def.baseBlock === 'chest' || def.baseBlock === 'hopper') g._breakChest(hit.block, true); // B28 家族（四朝向）+ B36 漏斗
+          if (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.filterHopper) g._breakChest(hit.block, true); // B28 家族（四朝向）+ B36 漏斗 + B53 分拣漏斗
           if (def.name === 'beacon') g._breakBeacon(hit.block.x, hit.block.y, hit.block.z); // Idea-2D-③：清激活状态+光柱
           if (def.name === 'shulker_box') g._breakShulkerBox(hit.block, true); // Idea-2C：内容跟随盒体
           if (def.baseBlock === 'furnace') g._breakFurnace(hit.block); // B28 家族（四朝向 × 点燃态）
@@ -376,9 +376,9 @@ export class InteractionController {
         // T5：右键箱子/潜影盒打开容器界面（创造/生存都可；旁观不可）
         // B36 F-1：漏斗复用箱子界面（内容同存 World.containers）
         if (targetDef && (targetDef.baseBlock === 'chest' || targetDef.baseBlock === 'hopper' ||
-            targetDef.name === 'shulker_box') && g.chestScreen && !g.player.spectator) {
+            targetDef.filterHopper || targetDef.name === 'shulker_box') && g.chestScreen && !g.player.spectator) {
           g.chestScreen.show(hit.block.x, hit.block.y, hit.block.z,
-            targetDef.baseBlock === 'hopper' ? '漏斗' : '箱子');
+            targetDef.filterHopper ? '分拣漏斗' : (targetDef.baseBlock === 'hopper' ? '漏斗' : '箱子'));
           g.controls.mouseRight = false;
           return CLICK_CONSUMED;
         }

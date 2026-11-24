@@ -1316,6 +1316,15 @@ export class NetworkManager {
     this._send(MSG.CONTAINER_SET, { x, y, z, items: packed });
   }
 
+  // B53 R1：分拣漏斗的过滤槽设置（漏斗容器本体仍归服务器，这条消息只写最后一格）
+  // stack = null 表示清空过滤；data 不参与过滤判定，因此不上行，服务器也不采信。
+  sendHopperFilter(x, y, z, stack) {
+    this._send(MSG.HOPPER_FILTER, {
+      x, y, z,
+      stack: stack ? { name: stack.name, count: stack.count } : null,
+    });
+  }
+
   // B36 F-2：熔炉内容上报（只报三个内容槽——进度字段服务器自有，客户端发什么都不采信）
   sendFurnaceSet(x, y, z, st) {
     const pack = (s) => (s ? { name: s.name, count: s.count, data: s.data ?? null } : null);

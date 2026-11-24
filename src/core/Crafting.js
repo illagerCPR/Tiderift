@@ -191,6 +191,13 @@ addShaped('drive_clutch', 1, [
   'iron_ingot', 'stone', 'iron_ingot',
 ], ['industry']);
 
+// ── B53 R1 分拣漏斗（同属 industry 归属）：漏斗 + 两锭铜做筛面 + 中间一格空出"过滤口" ──
+addShaped('filter_hopper', 1, [
+  'copper_ingot', null, 'copper_ingot',
+  'copper_ingot', 'hopper', 'copper_ingot',
+  null, 'copper_ingot', null,
+], ['industry']);
+
 // ── B51 R4 四潮回响（内容归属 magic：关闭魔法的世界没有这些配方）──────────────
 // 回响尘：星髓研磨出的潮的记忆；仪台 = 石英环 + 回响尘心；两个焦点各取一潮材料。
 addShapeless('echo_dust', 2, ['star_marrow'], ['magic']);

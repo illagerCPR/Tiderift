@@ -65,6 +65,8 @@ function register(def) {
     ambientParticles: def.ambientParticles ?? false,
     // B36 F-1：可放置朝向家族的朝向语义反转（漏斗出料口背对玩家）；缺省 = 正面朝玩家
     facingAway: def.facingAway ?? false,
+    // B53 R1：分拣漏斗（容器最后一格是过滤槽，缓冲只剩前 26 格）
+    filterHopper: def.filterHopper ?? false,
     // B48：只跳过碰撞的方块（开门态门板）。solid 仍为 true → 渲染/剔除/光照/选取不变
     passable: def.passable ?? false,
     // B48：爆炸抗性（≥ Explosion.BLAST_PROOF_RESIST 免疫；黑曜石 1200）

@@ -189,7 +189,12 @@ export class Placement {
     // 只对真正的容器方块建账：未加载区块 getBlock 返回 0 → 不创建（不会在虚空里生容器）
     const isContainerAt = (x, y, z) => {
       const def = BlockRegistry.getById(world.getBlock(x, y, z));
-      return !!(def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.name === 'shulker_box'));
+      return !!(def && (def.baseBlock === 'chest' || def.baseBlock === 'hopper' || def.filterHopper || def.name === 'shulker_box'));
+    };
+    // B53 R1：分拣漏斗的过滤槽是容器最后一格；搬运算法要按方块种类拿这个判定
+    const isFilterHopperAt = (x, y, z) => {
+      const def = BlockRegistry.getById(world.getBlock(x, y, z));
+      return !!(def && def.filterHopper);
     };
     // B36 F-2：熔炉也是一种出料口/进料口（出料口进内容槽、正上方熔炉只取产物）
     const isFurnaceAt = (x, y, z) => {
@@ -201,6 +206,7 @@ export class Placement {
       ensureContainer: (x, y, z) => (isContainerAt(x, y, z) ? world.getOrOpenContainer(x, y, z) : null),
       getFurnace: (x, y, z) => world.getFurnace(x, y, z),
       ensureFurnace: (x, y, z) => (isFurnaceAt(x, y, z) ? world.getOrOpenFurnace(x, y, z) : null),
+      isFilterHopper: isFilterHopperAt,
     });
   }
 

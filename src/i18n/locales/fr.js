@@ -823,4 +823,9 @@ export const fr = {
   '这台机器不收这个': 'Cette machine n\'accepte pas cela',
   '没有可取的东西': 'Rien à retirer',
   '离合闸已切换': 'Embrayage basculé',
+  // ── B53 R1 分拣漏斗（过滤槽）──
+  '筛子只认一件东西：往最后一格放什么，这一格就只搬什么。': 'Un tamis ne connaît qu\'une chose : ce qui repose dans la dernière case, et rien d\'autre.',
+  '分拣漏斗': 'Entonnoir filtrant',
+  '最后一格是过滤槽：放什么就只搬什么，空着 = 全通': 'La dernière case est le filtre : cet entonnoir ne déplace que l\'objet qui s\'y trouve. Vide = tout passe.',
+  '过滤': 'Filtre',
 };
