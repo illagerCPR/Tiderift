@@ -19,6 +19,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      actions: read        # 轮询本 run 的 artifact（见下方等待步骤）
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -41,6 +42,25 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
+
+      # upload-pages-artifact v5 会在制品真正可查询之前返回（Node 24 版上传器的竞态），
+      # deploy-pages 随即查询会拿到 0 个制品（beta-build-52 首次发布即栽在这里）。
+      # 这里显式等到本 run 的 github-pages 制品可列出再部署。
+      - name: Wait for pages artifact visibility
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 30); do
+            n=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+                  --jq '[.artifacts[] | select(.name == "github-pages" and .expired == false)] | length')
+            if [ "${n:-0}" -ge 1 ]; then
+              echo "github-pages artifact ready (attempt $i)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "github-pages artifact 在 150 秒内不可见" >&2
+          exit 1
 
       - id: deployment
         uses: actions/deploy-pages@v5
