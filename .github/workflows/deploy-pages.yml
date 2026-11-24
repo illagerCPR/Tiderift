@@ -37,29 +37,53 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # 重跑同一个 run 会叠加同名 artifact（deploy-pages 见到多个直接失败），上传前先清干净
+      - name: Clean stale pages artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ids=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+                 --jq '.artifacts[] | select(.name == "github-pages") | .id' || true)
+          for id in $ids; do
+            echo "删除历史 github-pages artifact: $id"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+          done
+
       - uses: actions/configure-pages@v6
 
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
-      # upload-pages-artifact v5 会在制品真正可查询之前返回（Node 24 版上传器的竞态），
-      # deploy-pages 随即查询会拿到 0 个制品（beta-build-52 首次发布即栽在这里）。
-      # 这里显式等到本 run 的 github-pages 制品可列出再部署。
-      - name: Wait for pages artifact visibility
+      # upload-pages-artifact v5 会在制品**上传完成之前**返回（Node 24 版上传器的竞态）：
+      # ① 刚 create 的 artifact 能被 list 到、但 deploy-pages 仍拿不到（beta-build-54 实测两连败）；
+      # ② 重跑会留下同名旧 artifact，deploy-pages 见到多个直接报错。
+      # 这里等到「恰好 1 个、size_in_bytes > 0」，再给 10 秒确认窗口（上传器收尾期间计数可能回落）。
+      - name: Wait for pages artifact readiness
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for i in $(seq 1 30); do
-            n=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
-                  --jq '[.artifacts[] | select(.name == "github-pages" and .expired == false)] | length')
-            if [ "${n:-0}" -ge 1 ]; then
-              echo "github-pages artifact ready (attempt $i)"
-              exit 0
+          count_pages() {
+            gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+              --jq '[.artifacts[] | select(.name == "github-pages" and .expired == false)]'
+          }
+          for i in $(seq 1 40); do
+            json=$(count_pages || echo '[]')
+            n=$(echo "$json" | jq 'length')
+            size=$(echo "$json" | jq '[.[].size_in_bytes] | add // 0')
+            echo "attempt $i: count=$n size=$size"
+            if [ "$n" -eq 1 ] && [ "$size" -gt 0 ]; then
+              sleep 10
+              n2=$(count_pages | jq 'length')
+              if [ "$n2" -eq 1 ]; then
+                echo "github-pages artifact 就绪且唯一"
+                exit 0
+              fi
+              echo "确认窗口内计数变为 $n2（上传器仍在收尾），继续等待"
             fi
             sleep 5
           done
-          echo "github-pages artifact 在 150 秒内不可见" >&2
+          echo "github-pages artifact 在约 200 秒内未就绪" >&2
           exit 1
 
       - id: deployment
