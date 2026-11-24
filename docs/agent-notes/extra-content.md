@@ -286,3 +286,65 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 | `tests/build52-machine-ui.mjs` | 原因/槽位文案全覆盖、界面数据同源、右键与潜行分流、INDUSTRY_OPEN 与槽位校验、生命周期接线 |
 | `tests/build52-network.mjs` | 红石观察纯函数、断开保温、两线并行、拆轴只影响子网、源码绊线 |
 | `server/test-industry.mjs`（第七段） | INDUSTRY_OPEN 权威状态+网络摘要、指定槽位、切割机产出、离合闸红石优先 |
+
+## 十一、B53 物流与自动化（分拣漏斗 / 收割机 / 潮压表 / 两道上限 / 潮工断坊）
+
+### 11.1 分拣漏斗 = 「容器最后一格是过滤槽」
+
+- **27 槽协议不变量不变**：分拣漏斗的容器仍是 27 格，只是**最后一格（下标 26，`FILTER_SLOT`）被征用为过滤槽**，
+  缓冲只剩前 26 格（`FILTER_BUFFER_SLOTS`）。因此存档 / 联机 / 导入导出 / 容器界面**全部零改动**，
+  过滤规则随容器本身一起落盘与同步——不要为了"多一个槽"去改成 28 格（会撞 `length === 27` 的一串校验）。
+- 过滤规则只认**物品名**（带 data 的潜影盒也按名字），空过滤槽 = 全通；过滤同时管**出料**与**取料**
+  （不认的物品连进都不进，否则缓冲会被不能出料的东西占满）。
+- 过滤槽自身**永不流动、也不会被别的漏斗当目标格写**：`targetSlot/moveOneStack/pushIntoFurnace/pullFromFurnace`
+  统统加了 `srcLimit/dstLimit/onlyName`，判定收口在 `tickHopperFlow` 的 `io.isFilterHopper`（服务器按方块账本、
+  单机按 `BlockRegistry` 注入同一判定）。
+- **满箱回退**：目标满 → 物品留在缓冲；缓冲 26 格满后不再从上游抽取。任何情况下物品守恒（不丢不复制）。
+- 联机：过滤槽是"设置"不是搬运内容，走单开消息 `hopper_filter`（`HOPPER_FILTER`）；
+  漏斗容器本体仍归服务器（`container_set` 对它继续整箱拒绝——这是 B36 的两条同步路径分界，别放宽）。
+
+### 11.2 收割机 = 只收正前方成熟作物，产物进背面容器
+
+- `harvester` 家族（234~237，`facingAway`：刀口朝玩家看的方向）。前方 = facing 方向，产物格 = **反方向那一格**。
+- 三种**安全停止**都必须保留：前方区块未加载（用 `world.getChunk(x>>4,z>>4)` 真判，不靠 `getBlock=0` 猜）/
+  背面没有容器 / 容器放不下。放不下用**副本干跑 + 整批原子**（`insertAllOrNothing`），只塞一半也拒绝，
+  作物留在田里——绝不吞产物。
+- 产物表与手割同源：`crops.js` 的 `cropHarvestDrops(name, rng)`；`Game._blockDrops` 已改为调用它，
+  别在别处再写一份"种子 1-3"。
+- 联机**主机权威**：与 `_growCrops` 同一条 `net.isHost` 门控（服务器只有方块账本，看不到地形作物）。
+  产物经 `harvest_output` 上报，服务器核对「该格是容器 + 旁边那台机器朝外开刀」后写权威账本并广播；
+  装不下的部分转掉落物。**不要**让客户端用 `container_set` 写机器产物（会被漏斗热窗口拒绝而丢货）。
+
+### 11.3 潮压表与两道上限
+
+- `pressure_gauge`（238，`industryKind: 'gauge'`）是纯只读仪表：不吃压、不产压、无槽位；
+  `netInfoFor` 现在给 `boilers / machines / cuts / cutsTotal`（`cuts` 最多 6 条，payload 有界）。
+- `machineStatus` 的 gauge 分支只看网络：`over-limit / cut / no-power / stalled / running`；
+  `MACHINE_REASONS` 加了 `cut` 之后**必须同时给 `reasonText` 加 case**——B52 的「原因文案不重复」绊线
+  会立刻抓到（否则该码会显示成「待机」）。
+- 界面（`MachineScreen`）对 gauge 走只读布局：三行实时读数 + 状态行 + 只读提示，不渲染槽位与玩家背包；
+  **首帧渲染要显式调一次 `_refreshGauge`**（暂停时 tick 不跑，否则只剩基本信息行）。
+- 两道上限：`INDUSTRY_BLOCK_LIMIT`（512 方块，**按方块数**不是状态数）与 `NETWORK_MAX_NODES`（128 节点）。
+  `projectedNetworkSize(networks, blocks, x, y, z, states)` 与建图同口径（断闸不导流）；
+  客户端 `IndustrySystem.canPlaceAt` 预检 + 服务器 `onBlockSet` 权威回滚（回写该格旧值 + 系统提示）。
+  注意：**拨通离合闸仍可能把两个网络并成超限网络**，此时整网停转（`over-limit` 原因保留），这是有意的。
+
+### 11.4 潮工断坊（tide_workshop）
+
+- 结构 def 带 `requiresExtras: ['industry']`：关闭工业的世界**一个都不生成**（旧结构随机流逐字节不变），
+  自带 salt 8419 / cell 20 / `probeR: [10, 14]` / `maxSlope: 5`（小体量，默认探针环几乎全落选）。
+- 布局里**没有任何工业方块**：遗迹只给叙述、材料与形制参考；机器靠配方即可获得（遗迹不是解锁点）。
+- 箱子表 `tide_workshop`（铁/铜/煤/红石/石料，`bucket` FORCED 保底）；碑位注册 `tideworks` 章节
+  （`STELE_CHAPTERS`，dim = overworld），四格形制走 `steleStack`。
+
+### 11.5 回归
+
+| 套件 | 守什么 |
+|---|---|
+| `tests/build53-filter-hopper.mjs` | 230~233 ID 钉值、27 槽不变量、过滤只认同名/空滤全通、过滤格不流动、满箱回退、26 格缓冲、熔炉两向、守恒与确定性、World 索引、接线绊线 |
+| `tests/build53-harvester.mjs` | 234~237 ID 钉值、前后几何、只收成熟作物、产物同源手割、三种安全停止、原子入箱、一拍一格、World 索引、接线绊线 |
+| `tests/build53-gauge-limits.mjs` | 238 ID 钉值、读数含锅炉·机器·断路位置、五种表状态、并网规模（含断闸口径）、512/128 常量、文案覆盖、预检与权威回滚绊线 |
+| `tests/build53-workshop.mjs` | 断坊注册与工业门控、残墙/火把/箱子/断坊碑、四格形制、箱子三向 + loot 桶保底、确定性、旧结构随机流不变、布局无工业方块 |
+| `tests/build53-soak.mjs` | 切割机 64 原木精确守恒、断网保温、槽满即停；12000 步整线扰动（投料/取货/拨闸/拆装轴/收割）不变量与确定性 |
+| `server/test-flow.mjs` | 分拣漏斗过滤格广播与只搬同名物品、清空后全通、整箱改写仍被拒、收割产物入箱、溢出转掉落 |
+| `server/test-industry.mjs` ⑧ | 第 129 节轴被拒并回滚、系统提示、128 节点网络读数正常且未超限 |

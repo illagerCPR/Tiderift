@@ -230,7 +230,7 @@
 | 原初之潮 / 原初纹章 | 身份层 | Primordial Tide / Primordial Emblem | **已定型**（F1 入码 names.js 11 列 + 纹章 lore 承载终章；候潮 = 状态章 tide_waiting） |
 | 鲸骨冢 / 鲸骨块 / 归云 | 身份层 | Whalebone Barrow / Whalebone Block / Returned-to-Cloud | **已定型**（Build 19 K1 入码 names.js 11 列；设计方案 docs/archives/whale-barrow-design.md） |
 | 长明灯石（荧石重释）/ 溺亡骨泥（灵魂沙重释） | 来历层 | 仅 lore 文案，不改 item id / displayName | 随 P1 |
-| 潮工 / 潮压 / 回响 / 回响焦点 | 身份层 | Tidework / Tide Pressure / Echo / Echo Focus | **已定型**（Build 51 R3/R4 入码：`tide_boiler` 潮压锅炉 / `drive_shaft` 传动轴 / `crusher` 碎石机 / `tide_cutter` 切割机 / `drive_clutch` 离合闸 / `resonance_table` 回响仪台 / `echo_dust` 回响尘 / `gale_focus` 风潮焦点 / `ember_focus` 坠潮焦点；界面主模块名仍用用户指定的「工业 / 魔法」） |
+| 潮工 / 潮压 / 回响 / 回响焦点 | 身份层 | Tidework / Tide Pressure / Echo / Echo Focus | **已定型**（Build 51 R3/R4 入码：`tide_boiler` 潮压锅炉 / `drive_shaft` 传动轴 / `crusher` 碎石机 / `tide_cutter` 切割机 / `drive_clutch` 离合闸 / `filter_hopper` 分拣漏斗 / `harvester` 收割机 / `pressure_gauge` 潮压表 / `tide_workshop` 潮工断坊 / `resonance_table` 回响仪台 / `echo_dust` 回响尘 / `gale_focus` 风潮焦点 / `ember_focus` 坠潮焦点；界面主模块名仍用用户指定的「工业 / 魔法」） |
 
 ---
 
@@ -258,8 +258,11 @@
 - **边界（红线）**：工业首版只做燃料 + 桶装水的潮压，不做水车/风车/流体泵（服务器没有完整的自然方块查询层）；
   魔法不改地形、不造水、不改时间、不造门、不跨维瞬移，创造/旁观不能施法；两条主线互不依赖，联动只在双开世界出现。
 - **交付**：B51 R1 基石（世界清单与归属闸口）/ R2 创建界面与全链路透传（含联机能力协商）/
-  R3 工业最小闭环（潮压锅炉·传动轴·碎石机）/ R4 魔法最小闭环（回响仪台·风步·烬矢）；后续 Build 52–56 见
-  `docs/extra-content-master-plan.md`。
+  R3 工业最小闭环（潮压锅炉·传动轴·碎石机）/ R4 魔法最小闭环（回响仪台·风步·烬矢）；
+  B52 工业生产网络（切割机·离合闸·机器界面）；B53 物流与自动化（分拣漏斗·收割机·潮压表·两道上限·潮工断坊）；
+  后续 Build 54–56 见 `docs/extra-content-master-plan.md`。
+- **潮工纪**：主世界的「潮工断坊」与断坊碑（章节 id `tideworks`）承担工业线的环境叙事——
+  碑上写的是雨民自己摸索出来的尺寸：闸要比轴结实、斗要认得清、一百二十八节就是潮工翻脸的地方。
 
 ## 9. 维护与验收
 

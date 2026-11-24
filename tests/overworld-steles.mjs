@@ -57,7 +57,8 @@ for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
 }
 ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
 ok(byDim.nether === 4, `下界 4 章 (${byDim.nether})`);
-ok(byDim.overworld === 3, `主世界 3 章 (${byDim.overworld})`);
+// B53 R4：主世界再添「潮工纪」（断坊碑）——雨土纪 3 章不动，计数随新增章节 +1
+ok(byDim.overworld === 4, `主世界 4 章（雨土纪 3 + 潮工纪 1）(${byDim.overworld})`);
 ok(byDim.end === 2, `末地 2 章（E1 已交付）(${byDim.end})`);
 
 // ── ⑤ 行文纪律（全表兜底）──

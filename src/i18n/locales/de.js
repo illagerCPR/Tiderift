@@ -840,4 +840,11 @@ export const de = {
   '只读仪表：不耗压、不产压，读数跟着网络实时变': 'Nur Anzeige: verbraucht und erzeugt nichts, folgt dem Netz live',
   '潮工方块已达上限（512 个）': 'Grenze für Tidewerk-Blöcke erreicht (512)',
   '再连一节就超过 128 节点：这条轴太长了': 'Ein Segment mehr überschritte 128 Knoten: Diese Welle ist zu lang',
+  // ── B53 R4 潮工断坊（结构名 + 断坊碑 5 键）──
+  '潮工断坊': 'Tidewerk-Ruine',
+  '断坊碑·潮工的尺寸': 'Stele der zerbrochenen Werkstatt · Das Maß der Tidewerke',
+  '我们没本事让潮自己走路，只好替它修一条：烧水、憋压、接轴、上闸。': 'Wir konnten die Flut nie allein gehen lassen; also bauten wir ihr eine Straße: Wasser kochen, Druck halten, Wellen fügen, Kupplung setzen.',
+  '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'Ein Wellenstück durchtrennt, und die ganze Linie wird langsam — also muss die Kupplung fester sein als die Welle: leuchtet Redstone auf, lass los.',
+  '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'Ein Trichter muss wählen können: Was das Sieb annimmt, nur das trägt er; wähle falsch, und er verweigert selbst bei leerem Kasten.',
+  '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'Ihr, die ihr später kommt: Tut nicht wie wir und zieht die Welle in einem Zug außer Sicht. Einhundertachtundzwanzig Stücke — dort dreht sie sich gegen euch.',
 };

@@ -840,4 +840,11 @@ export const en = {
   '只读仪表：不耗压、不产压，读数跟着网络实时变': 'Read-only gauge: consumes and produces nothing, follows the network live',
   '潮工方块已达上限（512 个）': 'Tide-works block limit reached (512)',
   '再连一节就超过 128 节点：这条轴太长了': 'One more segment would exceed 128 nodes: this shaft is too long',
+  // ── B53 R4 潮工断坊（结构名 + 断坊碑 5 键）──
+  '潮工断坊': 'Tideworks Ruin',
+  '断坊碑·潮工的尺寸': 'Broken-Workshop Stele · The Measure of Tideworks',
+  '我们没本事让潮自己走路，只好替它修一条：烧水、憋压、接轴、上闸。': 'We never could make the tide walk on its own, so we built it a road: boil water, hold the pressure, join the shafts, set the clutch.',
+  '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'One shaft cut and the whole line slows — so the clutch must be sturdier than the shaft: when redstone lights up, let go.',
+  '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'A hopper must know how to choose: whatever the sieve accepts is the only thing it carries; choose wrong and it refuses even when the chest is empty.',
+  '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'You who come after: do not do as we did and run the shaft out of sight in one stretch. One hundred and twenty-eight segments is where it turns on you.',
 };

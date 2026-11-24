@@ -12,6 +12,7 @@ import { TIDEFIRE_HEARTH_DEF } from './tidefire_hearth.js';
 import { TIDE_BARROW_DEF } from './tide_barrow.js';
 import { GLEANER_RING_DEF } from './gleaner_ring.js';
 import { WHALE_BARROW_DEF } from './whale_barrow.js';
+import { TIDE_WORKSHOP_DEF } from './tide_workshop.js';
 
 VILLAGE_DEF.dims = ['overworld'];
 STRONGHOLD_DEF.dims = ['overworld'];
@@ -33,6 +34,9 @@ registerStructureType('tide_barrow', TIDE_BARROW_DEF);
 registerStructureType('gleaner_ring', GLEANER_RING_DEF);
 // 天域后传（鲸骨冢篇 K1）：鲸骨冢（defs 自带 dims: ['aether']）
 registerStructureType('whale_barrow', WHALE_BARROW_DEF);
+// B53 R4 工业篇章：潮工断坊（defs 自带 dims 与 requiresExtras: ['industry']——
+// 关闭工业的世界不激活本类型，旧结构随机流与 Build 52 逐字节一致）
+registerStructureType('tide_workshop', TIDE_WORKSHOP_DEF);
 
 // ── D 可动手解开的遗迹（机关房三种，各占一维：主世界/下界/天域）──────────────────
 // defs 自带 dims；几何与判定共用 core/Ruins.js 的布局常量，阶段 2 按 ruinPuzzle 接线。

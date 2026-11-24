@@ -38,7 +38,8 @@ for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
 }
 ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
 ok(byDim.nether === 4, `下界 4 章 (${byDim.nether})`);
-ok(byDim.overworld === 3, `主世界 3 章 (${byDim.overworld})`);
+// B53 R4：主世界 +1（潮工纪）；末地计数仍 2 章
+ok(byDim.overworld === 4, `主世界 4 章（含潮工纪）(${byDim.overworld})`);
 ok(byDim.end === 2, `末地 2 章 (${byDim.end})`);
 
 // ── ③ 潜影盒 / 鞘翅 / 紫颂 lore ──

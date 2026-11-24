@@ -840,4 +840,11 @@ export const pt = {
   '只读仪表：不耗压、不产压，读数跟着网络实时变': 'Manômetro passivo: não consome nem gera nada, acompanha a rede ao vivo',
   '潮工方块已达上限（512 个）': 'Limite de blocos de maré atingido (512)',
   '再连一节就超过 128 节点：这条轴太长了': 'Mais um segmento passaria de 128 nós: este eixo é longo demais',
+  // ── B53 R4 潮工断坊（结构名 + 断坊碑 5 键）──
+  '潮工断坊': 'Ruínas de obras de maré',
+  '断坊碑·潮工的尺寸': 'Estela da oficina quebrada · A medida das obras de maré',
+  '我们没本事让潮自己走路，只好替它修一条：烧水、憋压、接轴、上闸。': 'Nunca soubemos fazer a maré andar sozinha; então construímos uma estrada para ela: ferver água, segurar a pressão, juntar os eixos, assentar a embreagem.',
+  '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'Um eixo cortado e a linha inteira desacelera — por isso a embreagem deve ser mais firme que o eixo: se a redstone acender, solte.',
+  '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'Um funil precisa saber escolher: o que a peneira aceita é só o que ele carrega; escolha errado e ele recusa mesmo com o baú vazio.',
+  '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'Vós que vindes depois: não façais como nós e estiqueis o eixo de uma vez até onde não se vê. Cento e vinte e oito trechos: é ali que ele se volta contra vós.',
 };

@@ -103,6 +103,12 @@ const TABLES = {
     ['page_marrow', 1, 1, 6], ['star_marrow', 1, 2, 6],
   ],
   // 天域瞭望塔/神殿批次 B 增补：云絮与残页（叙事收集线）——已并入上方对应表
+  // 潮工断坊（B53 R4）：工业起步包——铁/铜/煤/红石 + 石料，桶由 FORCED 保底
+  tide_workshop: [
+    ['iron_ingot', 2, 4, 16], ['copper_ingot', 2, 5, 14], ['coal', 4, 9, 14],
+    ['redstone', 2, 6, 12], ['cobblestone', 6, 14, 10], ['flint', 1, 3, 8],
+    ['stick', 3, 8, 8], ['torch', 3, 6, 6], ['iron_ingot_raw', 1, 3, 5],
+  ],
   // 天空神殿·内殿圣所（批次 B）：星髓 FORCED 保底 + 裂潮残页 + 神殿档次杂项
   aether_sanctum: [
     ['golden_apple', 1, 2, 8], ['diamond', 1, 3, 10], ['emerald', 2, 4, 10],
@@ -132,6 +138,7 @@ const FORCED = {
   aether_sanctum: [['star_marrow', 2, 4]], // 批次 B：内殿圣所星髓保底（新表，不影响旧表流）
   tidefire_hearth: [['mourn_tear', 1, 2]], // 世界观批次 N2：哀潮之泪保底（跨维度收集线材料）
   tide_barrow: [['page_rain', 1, 1]], // 世界观批次 W2：雨潮残页保底（跨维度收集线材料）
+  tide_workshop: [['bucket', 1, 1]], // B53 R4：锅炉要桶装水——断坊保底给一只桶
 };
 
 // 生成箱子内容：27 槽数组（索引 0-26），空槽为 null

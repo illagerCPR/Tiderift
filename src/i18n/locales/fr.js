@@ -840,4 +840,11 @@ export const fr = {
   '只读仪表：不耗压、不产压，读数跟着网络实时变': 'Manomètre passif : ne consomme ni ne produit rien, suit le réseau en direct',
   '潮工方块已达上限（512 个）': 'Limite de blocs de marée atteinte (512)',
   '再连一节就超过 128 节点：这条轴太长了': 'Un segment de plus dépasserait 128 nœuds : cet arbre est trop long',
+  // ── B53 R4 潮工断坊（结构名 + 断坊碑 5 键）──
+  '潮工断坊': 'Ruine des ouvrages de marée',
+  '断坊碑·潮工的尺寸': 'Stèle de l\'atelier brisé · La mesure des ouvrages de marée',
+  '我们没本事让潮自己走路，只好替它修一条：烧水、憋压、接轴、上闸。': 'Nous n\'avons jamais su faire marcher la marée toute seule ; alors nous lui avons bâti une route : faire bouillir l\'eau, tenir la pression, joindre les arbres, poser l\'embrayage.',
+  '轴断一节，整条就慢下来——所以闸要做得比轴结实，红石一亮就得松手。': 'Un arbre coupé et toute la ligne ralentit — l\'embrayage doit donc être plus solide que l\'arbre : quand la redstone s\'allume, lâche.',
+  '斗要会挑：筛子认什么，它就只搬什么；认错了，箱子满了它也不认。': 'Un entonnoir doit savoir choisir : ce que le tamis accepte, il ne transporte que cela ; choisis mal et il refuse même coffre vide.',
+  '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。': 'Vous qui venez après : ne faites pas comme nous, à tirer l\'arbre d\'un trait hors de vue. Cent vingt-huit segments, voilà où il se retourne contre vous.',
 };

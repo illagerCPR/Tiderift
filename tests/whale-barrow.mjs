@@ -39,7 +39,9 @@ ok(chText.includes('潮退的时候'), '归云章开场锚定退潮时刻');
 const byDim = {};
 for (const [, c] of Object.entries(STELE_CHAPTERS)) byDim[c.dim] = (byDim[c.dim] || 0) + 1;
 ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
-ok(byDim.nether === 4 && byDim.overworld === 3 && byDim.end === 2, `其余维度计数不变 (${byDim.nether}/${byDim.overworld}/${byDim.end})`);
+// B53 R4：主世界新增潮工纪一章（3 → 4）；下界/末地计数不变
+ok(byDim.nether === 4 && byDim.overworld === 4 && byDim.end === 2,
+  `第一章计数：下界 4 / 主世界 4（含潮工纪）/ 末地 2 (${byDim.nether}/${byDim.overworld}/${byDim.end})`);
 
 // ── ③ solve 确定性 ×2 seed ──
 function sig(seed) {

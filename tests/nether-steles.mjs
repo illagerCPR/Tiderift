@@ -53,7 +53,9 @@ for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
 }
 ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
 ok(byDim.nether === 4, `下界 4 章 (${byDim.nether})`);
-ok(byDim.overworld === 3 && byDim.end === 2, '主世界 3 章 / 末地 2 章（E1 已交付）');
+// B53 R4：主世界新增「潮工纪」一章（断坊碑）——既有雨土纪 3 章不动，末地仍 2 章
+ok(byDim.overworld === 4 && byDim.end === 2, `主世界 4 章（雨土纪 3 + 潮工纪 1）/ 末地 2 章（实际 ${byDim.overworld}/${byDim.end}）`);
+ok(!!STELE_CHAPTERS.tideworks && STELE_CHAPTERS.tideworks.dim === 'overworld', '潮工纪章节在场（B53 R4）');
 const EMBER_IDS = ['ember_sinking', 'ember_hearth', 'ember_sooted', 'ember_mourning'];
 for (const id of EMBER_IDS) ok(!!STELE_CHAPTERS[id], `烬火纪章节在场: ${id}`);
 ok(!!STELE_CHAPTERS.prologue && !!STELE_CHAPTERS.renewal, '天域既有章节未被破坏（prologue/renewal）');
