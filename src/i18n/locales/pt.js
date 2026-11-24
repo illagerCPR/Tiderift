@@ -830,4 +830,14 @@ export const pt = {
   '过滤': 'Filtro',
   // ── B53 R2 收割机 ──
   '刀口朝田，出料朝箱：熟一垄，收一垄。': 'A lâmina para o campo, a saída para o baú: uma fileira madura, uma colheita.',
+  // ── B53 R3 潮压表与两道上限 ──
+  '表针只说实话：压够没有、谁在偷懒、哪一格闸松了。': 'O ponteiro só diz a verdade: se a pressão basta, quem está à toa e qual embreagem está solta.',
+  '在烧锅炉 {n} 台 · 在跑机器 {m} 台': 'Caldeiras acesas {n} · Máquinas trabalhando {m}',
+  '断路 {n} 处：{list}': '{n} corte(s): {list}',
+  '表针到底：上游没有在烧的锅炉': 'Ponteiro no zero: nenhuma caldeira acesa a montante',
+  '压力空转：有压但没有机器在干活': 'Pressão em vazio: há pressão, mas nenhuma máquina trabalhando',
+  '上游闸断开，下游拿不到潮压': 'Uma embreagem a montante está aberta; a jusante não chega pressão',
+  '只读仪表：不耗压、不产压，读数跟着网络实时变': 'Manômetro passivo: não consome nem gera nada, acompanha a rede ao vivo',
+  '潮工方块已达上限（512 个）': 'Limite de blocos de maré atingido (512)',
+  '再连一节就超过 128 节点：这条轴太长了': 'Mais um segmento passaria de 128 nós: este eixo é longo demais',
 };

@@ -270,6 +270,33 @@ const host = await connect(`host-${STAMP}`);
   assert('恢复的状态种类正确', !!st && st.kind === 'crusher');
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ⑧ B53 R3：超额网络放置回滚（超限拒绝放置，不静默截断网络）
+// ══════════════════════════════════════════════════════════════════════════
+{
+  // 一条朝 +x 的直线：127 节轴 + 末端一台锅炉 = 恰好 128 节点（锅炉可 openAt 读网络摘要）
+  const NX = 40, NY = 70, NZ = 40;
+  for (let i = 0; i < 127; i++) place(host, NX + i, NY, NZ, ID.shaft);
+  place(host, NX + 127, NY, NZ, ID.boiler);
+  await sleep(1200);
+  // 第 129 节：服务器必须拒绝并把该格回滚成空气（by:0 的权威回写）
+  host.inbox.length = 0;
+  place(host, NX + 128, NY, NZ, ID.shaft);
+  const denied = await waitFor(host, (m) => m.t === 'block_change' && m.x === NX + 128 && m.y === NY && m.z === NZ, 2500);
+  assert('第 129 节轴被拒绝并回滚', !!denied && denied.id === 0 && denied.by === 0,
+    denied ? `id=${denied.id} by=${denied.by}` : '无回滚');
+  await sleep(200); // 系统提示与回写是两条消息，等一拍再找
+  const limitChat = host.inbox.find((m) => m.t === 'chat' && typeof m.text === 'string' && m.text.includes('128'));
+  assert('拒绝时给出网络过长的系统提示', !!limitChat, limitChat ? limitChat.text : '无提示');
+  // 已建成的 128 节点网络本身仍是"刚好放满"（不是超限态）
+  host.inbox.length = 0;
+  send(host, 'industry_open', { x: NX + 127, y: NY, z: NZ });
+  const at = await waitFor(host, (m) => m.t === 'industry_state' && !!m.net, 2500);
+  assert('已建成的 128 节点网络读数正常', !!at && !!at.net && at.net.nodes === 128,
+    at && at.net ? `nodes=${at.net.nodes}` : '无 net');
+  assert('128 节点网络没有进入超限态', !!at && !!at.net && at.net.overLimit === false);
+}
+
 // 收尾
 for (const p of CONNS) { try { p.ws.close(); } catch {} }
 await sleep(150);

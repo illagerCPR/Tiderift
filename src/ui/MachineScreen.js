@@ -11,6 +11,21 @@ import { getDisplayName } from './itemName.js';
 
 const REFRESH_SEC = 0.9; // 联机界面刷新节拍（第二，INDUSTRY_OPEN 定向回包）
 
+// 方块名（界面标题）：kind → 注册名（getDisplayName 不是 i18n 动态键路径，可放在表里）
+const KIND_BLOCK_NAME = { boiler: 'tide_boiler', crusher: 'crusher', cutter: 'tide_cutter', gauge: 'pressure_gauge' };
+
+// B53 R3：潮压表的读数文案——它只说"网络怎么样"，不复用加工机的"没有可推进的活"那套说法
+export function gaugeText(code) {
+  switch (code) {
+    case 'running': return t('运转中');
+    case 'cut': return t('上游闸断开，下游拿不到潮压');
+    case 'no-power': return t('表针到底：上游没有在烧的锅炉');
+    case 'stalled': return t('压力空转：有压但没有机器在干活');
+    case 'over-limit': return t('网络超过 128 节点，整网停转');
+    default: return t('待机');
+  }
+}
+
 // 停转原因 → 文案（静态 t() 字面量：i18n 静态扫描能查到，语言包不会漏键）
 export function reasonText(code) {
   switch (code) {
@@ -25,6 +40,7 @@ export function reasonText(code) {
     case 'no-power': return t('没有潮压（上游锅炉没在烧）');
     case 'over-limit': return t('网络超过 128 节点，整网停转');
     case 'disengaged': return t('离合闸已断开');
+    case 'cut': return t('上游闸断开，下游拿不到潮压');
     case 'stalled': return t('停转（没有可推进的活）');
     default: return t('待机');
   }
@@ -124,8 +140,7 @@ export class MachineScreen {
     this._lastReason = '';
 
     const title = document.createElement('div');
-    title.textContent = getDisplayName(this.kind === 'boiler' ? 'tide_boiler'
-      : (this.kind === 'cutter' ? 'tide_cutter' : 'crusher'));
+    title.textContent = getDisplayName(KIND_BLOCK_NAME[this.kind] || this.kind);
     title.style.cssText = 'font-size: 14px; margin-bottom: 6px; color: #333; font-weight: bold;';
     this.panel.appendChild(title);
 
@@ -139,30 +154,36 @@ export class MachineScreen {
     this.reasonEl.style.cssText = 'font-size: 12px; color: #7a2b20; margin-bottom: 2px;';
     this.panel.appendChild(this.reasonEl);
 
-    // 进度条
-    this.barWrap = document.createElement('div');
-    this.barWrap.style.cssText = 'width: 100%; height: 10px; background: #8b8b8b; border: 1px solid #555; position: relative; margin-bottom: 8px;';
-    this.barFill = document.createElement('div');
-    this.barFill.style.cssText = 'position: absolute; left: 0; top: 0; height: 100%; width: 0%; background: #d9f0ef;';
-    this.barWrap.appendChild(this.barFill);
-    this.panel.appendChild(this.barWrap);
+    // B53 R3：潮压表是只读仪表——没有槽位、没有进度条、也不摊玩家背包
+    const isGauge = this.kind === 'gauge';
+    this.barWrap = null;
+    this.barFill = null;
+    if (!isGauge) {
+      // 进度条
+      this.barWrap = document.createElement('div');
+      this.barWrap.style.cssText = 'width: 100%; height: 10px; background: #8b8b8b; border: 1px solid #555; position: relative; margin-bottom: 8px;';
+      this.barFill = document.createElement('div');
+      this.barFill.style.cssText = 'position: absolute; left: 0; top: 0; height: 100%; width: 0%; background: #d9f0ef;';
+      this.barWrap.appendChild(this.barFill);
+      this.panel.appendChild(this.barWrap);
 
-    // 槽位区
-    const slotsRow = document.createElement('div');
-    slotsRow.style.cssText = 'display: flex; align-items: flex-end; gap: 10px; margin-bottom: 10px;';
-    const layout = this.kind === 'boiler'
-      ? [['fuel', 'water'], ['output']]
-      : [['input'], ['output', 'bonus']];
-    const arrow = () => {
-      const a = document.createElement('div');
-      a.textContent = '→';
-      a.style.cssText = 'font-size: 18px; color: #444; padding-bottom: 14px;';
-      return a;
-    };
-    slotsRow.appendChild(this.makeSlotGroup(layout[0]));
-    slotsRow.appendChild(arrow());
-    slotsRow.appendChild(this.makeSlotGroup(layout[1]));
-    this.panel.appendChild(slotsRow);
+      // 槽位区
+      const slotsRow = document.createElement('div');
+      slotsRow.style.cssText = 'display: flex; align-items: flex-end; gap: 10px; margin-bottom: 10px;';
+      const layout = this.kind === 'boiler'
+        ? [['fuel', 'water'], ['output']]
+        : [['input'], ['output', 'bonus']];
+      const arrow = () => {
+        const a = document.createElement('div');
+        a.textContent = '→';
+        a.style.cssText = 'font-size: 18px; color: #444; padding-bottom: 14px;';
+        return a;
+      };
+      slotsRow.appendChild(this.makeSlotGroup(layout[0]));
+      slotsRow.appendChild(arrow());
+      slotsRow.appendChild(this.makeSlotGroup(layout[1]));
+      this.panel.appendChild(slotsRow);
+    }
 
     // 配方表
     this.recipeEl = document.createElement('div');
@@ -171,19 +192,28 @@ export class MachineScreen {
 
     // 操作提示
     const hint = document.createElement('div');
-    hint.textContent = t('点击背包物品投入 · 点击机器槽位取出');
+    hint.textContent = isGauge ? t('只读仪表：不耗压、不产压，读数跟着网络实时变') : t('点击背包物品投入 · 点击机器槽位取出');
     hint.style.cssText = 'font-size: 11px; color: #555; margin-bottom: 8px;';
     this.panel.appendChild(hint);
 
-    // 玩家背包 27 格 + 快捷栏 9 格
-    const main = this.makeGrid(9, 3, 'main');
-    this.panel.appendChild(main);
-    const hb = this.makeGrid(9, 1, 'hotbar');
-    hb.style.marginTop = '8px';
-    this.panel.appendChild(hb);
+    if (!isGauge) {
+      // 玩家背包 27 格 + 快捷栏 9 格（仪表不摊背包：没有可投的槽）
+      const main = this.makeGrid(9, 3, 'main');
+      this.panel.appendChild(main);
+      const hb = this.makeGrid(9, 1, 'hotbar');
+      hb.style.marginTop = '8px';
+      this.panel.appendChild(hb);
+    }
 
     this.bindSlots();
     this.refreshStatic();
+    // 仪表没有槽位：首帧就把读数画全（暂停时 tick 不跑，否则只剩基本信息行）
+    if (this.kind === 'gauge') {
+      const g2 = this.game;
+      const st2 = this.state();
+      const net2 = g2.industry ? g2.industry.netInfoAt(this.pos.x, this.pos.y, this.pos.z) : null;
+      this._refreshGauge(machineStatus('gauge', st2, net2));
+    }
   }
 
   makeSlotGroup(slotNames) {
@@ -323,8 +353,10 @@ export class MachineScreen {
     this.statsEl.textContent = parts.join('   ');
     this.statsEl.style.color = status.overLimit ? '#8a1f1f' : '#333';
 
-    // 配方表
+    // 网络明细（压力表）/ 配方表（加工机与锅炉）
     this.recipeEl.innerHTML = '';
+    // 仪表的读数全在 tick 里刷 statsEl（三行实时更新），这里不重复画一遍
+    if (this.kind === 'gauge') return;
     if (this.kind === 'boiler') {
       const row = document.createElement('div');
       row.textContent = t('燃料 + 桶装水 → 潮压 + 空桶');
@@ -355,6 +387,27 @@ export class MachineScreen {
     }
   }
 
+  // B53 R3：潮压表读数（渲染首帧与每帧共用）——供需、锅炉/机器台数、断路位置都可能变
+  _refreshGauge(status) {
+    const parts = [
+      t('潮压 {supply} / 需求 {demand}', { supply: status.supply, demand: status.demand }),
+      t('效率 {pct}%', { pct: Math.round(status.efficiency * 100) }),
+      t('网络 {n} 节点', { n: status.nodes }),
+    ];
+    const cuts = Array.isArray(status.cuts) ? status.cuts : [];
+    const cutLine = cuts.length
+      ? `\n${t('断路 {n} 处：{list}', { n: status.cutsTotal, list: cuts.map((k) => `(${k})`).join(' ') })}`
+      : '';
+    const text = `${parts.join('   ')}\n${t('在烧锅炉 {n} 台 · 在跑机器 {m} 台', { n: status.boilers, m: status.machines })}${cutLine}`;
+    if (this.statsEl._gaugeText !== text) {
+      this.statsEl._gaugeText = text;
+      this.statsEl.textContent = text;
+      this.statsEl.style.whiteSpace = 'pre-line';
+      this.statsEl.style.color = (status.overLimit || cuts.length) ? '#8a1f1f' : '#333';
+    }
+    this.reasonEl.textContent = `${t('状态')}：${gaugeText(status.reason)}`;
+  }
+
   // 每帧：进度条 + 原因 + 槽位内容 + 联机刷新
   tick(dt) {
     if (!this.visible || !this.kind) return;
@@ -369,14 +422,19 @@ export class MachineScreen {
     const st = this.state();
     const net = g.industry ? g.industry.netInfoAt(this.pos.x, this.pos.y, this.pos.z) : null;
     const status = machineStatus(this.kind, st, net);
+    const isGauge = this.kind === 'gauge';
     const pct = Math.round(status.progressFrac * 100);
-    if (pct !== this._lastPct) {
+    if (this.barFill && pct !== this._lastPct) {
       this._lastPct = pct;
       this.barFill.style.width = pct + '%';
     }
     if (status.reason !== this._lastReason) {
       this._lastReason = status.reason;
-      this.reasonEl.textContent = `${t('状态')}：${reasonText(status.reason)}`;
+      this.reasonEl.textContent = `${t('状态')}：${isGauge ? gaugeText(status.reason) : reasonText(status.reason)}`;
+    }
+    if (isGauge) {
+      this._refreshGauge(status);
+      return;
     }
     for (const slot of MACHINE_SLOTS[this.kind] || []) {
       const el = this._slotEls.get(slot);

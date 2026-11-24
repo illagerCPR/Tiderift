@@ -5,14 +5,15 @@ import {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
   sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
   clutchEngaged, toggleClutch, setClutchPowered, pendingClutchSignals, isMachineSlot, slotInsertable,
+  projectedNetworkSize,
 } from '../src/core/Industry.js';
-import { INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS } from '../src/content/industry/defs.js';
+import { INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS, NETWORK_MAX_NODES } from '../src/content/industry/defs.js';
 
 export {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
   sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
   clutchEngaged, toggleClutch, setClutchPowered, pendingClutchSignals, isMachineSlot, slotInsertable,
-  INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
+  projectedNetworkSize, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS, NETWORK_MAX_NODES,
 };
 
 // 工业方块家族：id -> kind（'boiler' | 'shaft' | 'crusher' | 'cutter' | 'clutch'）
@@ -22,6 +23,7 @@ export const INDUSTRY_ID_INFO = new Map([
   [226, 'crusher'],  // crusher
   [228, 'cutter'],   // tide_cutter（B52 R1）
   [229, 'clutch'],   // drive_clutch（B52 R1；227 是回响仪台，不属工业）
+  [238, 'gauge'],    // pressure_gauge（B53 R3：只读仪表）
 ]);
 
 export function industryKindOf(id) { return INDUSTRY_ID_INFO.get(id) || null; }

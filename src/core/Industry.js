@@ -47,6 +47,8 @@ export function emptyStateFor(kind) {
   if (kind === 'boiler') return emptyBoilerState();
   if (kind === 'crusher' || kind === 'cutter') return emptyProcessorState(kind);
   if (kind === 'clutch') return emptyClutchState();
+  // B53 R3：潮压表是纯只读仪表——状态只为界面取标题/读数而存在，永不落盘、不产不耗
+  if (kind === 'gauge') return { kind: 'gauge' };
   return null; // shaft 无状态
 }
 
@@ -146,6 +148,7 @@ export function buildNetworks(blocks, states = null) {
     const idx = comps.length;
     const comp = {
       nodes: [], boilers: [], machines: [], crushers: [], cutters: [],
+      cuts: [], // B53 R3：本网络里断开的离合闸（"断路位置"，压力表读它）
       overLimit: false, supply: 0, demand: 0, efficiency: 0,
     };
     const stack = [key];
@@ -160,7 +163,7 @@ export function buildNetworks(blocks, states = null) {
         if (kind === 'crusher') comp.crushers.push(k);
         else comp.cutters.push(k);
       }
-      if (!conducts(k)) continue; // 断开的离合闸：自身在网内但不导流（轴被锯断）
+      if (!conducts(k)) { comp.cuts.push(k); continue; } // 断开的离合闸：自身在网内但不导流（轴被锯断）
       for (const nk of neighborKeys(k)) {
         if (compOf.has(nk) || !blocks.has(nk)) continue;
         compOf.set(nk, idx);
@@ -212,7 +215,31 @@ export function netInfoFor(networks, key) {
     efficiency: comp.efficiency,
     nodes: comp.nodes.length,
     overLimit: comp.overLimit,
+    // B53 R3：压力表要看的细节——在烧锅炉数 / 有活干的机器数 / 断路位置（最多 6 处，够指路）
+    boilers: comp.boilers.length,
+    machines: comp.machines.length,
+    cuts: comp.cuts.slice(0, 6),
+    cutsTotal: comp.cuts.length,
   };
+}
+
+// B53 R3：若在该格放一块工业方块，会形成的网络节点数（含自身）。
+// 用于「超额放置回滚」：相邻网络并起来超过 NETWORK_MAX_NODES 就不许放。
+// 断开的离合闸不导流（与 buildNetworks 同口径），所以并网规模按真实导流算，不虚高。
+export function projectedNetworkSize(networks, blocks, x, y, z, states = null) {
+  if (!networks || !networks.compOf || !blocks) return 1;
+  const seen = new Set();
+  let n = 1;
+  for (const nk of neighborKeys(`${x},${y},${z}`)) {
+    if (!blocks.has(nk)) continue;
+    if (blocks.get(nk) === 'clutch' && !clutchEngaged(states ? states.get(nk) : null)) continue;
+    const idx = networks.compOf.get(nk);
+    if (idx === undefined || seen.has(idx)) continue;
+    seen.add(idx);
+    const comp = networks.comps[idx];
+    if (comp) n += comp.nodes.length;
+  }
+  return n;
 }
 
 // ── 单机推进 ────────────────────────────────────────────────────────────
@@ -423,6 +450,7 @@ export function machineSig(st) {
 export const MACHINE_REASONS = Object.freeze([
   'running', 'ready', 'idle', 'no-input', 'no-recipe', 'output-full',
   'no-fuel', 'no-water', 'no-power', 'over-limit', 'disengaged', 'stalled',
+  'cut', // B53 R3：本网络里有闸断开（压力表与机器共用同一句提示）
 ]);
 
 export function machineStatus(kind, st, net = null) {
@@ -434,12 +462,25 @@ export function machineStatus(kind, st, net = null) {
     efficiency: net ? Math.max(0, Math.min(1, Number(net.efficiency) || 0)) : 0,
     nodes: net ? Math.max(0, net.nodes | 0) : 0,
     overLimit: !!(net && net.overLimit),
+    boilers: net ? Math.max(0, net.boilers | 0) : 0,
+    machines: net ? Math.max(0, net.machines | 0) : 0,
+    cuts: (net && Array.isArray(net.cuts)) ? net.cuts : [],
+    cutsTotal: net ? Math.max(0, net.cutsTotal | 0) : 0,
     recipe: null,
     progress: 0,
     progressFrac: 0,
     engaged: true,
   };
   if (!st) return info;
+  // B53 R3：潮压表只看网络，不看自己的槽位（它没有槽位）
+  if (kind === 'gauge') {
+    if (info.overLimit) info.reason = 'over-limit';
+    else if (info.cutsTotal > 0) info.reason = 'cut';
+    else if (info.supply <= 0) info.reason = 'no-power';
+    else if (info.demand <= 0) info.reason = 'stalled';
+    else info.reason = 'running';
+    return info;
+  }
   if (kind === 'clutch') {
     info.engaged = clutchEngaged(st);
     info.reason = info.engaged ? 'running' : 'disengaged';

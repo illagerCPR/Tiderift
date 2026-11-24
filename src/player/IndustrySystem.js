@@ -4,9 +4,9 @@
 // 生命周期：新建型——每次 Game.start 重建，_disposeWorld 释放（无 Three 资源、无 DOM、无监听器）。
 import {
   tickIndustry, buildNetworks, applyIndustryAction, spillStacks, sanitizeMachineState,
-  netInfoFor, toggleClutch, setClutchPowered, pendingClutchSignals,
+  netInfoFor, toggleClutch, setClutchPowered, pendingClutchSignals, projectedNetworkSize,
 } from '../core/Industry.js';
-import { INDUSTRY_TICK_MS } from '../content/industry/defs.js';
+import { INDUSTRY_TICK_MS, INDUSTRY_BLOCK_LIMIT, NETWORK_MAX_NODES } from '../content/industry/defs.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { t } from '../i18n/index.js';
 import * as THREE from 'three';
@@ -126,6 +126,19 @@ export class IndustrySystem {
     if (g.networkMode) return this._net.get(key) || null;
     if (!world.industryBlocks || !world.industryBlocks.has(key)) return null;
     return netInfoFor(this._networksFor(world), key);
+  }
+
+  // B53 R3：放置前的两道上限预检（每维度方块总数 + 单网络节点数）。
+  // 单机在这里直接拦住；联机只是少一次白放，服务器仍会权威回滚（两端同一份纯函数）。
+  canPlaceAt(x, y, z) {
+    const g = this.game;
+    const world = g.world;
+    if (!world || !world.industryBlocks) return { ok: true };
+    if (!world.extraContent || world.extraContent.industry !== true) return { ok: true };
+    if (world.industryBlocks.size >= INDUSTRY_BLOCK_LIMIT) return { ok: false, code: 'block-limit' };
+    const size = projectedNetworkSize(this._networksFor(world), world.industryBlocks, x, y, z, world.industry);
+    if (size > NETWORK_MAX_NODES) return { ok: false, code: 'net-limit', size };
+    return { ok: true, size };
   }
 
   // 机器种类（界面标题/槽位布局用）

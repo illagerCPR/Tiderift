@@ -830,4 +830,14 @@ export const en = {
   '过滤': 'Filter',
   // ── B53 R2 收割机 ──
   '刀口朝田，出料朝箱：熟一垄，收一垄。': 'Blade to the field, output to the chest: one ripe row, one harvest.',
+  // ── B53 R3 潮压表与两道上限 ──
+  '表针只说实话：压够没有、谁在偷懒、哪一格闸松了。': 'The needle only tells the truth: whether pressure is enough, who is slacking, and which clutch is loose.',
+  '在烧锅炉 {n} 台 · 在跑机器 {m} 台': 'Boilers burning {n} · Machines working {m}',
+  '断路 {n} 处：{list}': '{n} cut(s): {list}',
+  '表针到底：上游没有在烧的锅炉': 'Needle at zero: no boiler is burning upstream',
+  '压力空转：有压但没有机器在干活': 'Pressure idle: there is pressure but no machine is working',
+  '上游闸断开，下游拿不到潮压': 'An upstream clutch is open; the downstream gets no tide pressure',
+  '只读仪表：不耗压、不产压，读数跟着网络实时变': 'Read-only gauge: consumes and produces nothing, follows the network live',
+  '潮工方块已达上限（512 个）': 'Tide-works block limit reached (512)',
+  '再连一节就超过 128 节点：这条轴太长了': 'One more segment would exceed 128 nodes: this shaft is too long',
 };

@@ -191,6 +191,13 @@ addShaped('drive_clutch', 1, [
   'iron_ingot', 'stone', 'iron_ingot',
 ], ['industry']);
 
+// ── B53 R3 潮压表（同属 industry 归属）：铁框 + 玻璃表窗 + 红石触点 + 一节轴取压 ──
+addShaped('pressure_gauge', 1, [
+  'iron_ingot', 'glass', 'iron_ingot',
+  'redstone', 'drive_shaft', 'redstone',
+  'stone', 'stone', 'stone',
+], ['industry']);
+
 // ── B53 R2 收割机（同属 industry 归属）：铁框 + 两根传动轴 + 锄刃 + 一只漏斗接箱 ──
 addShaped('harvester', 1, [
   'iron_ingot', 'iron_ingot', 'iron_ingot',

@@ -3190,6 +3190,68 @@ for (const facing of ['s', 'e', 'w']) {
   }, { ...HARVESTER_SVG });
 }
 
+// ── Build 53 R3 潮压表（**文件末尾追加**，方块 ID 零漂移，取 238）──────────────────
+// 纯只读仪表（industryKind: 'gauge'）：不耗压、不产压，只把所在网络的读数摆出来。
+// 表盘画在正面：浅色圆面 + 四向刻度 + 一根指向右上方的表针 + 右下危险弧。
+function gaugeSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.9 + hash2(x, y, seed) * 0.14;
+      if (y < 2) f *= 1.1;
+      if (y > 13) f *= 0.8;
+      px[y * 16 + x] = rgb([98, 102, 110], f);
+    }
+  }
+  for (const [x, y] of [[3, 3], [12, 3], [3, 12], [12, 12]]) setPx(px, x, y, rgb([166, 170, 178]));
+  fillRect(px, 0, 7, 15, 7, rgb([72, 76, 84], 0.98)); // 一圈压槽
+  return pixelSvg(px);
+}
+
+function gaugeFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([90, 94, 102], 0.9 + hash2(x, y, seed) * 0.14);
+  }
+  // 表盘：外圈暗环 + 浅色盘面
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const dx = x - 7.5, dy = y - 7.5;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      if (r <= 6.4) px[y * 16 + x] = rgb([226, 230, 222], 0.97 + hash2(x, y, seed + 1) * 0.04);
+      else if (r <= 7.4) px[y * 16 + x] = rgb([48, 52, 58], 0.98);
+    }
+  }
+  // 危险弧：右下四分之一用暖红（超压区）
+  for (let a = 0; a < 10; a++) {
+    const ang = (-0.15 + a * 0.09) * Math.PI; // 近水平向右 → 向下方
+    const x = Math.round(7.5 + Math.cos(ang * -1) * 5.0);
+    const y = Math.round(7.5 + Math.sin(ang) * 5.0);
+    if (x >= 0 && x < 16 && y >= 0 && y < 16) setPx(px, x, y, rgb([196, 96, 84], 0.98));
+  }
+  // 四向刻度
+  for (const [x, y] of [[7, 2], [7, 13], [2, 7], [13, 7], [4, 4], [11, 4]]) setPx(px, x, y, rgb([64, 68, 74]));
+  // 表针：中轴 → 右上方（+ 中轴铜点）
+  for (let i = 1; i <= 4; i++) setPx(px, 7 + i, 7 - i, rgb([52, 58, 66], 0.98));
+  fillRect(px, 7, 7, 8, 8, rgb([168, 122, 62], 1.0));
+  return pixelSvg(px);
+}
+
+reg('pressure_gauge', {
+  displayName: '潮压表', hardness: 3, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'], industryKind: 'gauge',
+  icon: 'pressure_gauge_front',
+  textures: {
+    top: 'pressure_gauge_side', side: 'pressure_gauge_side',
+    bottom: 'pressure_gauge_side', front: 'pressure_gauge_front',
+  },
+  facing: 'n',
+  lore: ['表针只说实话：压够没有、谁在偷懒、哪一格闸松了。'],
+}, {
+  pressure_gauge_side: gaugeSideTex(311),
+  pressure_gauge_front: gaugeFrontTex(312),
+});
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

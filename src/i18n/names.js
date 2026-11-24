@@ -18,6 +18,7 @@ export const NAME_I18N = {
   drive_clutch: ['离合闸', '離合閘', 'Drive Clutch', 'Embrayage', 'Antriebskupplung', '伝動クラッチ', '전동 클러치', 'قابض النقل', 'Сцепление привода', 'Embrague de transmisión', 'Embreagem de transmissão'],
   filter_hopper: ['分拣漏斗', '分揀漏斗', 'Filter Hopper', 'Entonnoir filtrant', 'Filtertrichter', '選別ホッパー', '분류 호퍼', 'قمع فرز', 'Сортировочная воронка', 'Tolva clasificadora', 'Funil classificador'], // B53 R1
   harvester: ['收割机', '收割機', 'Harvester', 'Moissonneuse', 'Erntemaschine', '収穫機', '수확기', 'حصّادة', 'Жатка', 'Cosechadora', 'Colheitadeira'], // B53 R2
+  pressure_gauge: ['潮压表', '潮壓錶', 'Pressure Gauge', 'Manomètre', 'Druckanzeiger', '潮圧計', '조류압계', 'مقياس الضغط', 'Манометр', 'Manómetro', 'Manômetro'], // B53 R3
   air: ['空气', '空氣', 'Air', 'Air', 'Luft', '空気', '공기', 'هواء', "Воздух", "Aire", "Ar"],
   stone: ['石头', '石頭', 'Stone', 'Roche', 'Stein', '石', '돌', 'حجر', "Камень", "Piedra", "Pedra"],
   grass_block: ['草方块', '草方塊', 'Grass Block', 'Bloc d\'herbe', 'Grasblock', '草ブロック', '풀 블록', 'مكعب عشب', "Дёрн", "Bloque de hierba", "Bloco de grama"],

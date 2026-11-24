@@ -538,6 +538,19 @@ export class InteractionController {
               placeZ >= Math.floor(pz - 0.3) && placeZ <= Math.floor(pz + 0.3)) {
             return CLICK_ABORT; // 放置邻格与玩家重叠：未消费
           }
+          // B53 R3：潮工方块两道上限（每房间/维度总数 + 单网络 128 节点）——
+          // 超限拒绝放置并回滚：本地不落方块，联机服务器还会再权威拦一次。
+          if (blockDef.industryKind && g.industry) {
+            const gate = g.industry.canPlaceAt(placeX, placeY, placeZ);
+            if (!gate.ok) {
+              if (g.hud && g.hud.showToast) {
+                g.hud.showToast(gate.code === 'block-limit'
+                  ? t('潮工方块已达上限（512 个）')
+                  : t('再连一节就超过 128 节点：这条轴太长了'));
+              }
+              return CLICK_ABORT;
+            }
+          }
           g.hand.swing(); // 阶段10：放置方块挥动
           // B27：门/床/活板门形制放置（多格 + 朝向；失败不消耗）
           if (blockDef.part && g._tryPlaceShaped(placeX, placeY, placeZ, blockDef)) {

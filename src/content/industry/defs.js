@@ -11,6 +11,7 @@ export const SHAFT_BLOCK = 'drive_shaft';   // 传动轴：六邻接组成有界
 export const CRUSHER_BLOCK = 'crusher';     // 碎石机：圆石→砾石、砾石→沙
 export const CUTTER_BLOCK = 'tide_cutter';  // 潮压切割机（B52）：原木→木板、石料→石砖、骨→骨粉
 export const CLUTCH_BLOCK = 'drive_clutch'; // 离合闸（B52）：红石信号优先切断，无信号时按手动拨杆
+export const GAUGE_BLOCK = 'pressure_gauge'; // 潮压表（B53 R3）：只读仪表，显示供需/效率/断路位置
 
 // 方块名 → 机器种类（kind 是运行期身份，方块变体/朝向不改变它）
 export const INDUSTRY_BLOCK_KIND = Object.freeze({
@@ -19,6 +20,7 @@ export const INDUSTRY_BLOCK_KIND = Object.freeze({
   [CRUSHER_BLOCK]: 'crusher',
   [CUTTER_BLOCK]: 'cutter',
   [CLUTCH_BLOCK]: 'clutch',
+  [GAUGE_BLOCK]: 'gauge',
 });
 
 // ── 潮压平衡（首版，实施后用基准测试复评）──────────────────────────────────
@@ -38,6 +40,7 @@ export const MACHINE_DEMAND = Object.freeze({
   boiler: 0,
   shaft: 0,
   clutch: 0,
+  gauge: 0, // 只读仪表：不耗压、不产压，只把读数摆出来
   crusher: CRUSHER_DEMAND,
   cutter: CUTTER_DEMAND,
 });
@@ -83,6 +86,7 @@ export const MACHINE_SLOTS = Object.freeze({
   boiler: Object.freeze(['fuel', 'water', 'output']),
   crusher: Object.freeze(['input', 'output', 'bonus']),
   cutter: Object.freeze(['input', 'output', 'bonus']),
+  gauge: Object.freeze([]), // B53 R3：仪表没有槽位，界面只显示读数
 });
 
 export function crushRecipeFor(name) {

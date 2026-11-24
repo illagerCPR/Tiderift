@@ -16,6 +16,7 @@ import { tickFurnaceState, emptyFurnaceState, furnaceInfoOf, isFurnaceId, furnac
 import {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor, sanitizeMachineState,
   machineSig, spillStacks, industryKindOf, isIndustryId, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
+  projectedNetworkSize, NETWORK_MAX_NODES,
   netInfoFor, toggleClutch, setClutchPowered, isMachineSlot,
 } from './industry.js';
 
@@ -1431,6 +1432,26 @@ export class Room {
         return;
       }
     }
+    // B53 R3：潮工方块两道上限——每房间方块总数 + 单网络节点数，超限拒绝放置并回滚
+    //（计划 §5.4：超限拒绝放置并回滚，不静默截断网络）。已在该格的工业方块替换不算新增。
+    if (isIndustryId(id) && !industryKindOf(blocks.has(key) ? blocks.get(key) : 0)) {
+      const prevId = blocks.has(key) ? blocks.get(key) : 0;
+      if (this._industryBlockTotal() >= INDUSTRY_BLOCK_LIMIT) {
+        this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: prevId, by: 0, d: dim });
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `本房间潮工方块已达上限（${INDUSTRY_BLOCK_LIMIT} 个）` });
+        return;
+      }
+      const size = projectedNetworkSize(
+        this._industryNetworks(dim),
+        this.dimBucket(this.dimensionIndustryBlocks, dim), x, y, z,
+        this.dimBucket(this.dimensionIndustry, dim),
+      );
+      if (size > NETWORK_MAX_NODES) {
+        this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: prevId, by: 0, d: dim });
+        this.sendTo(player, MSG.CHAT, { from: '系统', fromId: 0, text: `再连一节就超过 ${NETWORK_MAX_NODES} 节点：这条轴太长了` });
+        return;
+      }
+    }
     // 0 是确定性地形上的显式空气修改，不能与“该坐标没有账本项”混为一谈。
     blocks.set(key, id);
     if (id === 0) {
@@ -2091,6 +2112,13 @@ export class Room {
   _industryTotal() {
     let n = 0;
     for (const m of this.dimensionIndustry.values()) n += m.size;
+    return n;
+  }
+
+  // B53 R3：工业**方块**总数（跨维度合计）——放置上限用它；上面的 _industryTotal 数的是状态条目
+  _industryBlockTotal() {
+    let n = 0;
+    for (const m of this.dimensionIndustryBlocks.values()) n += m.size;
     return n;
   }
 
