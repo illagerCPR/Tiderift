@@ -2872,6 +2872,135 @@ reg('resonance_table', {
   resonance_table_side: resonanceSideTex(281),
 });
 
+// ── Build 52 R1 潮工新增两件（**文件末尾追加**，方块 ID 零漂移，取 228/229）───────────
+// 切割机（cutter）：专用切割配方类型（原木→木板、骨→骨粉、石料→石砖），比手工多出板率。
+// 离合闸（clutch）：红石信号优先切断机械网络；无信号时按手动拨杆。断开的闸 = 轴被锯断。
+function cutterTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(IRON, 0.9 + hash2(x, y, seed) * 0.14);
+  }
+  // 顶面：导轨 + 轴心座
+  fillRect(px, 0, 3, 15, 4, rgb(IRON_DARK, 0.92));
+  fillRect(px, 0, 11, 15, 12, rgb(IRON_DARK, 0.92));
+  fillRect(px, 5, 6, 10, 9, rgb(IRON_DARK, 1.06));
+  fillRect(px, 6, 7, 9, 8, rgb(COPPER, 0.95));
+  rivetFrame(px, rgb(IRON_DARK, 0.82), 1);
+  return pixelSvg(px);
+}
+
+function cutterSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const f = 0.88 + hash2(x, y, seed) * 0.16;
+      px[y * 16 + x] = rgb([142, 146, 152], f);
+    }
+  }
+  // 侧面：进料导轨（左）+ 铜质护罩（右）
+  fillRect(px, 0, 5, 6, 7, rgb(IRON_DARK, 0.86));
+  fillRect(px, 0, 8, 6, 10, rgb(IRON_DARK, 0.72));
+  fillRect(px, 10, 4, 15, 11, rgb(COPPER, 0.9));
+  fillRect(px, 11, 5, 14, 10, rgb(COPPER, 1.06));
+  rivetFrame(px, rgb(IRON_DARK, 0.86), 1);
+  return pixelSvg(px);
+}
+
+function cutterFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([150, 154, 160], 0.88 + hash2(x, y, seed) * 0.14);
+  }
+  // 正面：圆形锯片（环 + 八齿 + 铜轴心），一眼看出"这是切割机"
+  const cx = 8, cy = 8;
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const d = Math.hypot(x - cx, y - cy);
+      if (d <= 6.4 && d >= 2.2) px[y * 16 + x] = rgb(d > 5.2 ? [232, 236, 240] : IRON, 1);
+    }
+  }
+  for (let a = 0; a < 8; a++) {
+    const rad = (a * Math.PI) / 4;
+    setPx(px, Math.round(cx + Math.cos(rad) * 6.6), Math.round(cy + Math.sin(rad) * 6.6), rgb([244, 248, 252]));
+  }
+  fillRect(px, 7, 7, 8, 8, rgb(COPPER, 1.05));
+  setPx(px, 7, 7, rgb(COPPER, 1.25));
+  return pixelSvg(px);
+}
+
+function cutterBottomTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(IRON_DARK, 0.86 + hash2(x, y, seed) * 0.14);
+  }
+  fillRect(px, 4, 4, 11, 11, rgb(IRON_DARK, 0.72));
+  fillRect(px, 6, 6, 9, 9, rgb(IRON, 0.9));
+  rivetFrame(px, rgb(IRON_DARK, 1.2), 2);
+  return pixelSvg(px);
+}
+
+function clutchSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([92, 98, 106], 0.9 + hash2(x, y, seed) * 0.12);
+  }
+  // 闸体：两片离合盘（上下铜环）
+  fillRect(px, 0, 1, 15, 3, rgb(COPPER, 0.9));
+  fillRect(px, 0, 12, 15, 14, rgb(COPPER, 0.9));
+  fillRect(px, 0, 4, 15, 11, rgb(IRON, 0.92));
+  // 手动拨杆（右侧斜杆）+ 红石灯（左侧，信号亮时由红石灯语义补足）
+  fillRect(px, 10, 5, 11, 10, rgb(IRON_DARK, 1.05));
+  fillRect(px, 11, 4, 14, 6, rgb(IRON, 1.1));
+  setPx(px, 14, 5, rgb([236, 120, 96]));
+  fillRect(px, 2, 6, 4, 9, rgb([58, 66, 74]));
+  fillRect(px, 3, 7, 3, 8, rgb([226, 82, 74], 1.05));
+  rivetFrame(px, rgb(IRON_DARK, 0.82), 1);
+  return pixelSvg(px);
+}
+
+function clutchCapTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([92, 98, 106], 0.9 + hash2(x, y, seed) * 0.12);
+  }
+  // 顶/底：轴端插口 + 离合齿圈
+  fillRect(px, 4, 4, 11, 11, rgb(IRON_DARK, 1.08));
+  for (let a = 0; a < 8; a++) {
+    const rad = (a * Math.PI) / 4;
+    setPx(px, Math.round(7.5 + Math.cos(rad) * 4.6), Math.round(7.5 + Math.sin(rad) * 4.6), rgb(COPPER, 0.95));
+  }
+  fillRect(px, 6, 6, 9, 9, rgb(IRON, 1.02));
+  fillRect(px, 7, 7, 8, 8, rgb(COPPER, 1.0));
+  return pixelSvg(px);
+}
+
+reg('tide_cutter', {
+  displayName: '潮压切割机', hardness: 3.5, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'], industryKind: 'cutter',
+  icon: 'tide_cutter_front',
+  textures: {
+    top: 'tide_cutter_top', side: 'tide_cutter_side',
+    bottom: 'tide_cutter_bottom', front: 'tide_cutter_front',
+  },
+  facing: 'n', lore: ['锯口薄，切口准：一根原木能出六块板。'],
+}, {
+  tide_cutter_top: cutterTopTex(282),
+  tide_cutter_side: cutterSideTex(283),
+  tide_cutter_bottom: cutterBottomTex(284),
+  tide_cutter_front: cutterFrontTex(285),
+});
+
+reg('drive_clutch', {
+  displayName: '离合闸', hardness: 3, tool: 'pickaxe', minTier: 1,
+  requiresExtras: ['industry'], industryKind: 'clutch',
+  icon: 'drive_clutch_side',
+  textures: { top: 'drive_clutch_cap', side: 'drive_clutch_side', bottom: 'drive_clutch_cap' },
+  lore: ['红石一亮，闸就松：手动拨杆拗不过通电的闸。'],
+}, {
+  drive_clutch_side: clutchSideTex(286),
+  drive_clutch_cap: clutchCapTex(287),
+});
+
 export const BlockSVGDefinitions = svgMap;
 
 export function getBlockCount() {

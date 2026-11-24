@@ -780,4 +780,8 @@ export const en = {
   "潮退之后留下的回声，捏在手里微微发凉。": "The echo left behind after the tide withdraws; it feels faintly cool in your hand.",
   "风潮的回响：一步踏出，风替你走完剩下的路。": "Echo of the gale: take one step and the wind walks the rest for you.",
   "坠潮的回响：火不必落地，也能替你说完一句话。": "Echo of the ember: fire need not land to finish a sentence for you.",
+
+  // ── B52 R1 潮工扩产（切割机 / 离合闸）──
+  '锯口薄，切口准：一根原木能出六块板。': 'A thin blade cuts true: one log yields six planks.',
+  '红石一亮，闸就松：手动拨杆拗不过通电的闸。': 'Redstone lights, the clutch releases: a manual lever cannot override a powered gate.',
 };

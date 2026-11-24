@@ -95,6 +95,7 @@ PURE_NODE_SUITES=(
     extra-content-unit         # B51 R1 额外内容基石（纯 node：清单规范化/旧形态回落/未知 schema 拒绝/归属元数据/配方与结构闸口/World 清单同源/无全局串状态）
     docker-image-files         # 镜像服务器文件清单（纯 node：入口闭包 ⊆ runtime COPY 列表 / COPY src 红线 / 负控）
     industry-unit              # B51 R3 潮工最小闭环（纯 node：方块 ID 钉值/归属与配方/拓扑分量与超限/锅炉点火与空桶回收/供需效率降速/槽位动作/清洗/存档净化/接线绊线）
+    build52-industry-unit      # B52 R1 潮工生产网络（纯 node：切割机/离合闸 ID 钉值/配方类型互不回退/网络闸门与环路与跨维/副产物确定性/指定槽位/机器状态原因/清洗与存档/绊线）
     magic-unit                 # B51 R4 四潮回响最小闭环（纯 node：仪台与焦点 ID 钉值/归属与配方/回响钳制与调谐/施法五关/风步落点裁剪/冷却/形状校验/存档与档案/接线绊线）
 )
 

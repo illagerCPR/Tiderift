@@ -14,6 +14,8 @@ export const NAME_I18N = {
   tide_boiler: ['潮压锅炉', '潮壓鍋爐', 'Tide Boiler', 'Chaudière de marée', 'Tide-Druckkessel', '潮圧ボイラー', '조류압 보일러', 'مرجل المدّ', "Котёл приливного давления", 'Caldera de marea', 'Caldeira de maré'],
   drive_shaft: ['传动轴', '傳動軸', 'Drive Shaft', 'Arbre de transmission', 'Antriebswelle', '伝動軸', '전동축', 'ناقل الحركة', "Вал передачи", 'Eje de transmisión', 'Eixo de transmissão'],
   crusher: ['碎石机', '碎石機', 'Crusher', 'Concasseur', 'Brecher', '粉砕機', '분쇄기', 'الكسارة', "Дробилка", 'Trituradora', 'Triturador'],
+  tide_cutter: ['潮压切割机', '潮壓切割機', 'Tide Cutter', 'Scie de marée', 'Tide-Säge', '潮圧カッター', '조류압 절단기', 'قاطع المدّ', 'Приливный резак', 'Cortadora de marea', 'Cortador de maré'],
+  drive_clutch: ['离合闸', '離合閘', 'Drive Clutch', 'Embrayage', 'Antriebskupplung', '伝動クラッチ', '전동 클러치', 'قابض النقل', 'Сцепление привода', 'Embrague de transmisión', 'Embreagem de transmissão'],
   air: ['空气', '空氣', 'Air', 'Air', 'Luft', '空気', '공기', 'هواء', "Воздух", "Aire", "Ar"],
   stone: ['石头', '石頭', 'Stone', 'Roche', 'Stein', '石', '돌', 'حجر', "Камень", "Piedra", "Pedra"],
   grass_block: ['草方块', '草方塊', 'Grass Block', 'Bloc d\'herbe', 'Grasblock', '草ブロック', '풀 블록', 'مكعب عشب', "Дёрн", "Bloque de hierba", "Bloco de grama"],

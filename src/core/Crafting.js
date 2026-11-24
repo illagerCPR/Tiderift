@@ -178,6 +178,19 @@ addShaped('drive_shaft', 4, [['iron_ingot'], ['stone'], ['iron_ingot']], ['indus
 addShaped('crusher', 1, ['stone','iron_ingot','stone','stone','drive_shaft','stone','stone','iron_ingot','stone'], ['industry']);
 addShaped('tide_boiler', 1, ['iron_ingot','iron_ingot','iron_ingot','iron_ingot','furnace','iron_ingot','stone','bucket','stone'], ['industry']);
 
+// ── B52 R1 潮工扩产两件（同属 industry 归属）─────────────────────────────────
+// 切割机 = 铁框 + 轴 + 石底座；离合闸 = 铁闸体 + 传动轴 + 红石（红石只控制通断）
+addShaped('tide_cutter', 1, [
+  'iron_ingot', 'iron_ingot', 'iron_ingot',
+  'stone', 'drive_shaft', 'stone',
+  'iron_ingot', 'iron_ingot', 'iron_ingot',
+], ['industry']);
+addShaped('drive_clutch', 1, [
+  'iron_ingot', 'stone', 'iron_ingot',
+  'redstone', 'drive_shaft', 'redstone',
+  'iron_ingot', 'stone', 'iron_ingot',
+], ['industry']);
+
 // ── B51 R4 四潮回响（内容归属 magic：关闭魔法的世界没有这些配方）──────────────
 // 回响尘：星髓研磨出的潮的记忆；仪台 = 石英环 + 回响尘心；两个焦点各取一潮材料。
 addShapeless('echo_dust', 2, ['star_marrow'], ['magic']);

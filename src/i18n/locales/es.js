@@ -780,4 +780,8 @@ export const es = {
   "潮退之后留下的回声，捏在手里微微发凉。": "El eco que queda tras retirarse la marea; se siente algo frío en la mano.",
   "风潮的回响：一步踏出，风替你走完剩下的路。": "Eco del vendaval: da un paso y el viento recorre el resto por ti.",
   "坠潮的回响：火不必落地，也能替你说完一句话。": "Eco de la ascua: el fuego no necesita caer para terminar una frase por ti.",
+
+  // ── B52 R1 潮工扩产（切割机 / 离合闸）──
+  '锯口薄，切口准：一根原木能出六块板。': 'Filo fino, corte exacto: un tronco da seis tablones.',
+  '红石一亮，闸就松：手动拨杆拗不过通电的闸。': 'La redstone se enciende y el embrague suelta: una palanca no puede contra una compuerta alimentada.',
 };
