@@ -13,6 +13,10 @@ export const NAME_I18N = {
   rain_focus: ['雨潮焦点', '雨潮焦點', 'Rain Focus', 'Focalisateur de pluie', 'Regenfokus', '雨潮の焦点', '비潮 초점', 'بؤرة مطر', "Фокус дождя", 'Foco de lluvia', 'Foco de chuva'], // B54 R1
   tideless_focus: ['无潮焦点', '無潮焦點', 'Tideless Focus', 'Focalisateur sans marée', 'Gezeitenlos-Fokus', '無潮の焦点', '무조 초점', 'بؤرة بلا مدّ', "Фокус безводья", 'Foco sin marea', 'Foco sem maré'], // B54 R1
   echo_shard: ['回响残片', '回響殘片', 'Echo Shard', "Éclat d'écho", 'Echosplitter', '残響の欠片', '메아리 조각', 'شظية صدى', 'Осколок отзвука', 'Fragmento de eco', 'Fragmento de eco'], // B55 R1
+  gale_cross_focus: ['风渡焦点', '風渡焦點', 'Gale Crossing Focus', 'Focalisateur de traversée', 'Sturmfahrt-Fokus', '風渡の焦点', '바람건넘 초점', 'بؤرة عبور الريح', 'Фокус ветропрохода', 'Foco de travesía', 'Foco de travessia'], // B55 R2
+  ember_ring_focus: ['烬环焦点', '燼環焦點', 'Ember Ring Focus', "Focalisateur d'anneau de braise", 'Glutring-Fokus', '燼環の焦点', '불씨고리 초점', 'بؤرة حلقة الجمر', 'Фокус угольного кольца', 'Foco de anillo de ascua', 'Foco de anel de brasa'], // B55 R2
+  tide_ward_focus: ['潮护焦点', '潮護焦點', 'Tide Ward Focus', 'Focalisateur de garde de marée', 'Flutwacht-Fokus', '潮護の焦点', '조류수호 초점', 'بؤرة حراسة المدّ', 'Фокус приливной защиты', 'Foco de guardia de marea', 'Foco de guarda da maré'], // B55 R2
+  void_dash_focus: ['长折焦点', '長折焦點', 'Long Fold Focus', 'Focalisateur de long repli', 'Langfalz-Fokus', '長折の焦点', '긴 접힘 초점', 'بؤرة الطيّ الطويل', 'Фокус дальнего сгиба', 'Foco de pliegue largo', 'Foco de dobra longa'], // B55 R2
   // B51 R3 潮工三件套（工业内容）
   tide_boiler: ['潮压锅炉', '潮壓鍋爐', 'Tide Boiler', 'Chaudière de marée', 'Tide-Druckkessel', '潮圧ボイラー', '조류압 보일러', 'مرجل المدّ', "Котёл приливного давления", 'Caldera de marea', 'Caldeira de maré'],
   drive_shaft: ['传动轴', '傳動軸', 'Drive Shaft', 'Arbre de transmission', 'Antriebswelle', '伝動軸', '전동축', 'ناقل الحركة', "Вал передачи", 'Eje de transmisión', 'Eixo de transmissão'],

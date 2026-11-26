@@ -10,7 +10,7 @@
 //   · 折步：向可见落点短距折跃，**不跨维、不穿墙、不落未加载区块/实心格**；找不到落点时不扣回响。
 //   · 所有施法都要先过「世界启用魔法 + 手持对应焦点 + 回响足够 + 冷却已过 + 非创造/旁观」五关。
 import {
-  ECHO_MAX, ECHO_PER_LEVEL, spellDef, SPELLS, CAST_FAIL_TEXT,
+  ECHO_MAX, ECHO_PER_LEVEL, spellDef, SPELLS, ALL_SPELLS, CAST_FAIL_TEXT,
 } from '../content/magic/defs.js';
 
 // 回响资源（纯函数式存取；上限内钳制，绝不透支）
@@ -177,7 +177,7 @@ export const MAGIC_LIFECYCLE = Object.freeze({
 });
 
 // 冷却表清洗：只留合法的「法术 ID → 毫秒时间戳」；脏值丢弃（换维透传与测试共用）
-export function sanitizeCooldowns(raw, spells = SPELLS, now = Date.now()) {
+export function sanitizeCooldowns(raw, spells = ALL_SPELLS, now = Date.now()) {
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
   for (const [id, at] of Object.entries(raw)) {
@@ -198,6 +198,32 @@ export function boltDamage(bolt, def) {
   if (Number.isFinite(stored) && stored > 0) return stored;
   const base = Number(def && def.damage);
   return Number.isFinite(base) && base > 0 ? base : 0;
+}
+
+// 烬环溅射（B55 R2）：从候选里挑出命中点周围最近的至多 maxTargets 个目标。
+//   纯函数（不读世界、不改状态），MobManager 负责实际扣血/反馈/联机上报。
+//   候选 {x,y,z,id,dead}：dead 跳过；距离按「身体中点」的球心距；距离并列按 id 定序（确定性）。
+//   只挑「其他」目标：弹道已经直击命中的怪物在本函数调用前已 dead（或由调用方排除）。
+export function selectSplashTargets(candidates, cx, cy, cz, radius, maxTargets = 2) {
+  const out = [];
+  const r = Number(radius);
+  const cap = Math.max(0, Math.floor(Number(maxTargets) || 0));
+  if (!Array.isArray(candidates) || !(r > 0) || cap <= 0) return out;
+  const picked = [];
+  for (const c of candidates) {
+    if (!c || c.dead) continue;
+    const dx = Number(c.x) - cx, dy = Number(c.y) - cy, dz = Number(c.z) - cz;
+    if (![dx, dy, dz].every(Number.isFinite)) continue;
+    const d = Math.hypot(dx, dy, dz);
+    if (!(d <= r)) continue;
+    picked.push({ c, d, id: Number.isFinite(c.id) ? c.id : 0 });
+  }
+  picked.sort((a, b) => (a.d - b.d) || (a.id - b.id));
+  for (const p of picked) {
+    if (out.length >= cap) break;
+    out.push(p.c);
+  }
+  return out;
 }
 
 // 服务器侧形状校验：法术 ID 合法 + 数值在允许区间（轻信任模型的硬约束，不宣称反作弊）
@@ -223,7 +249,8 @@ export function sanitizeCast(msg) {
   const to = [msg.x2, msg.y2, msg.z2];
   if (to.every((n) => typeof n === 'number' && Number.isFinite(n))) {
     const span = Math.hypot(msg.x2 - msg.x, msg.y2 - msg.y, msg.z2 - msg.z);
-    if (msg.y2 >= -300 && msg.y2 <= 1000 && span <= 16) {
+    // B55 R2：长折满蓄 18 格，落点跨度上限同步放到 22（仍拒掉真·越界伪造）
+    if (msg.y2 >= -300 && msg.y2 <= 1000 && span <= 22) {
       out.x2 = msg.x2; out.y2 = msg.y2; out.z2 = msg.z2;
     }
   }

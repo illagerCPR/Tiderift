@@ -47,6 +47,7 @@ const MAP = {
   resonance_table: 'functional', echo_dust: 'materials', gale_focus: 'tools', ember_focus: 'tools',
   rain_focus: 'tools', tideless_focus: 'tools', // B54 R1：四系齐备
   echo_shard: 'materials', // B55 R1：进阶材料
+  gale_cross_focus: 'tools', ember_ring_focus: 'tools', tide_ward_focus: 'tools', void_dash_focus: 'tools', // B55 R2：四潮进阶
   // B51 R3 潮工（工业内容；关闭工业的世界连创造栏都不出现）
   tide_boiler: 'functional', drive_shaft: 'functional', crusher: 'functional',
   tide_cutter: 'functional', drive_clutch: 'functional', // B52 R1

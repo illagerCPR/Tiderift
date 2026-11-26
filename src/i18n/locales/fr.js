@@ -861,4 +861,11 @@ export const fr = {
   '风纹哨台': 'Belvédère des veines de vent',
   '无潮静台': 'Plateau sans marée',
 
+  // ── B55 R2 四潮进阶（四支进阶焦点 lore + 潮护提示）──
+  '风潮的回响：一步不够远，就让风把这段路对折一次。': 'Écho de la bourrasque : quand un pas ne suffit pas, le vent plie ce chemin une fois.',
+  '坠潮的回响：火不落地，只在落点上排成一圈。': 'Écho de la marée de braise : le feu ne tombe pas ; il s\'aligne en anneau là où il frappe.',
+  '雨潮的回响：雨替你挡在前面，也替你洗掉那些不该留下的。': 'Écho de la marée de pluie : la pluie se place devant toi et emporte ce qui ne doit pas rester.',
+  '无潮的回响：路可以很长，只要中间什么都不放。': 'Écho du sans-marée : le chemin peut être long, à condition que rien ne s\'y tienne.',
+  '潮护：生命 +{n}，涤除负面': 'Garde de marée : +{n} de vie, altérations lavées',
+
 };

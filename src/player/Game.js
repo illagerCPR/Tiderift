@@ -658,6 +658,7 @@ export class Game {
       ? Math.max(0, Math.min(this.player.echoMax, loadData.player.echo | 0))
       : 0;
     this.player.slowFall = 0;
+    this.player.slowFallVy = 0;
     // 滑翔瞬态复位（Player 跨存档共享实例；掉落展开由 _updateGliding 逐帧重判）
     this.player.gliding = false;
     if (this.hud) this.hud.setGliding(false);

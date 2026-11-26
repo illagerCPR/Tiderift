@@ -241,7 +241,8 @@ const INDUSTRY_NAMES = [
   ok(/msg\.spell === 'tide_mend'/.test(magic) && /_mendFxAt\(msg\.x/.test(magic),
     '远端回潮只播水汽（不替他回血）');
   ok(/msg\.spell === 'void_step'/.test(magic) && /msg\.x2/.test(magic), '远端折步画起止两点');
-  ok(/sendMagicCast\('void_step', p\.echo, from, dir, to\)/.test(magic), '折步广播带落点');
+  // B55 R2：广播改用 def.id（进阶长折复用同一施法函数，不能写死基础 ID）
+  ok(/sendMagicCast\(def\.id, p\.echo, from, dir, to\)/.test(magic), '折步广播带落点（法术 ID 由数据表给）');
   // 服务器：落点只作表现
   ok(/fx\.x2 = cast\.x2/.test(room), '服务器透传落点表现');
   // 数据表：四系常量齐备（测试不依赖注释文案）

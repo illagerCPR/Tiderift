@@ -18,6 +18,7 @@ import { applyEntityLight } from '../render/entityLight.js';
 import { raySphereHit } from '../player/Raycast.js';
 import { BLOCK_CENTER } from '../player/constants.js';
 import { blastDamage, blastKnockback, blastDir } from '../core/Explosion.js';
+import { selectSplashTargets } from '../core/Magic.js';
 
 const MAX_MOBS = 20;
 const MAX_PASSIVE = 12; // 被动动物上限（不含村民——村庄系统单独管理）
@@ -560,6 +561,44 @@ export class MobManager {
       }
     }
     return hits;
+  }
+
+  // B55 R2 烬环溅射：命中点周围最多 maxTargets 个怪物各吃一次固定伤害（按距离最近优先，
+  // 距离并列按 netId 定序）。与 attackMob 同一套受击反馈/血条/音效/联机上报；
+  // 不消耗无敌帧、不触发末影人瞬移与中立激怒（溅射不是"被谁打了一拳"，同 TNT 半径伤害口径）。
+  // exclude 用于排除已被直击命中的那只，杜绝同一发弹道算两次。
+  damageMobsNear(cx, cy, cz, radius, damage, maxTargets = 2, exclude = null) {
+    if (!this.mobs || this.mobs.length === 0) return 0;
+    const cands = [];
+    for (const mob of this.mobs) {
+      if (!mob || mob.dead || mob.dyingAnim || mob === exclude) continue;
+      cands.push({
+        x: mob.position.x, y: mob.position.y + mob.height * 0.5, z: mob.position.z,
+        id: mob.netId != null ? mob.netId : 0, mob,
+      });
+    }
+    const picked = selectSplashTargets(cands, cx, cy, cz, radius, maxTargets);
+    for (const c of picked) {
+      const mob = c.mob;
+      mob.health = Math.max(0, mob.health - damage);
+      mob.playerHitAt = Date.now(); // 玩家击杀判定（5 秒内死亡 → XP 归属玩家）
+      if (mob.health <= 0) mob.dead = true;
+      mob.hitFlash = HIT_FLASH_DURATION;
+      const sndDist = this._playerPos ? this._playerPos.distanceTo(mob.position) : 10;
+      audio.mobHurt(mob.typeName, sndDist);
+      if (mob.dead) audio.mobDeath(mob.typeName, sndDist);
+      if (mob.healthBarSprite) {
+        mob.healthBarFadeTimer = HEALTH_BAR_FADE;
+        mob.healthBarSprite.visible = true;
+        if (mob.healthBarSprite.material) mob.healthBarSprite.material.opacity = 1;
+        this._updateHealthBar(mob);
+      }
+      // 联机：上报攻击事件，其它端同步扣血/受击/对齐位置（与 attackMob 同口径）
+      if (mob.netId != null && this.mobNet) {
+        this.mobNet.sendMobAttack(mob.netId, damage, mob.position.x, mob.position.y, mob.position.z);
+      }
+    }
+    return picked.length;
   }
 
   // 其它端攻击：本端同步扣血 + 受击反馈 + 位置校正（减少各端 AI 漂移）

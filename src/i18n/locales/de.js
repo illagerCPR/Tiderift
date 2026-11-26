@@ -861,4 +861,11 @@ export const de = {
   '风纹哨台': 'Windspur-Warte',
   '无潮静台': 'Gezeitenlose Stille',
 
+  // ── B55 R2 四潮进阶（四支进阶焦点 lore + 潮护提示）──
+  '风潮的回响：一步不够远，就让风把这段路对折一次。': 'Echo des Sturms: Reicht ein Schritt nicht, faltet der Wind diesen Weg einmal.',
+  '坠潮的回响：火不落地，只在落点上排成一圈。': 'Echo der Glutflut: Feuer landet nicht; es reiht sich dort zu einem Ring.',
+  '雨潮的回响：雨替你挡在前面，也替你洗掉那些不该留下的。': 'Echo der Regenflut: Der Regen stellt sich vor dich und wäscht fort, was nicht bleiben soll.',
+  '无潮的回响：路可以很长，只要中间什么都不放。': 'Echo der Gezeitenlosigkeit: Der Weg darf lang sein, solange in der Mitte nichts steht.',
+  '潮护：生命 +{n}，涤除负面': 'Flutwacht: +{n} Leben, Leiden abgewaschen',
+
 };

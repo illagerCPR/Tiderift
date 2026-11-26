@@ -1147,6 +1147,63 @@ reg('echo_shard', { stack: 16, requiresExtras: ['magic'], lore: ['一片还没�
   g.spi(4, 5, 8, 8, pale, 302, 0.16);
 }));
 
+// ── Build 55 R2 四潮进阶（**文件末尾追加**，物品 ID 零漂移：147~150）──────────────
+// 进阶焦点：基础焦点上嵌一片回响残片。一枚残片只够刻一支（选择留在玩家手里）。
+
+// 风渡焦点：焦点环上多了一道长长的风痕——它记得该怎么把路对折。
+reg('gale_cross_focus', { stack: 1, requiresExtras: ['magic'], lore: ['风潮的回响：一步不够远，就让风把这段路对折一次。'] }, art(g => {
+  const pale = 'rgb(222, 238, 246)', ice = 'rgb(150, 214, 224)', shade = 'rgb(110, 168, 190)';
+  for (let y = 4; y <= 12; y++) for (let x = 4; x <= 12; x++) {
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 17 && d2 >= 10) g.s(x, y, d2 >= 15 ? shade : pale);
+  }
+  g.hl(9, 4, 13, ice); g.hl(10, 9, 13, ice);   // 拖出去的两道光
+  g.s(8, 8, ice); g.s(9, 8, pale);
+  g.s(5, 5, 'rgb(255,255,255)');
+}));
+
+// 烬环焦点：环心没有火，只有一圈还没散的温度。
+reg('ember_ring_focus', { stack: 1, requiresExtras: ['magic'], lore: ['坠潮的回响：火不落地，只在落点上排成一圈。'] }, art(g => {
+  const iron = 'rgb(148, 152, 160)', ember = 'rgb(232, 138, 78)', glow = 'rgb(255, 208, 140)';
+  for (let y = 3; y <= 13; y++) for (let x = 3; x <= 13; x++) {
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 26 && d2 >= 18) g.s(x, y, iron);
+    else if (d2 <= 13 && d2 >= 7) g.s(x, y, d2 >= 10 ? ember : glow);
+  }
+  g.s(8, 4, glow); g.s(4, 8, glow); g.s(12, 8, ember); g.s(8, 12, ember);
+}));
+
+// 潮护焦点：陶环里立着一层薄薄的水墙。
+reg('tide_ward_focus', { stack: 1, requiresExtras: ['magic'], lore: ['雨潮的回响：雨替你挡在前面，也替你洗掉那些不该留下的。'] }, art(g => {
+  const clay = 'rgb(178, 183, 198)', clayD = 'rgb(118, 124, 142)', water = 'rgb(122, 198, 222)';
+  const paleW = 'rgb(200, 240, 248)';
+  for (let y = 4; y <= 12; y++) for (let x = 4; x <= 12; x++) {
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 17 && d2 >= 12) g.s(x, y, d2 >= 15 ? clayD : clay);
+  }
+  g.vl(8, 5, 11, water);       // 水墙中轴
+  g.hl(6, 6, 10, paleW);       // 一层薄薄的弧
+  g.s(8, 4, paleW); g.s(8, 12, water);
+  g.s(12, 6, 'rgb(150, 210, 226)'); g.s(4, 10, 'rgb(150, 210, 226)');
+}));
+
+// 长折焦点：环被拉成一条长长的缝——中间的空白才是它记的路。
+reg('void_dash_focus', { stack: 1, requiresExtras: ['magic'], lore: ['无潮的回响：路可以很长，只要中间什么都不放。'] }, art(g => {
+  const voidP = 'rgb(120, 112, 150)', voidD = 'rgb(70, 64, 96)', spark = 'rgb(198, 188, 238)';
+  for (let y = 3; y <= 13; y++) for (let x = 3; x <= 13; x++) {
+    const dx = x - 8, dy = y - 8;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= 20 && d2 <= 30) g.s(x, y, d2 >= 26 ? voidD : voidP);
+  }
+  // 一道横贯的缝：两端收窄，中间空
+  g.s(2, 8, voidP); g.s(3, 8, voidD); g.s(13, 8, voidD); g.s(14, 8, voidP);
+  g.s(2, 7, voidD); g.s(2, 9, voidD); g.s(13, 7, voidD); g.s(13, 9, voidD);
+  g.s(8, 4, spark); g.s(8, 12, spark);
+}));
+
 export const ItemSVGDefinitions = svgMap;
 
 export function getItemCount() {

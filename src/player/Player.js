@@ -47,6 +47,7 @@ export class Player {
     this.echo = 0;
     this.echoMax = ECHO_MAX;
     this.slowFall = 0;         // 风步缓降剩余秒数（Physics 读，只影响下落速度上限）
+    this.slowFallVy = 0;       // 缓降时的下落速度上限（B55 R2：风步 -3 / 风渡 -1.5；0 = 用默认）
     this.effects = new Map();  // 状态效果（信标 buff + 凋零 debuff 统一管理）：name -> { level, time(秒) }
     this.onHurt = null;          // 受击回调 (amount, source) => void，由 Game 注册
     this.onDeath = null;

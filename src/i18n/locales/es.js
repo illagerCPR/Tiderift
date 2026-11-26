@@ -861,4 +861,11 @@ export const es = {
   '风纹哨台': 'Atalaya de la veta de viento',
   '无潮静台': 'Plataforma sin marea',
 
+  // ── B55 R2 四潮进阶（四支进阶焦点 lore + 潮护提示）──
+  '风潮的回响：一步不够远，就让风把这段路对折一次。': 'Eco del vendaval: si un paso no basta, que el viento doble este camino una vez.',
+  '坠潮的回响：火不落地，只在落点上排成一圈。': 'Eco de la marea de ascua: el fuego no cae; se alinea en un anillo donde golpea.',
+  '雨潮的回响：雨替你挡在前面，也替你洗掉那些不该留下的。': 'Eco de la marea de lluvia: la lluvia se pone delante y lava lo que no debe quedarse.',
+  '无潮的回响：路可以很长，只要中间什么都不放。': 'Eco del sin marea: el camino puede ser largo, siempre que nada se quede en medio.',
+  '潮护：生命 +{n}，涤除负面': 'Guardia de marea: +{n} de vida, efectos negativos lavados',
+
 };

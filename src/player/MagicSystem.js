@@ -107,7 +107,7 @@ export class MagicSystem {
     this.cancelCharge();
     this._clearBolts();
     const p = this.game.player;
-    if (p) p.slowFall = 0;
+    if (p) { p.slowFall = 0; p.slowFallVy = 0; }
     this._pushHud();
   }
 
@@ -159,7 +159,7 @@ export class MagicSystem {
     const held = g.inventory ? g.inventory.getSelected() : null;
     const spellId = held ? FOCUS_SPELL[held.name] : null;
     const cd = spellId ? this.cooldownLeft(spellId) : 0;
-    const cdFrac = spellId ? Math.max(0, Math.min(1, cd / (SPELLS[spellId].cooldown || 1))) : 0;
+    const cdFrac = spellId ? Math.max(0, Math.min(1, cd / (spellDef(spellId).cooldown || 1))) : 0;
     // 第 5 参：蓄力进度（-1 = 未蓄力，回响条显示资源；0..1 = 蓄力中，改显示蓄力条与百分比）
     const charge = this._charge.active ? this.chargeFrac() : -1;
     g.hud.setEcho(clampEcho(p.echo, p.echoMax), p.echoMax, cdFrac, true, charge);
@@ -206,8 +206,10 @@ export class MagicSystem {
     audio.spellDeny();
   }
 
+  // B55 R2：进阶法术复用基础法术的施法函数（def.handler），差异全部落在数据表里，
+  // 不另写一份落点/治疗/折跃判定——安全边界只有一处，改不歪。
   _execute(spellId, def, charge = 0) {
-    switch (spellId) {
+    switch (def.handler || spellId) {
       case 'gale_step': return this._castGaleStep(def);
       case 'ember_bolt': return this._castEmberBolt(def, charge);
       case 'tide_mend': return this._castTideMend(def);
@@ -242,8 +244,10 @@ export class MagicSystem {
     p.position.z += dir.z * dist;
     p.velocity.multiplyScalar(0.25);
     p.slowFall = def.slowFall;
+    // 缓降速度上限由法术决定（风步 -3 / 风渡 -1.5，风渡能漂着看清脚下）；0 = 走 Physics 默认值
+    p.slowFallVy = Number.isFinite(def.slowFallVy) ? def.slowFallVy : 0;
     p.onGround = false;
-    if (g.networkMode && g.net) g.net.sendMagicCast('gale_step', p.echo, this._eyeStart(), dir);
+    if (g.networkMode && g.net) g.net.sendMagicCast(def.id, p.echo, this._eyeStart(), dir);
     return { ok: true };
   }
 
@@ -257,12 +261,12 @@ export class MagicSystem {
     const bolt = {
       x: start.x + dir.x * 0.6, y: start.y + dir.y * 0.6, z: start.z + dir.z * 0.6,
       vx: dir.x * def.speed, vy: dir.y * def.speed, vz: dir.z * def.speed,
-      life: def.life, dead: false, spell: 'ember_bolt', local: true,
+      life: def.life, dead: false, spell: def.id, local: true,
       damage: def.damage, // B54 R4：蓄力插值出的伤害钉在弹体上（推进阶段不再回表）
     };
     this._spawnBoltMesh(bolt, true, charge);
     this._bolts.push(bolt);
-    if (g.networkMode && g.net) g.net.sendMagicCast('ember_bolt', p.echo, start, dir);
+    if (g.networkMode && g.net) g.net.sendMagicCast(def.id, p.echo, start, dir);
     return { ok: true };
   }
 
@@ -274,9 +278,15 @@ export class MagicSystem {
     if (!plan.ok) return { ok: false, code: 'wounded' };
     p.health = plan.health;
     p.applyEffect(def.guardEffect, def.guardLevel, def.guardSeconds);
+    // B55 R2 潮护：只清 def.cleanse 列出的负面（凋零），不动任何 buff
+    let cleansed = 0;
+    for (const name of (def.cleanse || [])) {
+      if (p.effects && p.effects.delete(name)) cleansed++;
+    }
     this._mendFx();
-    g.hud && g.hud.showToast(t('回潮：生命 +{n}', { n: plan.heal }));
-    if (g.networkMode && g.net) g.net.sendMagicCast('tide_mend', p.echo, this._eyeStart(), this._viewDir());
+    if (cleansed > 0) g.hud && g.hud.showToast(t('潮护：生命 +{n}，涤除负面', { n: plan.heal }));
+    else g.hud && g.hud.showToast(t('回潮：生命 +{n}', { n: plan.heal }));
+    if (g.networkMode && g.net) g.net.sendMagicCast(def.id, p.echo, this._eyeStart(), this._viewDir());
     return { ok: true };
   }
 
@@ -304,11 +314,13 @@ export class MagicSystem {
     p.position.y += dir.y * dist;
     p.position.z += dir.z * dist;
     p.velocity.set(0, 0, 0);  // 折跃不留惯性：落地即站住
-    p.slowFall = 0;
+    // 长折（B55 R2）：落地前托一下——折步本身不留惯性，长折额外给一段缓降
+    p.slowFall = Number.isFinite(def.softLanding) ? def.softLanding : 0;
+    p.slowFallVy = 0;
     p.onGround = false;
     const to = { x: p.position.x, y: p.position.y, z: p.position.z };
     this._blinkFx(from); this._blinkFx(to);
-    if (g.networkMode && g.net) g.net.sendMagicCast('void_step', p.echo, from, dir, to);
+    if (g.networkMode && g.net) g.net.sendMagicCast(def.id, p.echo, from, dir, to);
     return { ok: true };
   }
 
@@ -406,6 +418,8 @@ export class MagicSystem {
         if (hit || blocked || bolt.life <= 0) {
           bolt.dead = true;
           this._impactFx(bolt.x, bolt.y, bolt.z);
+          // B55 R2 烬环：命中即溅开一圈余烬（只打怪物；玩家伤害仍只有直击那一处）
+          if (hit && def && def.splash) this._splashHit(def.splash, bolt.x, bolt.y, bolt.z);
         }
       }
       if (bolt.dead) {
@@ -440,6 +454,30 @@ export class MagicSystem {
     const g = this.game;
     return !!(g.networkMode && g.net && g.net.roomSettings && g.net.roomSettings.pvp !== false
       && g._findRemoteByRay && g.remotePlayers && g.remotePlayers.size > 0);
+  }
+
+  // 烬环溅射（B55 R2）：命中点周围最多 maxTargets 个"其他"怪物各吃一次固定伤害。
+  //   只调 mobManager.damageMobsNear（怪物专用口径），不碰玩家、不炸方块、不引燃地形；
+  //   PvP 的伤害入口仍只有直击那一次 ATTACK_PLAYER——这里绝不能再发一次。
+  _splashHit(splash, x, y, z) {
+    const g = this.game;
+    const mm = g.mobManager;
+    if (mm && typeof mm.damageMobsNear === 'function') {
+      mm.damageMobsNear(x, y, z, splash.radius, splash.damage, splash.maxTargets);
+    }
+    const ps = g.particles;
+    if (!ps || !ps.spawn) return;
+    const n = Math.max(6, Math.round(14 * (ps.densityScale || 1)));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const sp = 2.4 + Math.random() * 1.6;
+      ps.spawn(
+        x + Math.cos(a) * 0.3, y + (Math.random() - 0.5) * 0.4, z + Math.sin(a) * 0.3,
+        Math.cos(a) * sp, Math.random() * 1.6 + 0.4, Math.sin(a) * sp,
+        1.0, 0.7, 0.32,
+        0.28 + Math.random() * 0.18, -5, 0.95,
+      );
+    }
   }
 
   _impactFx(x, y, z) {

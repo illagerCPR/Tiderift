@@ -13,6 +13,12 @@ export const EMBER_FOCUS_ITEM = 'ember_focus'; // 坠潮焦点：烬矢
 export const RAIN_FOCUS_ITEM = 'rain_focus';  // 雨潮焦点：回潮（B54）
 export const TIDELESS_FOCUS_ITEM = 'tideless_focus'; // 无潮焦点：折步（B54）
 
+// 进阶焦点（B55 R2）：把回响残片刻进基础焦点得到，一枚残片只够刻一支（选择留给玩家）
+export const GALE_CROSS_FOCUS_ITEM = 'gale_cross_focus';   // 风渡
+export const EMBER_RING_FOCUS_ITEM = 'ember_ring_focus';   // 烬环
+export const TIDE_WARD_FOCUS_ITEM = 'tide_ward_focus';     // 潮护
+export const VOID_DASH_FOCUS_ITEM = 'void_dash_focus';     // 长折
+
 // ── 回响资源 ────────────────────────────────────────────────────────────
 export const ECHO_MAX = 100;
 export const ECHO_PER_LEVEL = 25;      // 仪台调谐：1 级经验 → 25 回响
@@ -95,7 +101,76 @@ export const SPELLS = Object.freeze({
 
 export const SPELL_IDS = Object.freeze(Object.keys(SPELLS));
 
-export function spellDef(id) { return (id && SPELLS[id]) || null; }
+// ── 进阶法术表（B55 R2）：四潮各一支，用同一套 handler 分派 ──────────────────
+// 纪律：进阶不是新方向，是把本潮的基础能力推到安全上限——不碰地形/水位/时间/传送门/跨维；
+// `handler` 指向基础法术的施法函数（MagicSystem._execute 按 handler 分派），
+// 费用与冷却都高于基础版，基础版因此不会被彻底取代。
+export const ADVANCED_SPELLS = Object.freeze({
+  // 风潮·风渡：更远的冲刺 + 更长的漂浮（下落更慢，慢到能看清脚下的地形）
+  gale_cross: Object.freeze({
+    id: 'gale_cross',
+    focus: GALE_CROSS_FOCUS_ITEM,
+    handler: 'gale_step',
+    name: '风渡',
+    cost: 22,
+    cooldown: 8,
+    distance: 10,
+    slowFall: 8,
+    slowFallVy: -1.5,
+    charged: Object.freeze({ distance: 13, slowFall: 12 }),
+  }),
+  // 坠潮·烬环：更重的一发，命中时溅开一圈余烬（只伤怪物，不打玩家、不炸方块）
+  ember_ring: Object.freeze({
+    id: 'ember_ring',
+    focus: EMBER_RING_FOCUS_ITEM,
+    handler: 'ember_bolt',
+    name: '烬环',
+    cost: 20,
+    cooldown: 3,
+    damage: 12,
+    speed: 26,
+    life: 1.4,
+    radius: 0.5,
+    splash: Object.freeze({ radius: 3.2, damage: 5, maxTargets: 2 }),
+    charged: Object.freeze({ damage: 15 }),
+  }),
+  // 雨潮·潮护：更强的防护与治疗，并解除凋零（只清除负面，不动既有 buff）
+  tide_ward: Object.freeze({
+    id: 'tide_ward',
+    focus: TIDE_WARD_FOCUS_ITEM,
+    handler: 'tide_mend',
+    name: '潮护',
+    cost: 30,
+    cooldown: 12,
+    heal: 10,
+    guardEffect: 'resistance',
+    guardLevel: 2,
+    guardSeconds: 10,
+    cleanse: Object.freeze(['wither']),
+    charged: Object.freeze({ heal: 14, guardSeconds: 14 }),
+  }),
+  // 无潮·长折：近两倍距离的折跃 + 落地缓冲（折步原本落地不留惯性，长折会托一下）
+  void_dash: Object.freeze({
+    id: 'void_dash',
+    focus: VOID_DASH_FOCUS_ITEM,
+    handler: 'void_step',
+    name: '长折',
+    cost: 35,
+    cooldown: 9,
+    distance: 14,
+    standDepth: 5,
+    step: 0.25,
+    softLanding: 1.5,
+    charged: Object.freeze({ distance: 18 }),
+  }),
+});
+
+export const ADVANCED_SPELL_IDS = Object.freeze(Object.keys(ADVANCED_SPELLS));
+
+// 全部法术（基础 + 进阶）：spellDef / 冷却清洗 / 服务器形状校验共用这一张总表
+export const ALL_SPELLS = Object.freeze({ ...SPELLS, ...ADVANCED_SPELLS });
+
+export function spellDef(id) { return (id && ALL_SPELLS[id]) || null; }
 
 // 焦点物品 → 法术（右键施放）
 export const FOCUS_SPELL = Object.freeze({
@@ -103,4 +178,8 @@ export const FOCUS_SPELL = Object.freeze({
   [EMBER_FOCUS_ITEM]: 'ember_bolt',
   [RAIN_FOCUS_ITEM]: 'tide_mend',
   [TIDELESS_FOCUS_ITEM]: 'void_step',
+  [GALE_CROSS_FOCUS_ITEM]: 'gale_cross',
+  [EMBER_RING_FOCUS_ITEM]: 'ember_ring',
+  [TIDE_WARD_FOCUS_ITEM]: 'tide_ward',
+  [VOID_DASH_FOCUS_ITEM]: 'void_dash',
 });

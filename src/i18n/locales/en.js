@@ -861,4 +861,11 @@ export const en = {
   '风纹哨台': 'Windmark Watch',
   '无潮静台': 'Tideless Still',
 
+  // ── B55 R2 四潮进阶（四支进阶焦点 lore + 潮护提示）──
+  '风潮的回响：一步不够远，就让风把这段路对折一次。': 'Echo of the Gale: when one step is not far enough, let the wind fold this road once.',
+  '坠潮的回响：火不落地，只在落点上排成一圈。': 'Echo of the Ember Tide: fire does not land; it lines up in a ring where it strikes.',
+  '雨潮的回响：雨替你挡在前面，也替你洗掉那些不该留下的。': 'Echo of the Rain Tide: the rain stands in front of you and washes away what should not stay.',
+  '无潮的回响：路可以很长，只要中间什么都不放。': 'Echo of the Tideless: the road may be long, as long as nothing stands in the middle.',
+  '潮护：生命 +{n}，涤除负面': 'Tide Ward: +{n} health, debuffs washed away',
+
 };

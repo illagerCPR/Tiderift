@@ -147,7 +147,10 @@ const HUD_KINDS = ['none', 'echo-low', 'cooldown', 'target'];
   ok(/p\.echo = clampEcho\(p\.echo - base\.cost/.test(magic), '费用按基础值扣（蓄力不涨价）');
   // 弹道蓄力只缩放视觉，不改判定
   ok(/mesh\.scale\.setScalar\(1 \+ 0\.5 \* c\)/.test(magic), '满蓄弹体更大（纯视觉）');
-  ok(!/radius/.test(magic), '蓄力不碰命中半径（判定口径不变）');
+  // B55 R2 起 MagicSystem 出现 splash.radius（烬环溅射，与蓄力无关）——改成按数据表断言：
+  // 蓄力只插值 charged 列出的字段，radius 永远不在其中，命中判定不受蓄力影响。
+  ok(SPELL_IDS.every((id) => !('radius' in (SPELLS[id].charged || {}))),
+    '蓄力不碰命中半径（charged 表里没有 radius）');
   // 通道接线
   ok(/_handleFocusChannel\(dt\)/.test(ic), '焦点蓄力通道存在');
   ok(ic.indexOf('_handleBowChannel(dt)') < ic.indexOf('_handleFocusChannel(dt)'),

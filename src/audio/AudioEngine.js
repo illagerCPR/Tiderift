@@ -28,6 +28,14 @@ export function blockCategory(def) {
   return 'stone';
 }
 
+// 进阶法术 → 基础法术音色族（B55 R2；没有列出的 ID 直接用自身）
+const SPELL_SOUND_FAMILY = Object.freeze({
+  gale_cross: 'gale_step',
+  ember_ring: 'ember_bolt',
+  tide_ward: 'tide_mend',
+  void_dash: 'void_step',
+});
+
 class AudioEngine {
   constructor() {
     this.ctx = null;       // AudioContext（首次手势后创建）
@@ -199,7 +207,9 @@ class AudioEngine {
   spellCast(spellId, charge = 0) {
     if (!this.ctx) return;
     const c = Math.max(0, Math.min(1, Number(charge) || 0));
-    switch (spellId) {
+    // B55 R2：进阶法术沿用本潮音色（风渡→风潮、烬环→坠潮、潮护→雨潮、长折→无潮）
+    const family = SPELL_SOUND_FAMILY[spellId] || spellId;
+    switch (family) {
       case 'gale_step': // 风潮：一段掠过耳边的气流
         this._noise({ dur: 0.18 + c * 0.14, filter: 'bandpass', freq: 700 + c * 700, q: 1.2, gain: 0.15, rate: 1.2 });
         this._tone({ dur: 0.12, from: 320 + c * 160, to: 620, type: 'sine', gain: 0.13 });

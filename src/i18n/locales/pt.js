@@ -861,4 +861,11 @@ export const pt = {
   '风纹哨台': 'Atalaia do traço de vento',
   '无潮静台': 'Plataforma sem maré',
 
+  // ── B55 R2 四潮进阶（四支进阶焦点 lore + 潮护提示）──
+  '风潮的回响：一步不够远，就让风把这段路对折一次。': 'Eco do vendaval: se um passo não basta, deixe o vento dobrar este caminho uma vez.',
+  '坠潮的回响：火不落地，只在落点上排成一圈。': 'Eco da maré de brasa: o fogo não cai; ele se alinha em anel onde acerta.',
+  '雨潮的回响：雨替你挡在前面，也替你洗掉那些不该留下的。': 'Eco da maré de chuva: a chuva se põe à frente e lava o que não deve ficar.',
+  '无潮的回响：路可以很长，只要中间什么都不放。': 'Eco do sem maré: o caminho pode ser longo, desde que nada fique no meio.',
+  '潮护：生命 +{n}，涤除负面': 'Guarda da maré: +{n} de vida, efeitos negativos lavados',
+
 };

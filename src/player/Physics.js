@@ -41,8 +41,11 @@ export class Physics {
         if (entity.velocity.y > 6) entity.velocity.y = 6;
       } else if (entity.slowFall > 0) {
         // B51 R4 风步缓降：轻重力 + 下落速度上限（不改变水平速度、不等于飞行）
+        // B55 R2：上限由法术自带（风步 -3 / 风渡 -1.5）；缺省或脏值回落 SLOW_FALL_MAX
+        const cap = Number.isFinite(entity.slowFallVy) && entity.slowFallVy < 0
+          ? entity.slowFallVy : SLOW_FALL_MAX;
         entity.velocity.y += SLOW_FALL_GRAVITY * dt;
-        if (entity.velocity.y < SLOW_FALL_MAX) entity.velocity.y = SLOW_FALL_MAX;
+        if (entity.velocity.y < cap) entity.velocity.y = cap;
       } else if (entity.gliding) {
         entity.velocity.y += GLIDE_GRAVITY * dt;
         // 下沉上限随机速变化：飞得越快升力越大，平飞下沉越缓（拉起转爬升的起

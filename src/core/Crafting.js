@@ -244,6 +244,14 @@ addShaped('tideless_focus', 1, [
   null, 'ender_pearl', null,
 ], ['magic']);
 
+// ── B55 R2 四潮进阶（同属 magic）：回响残片只能刻一支焦点，基础焦点是载体 ──
+// 一枚残片 + 一支基础焦点 → 该潮的进阶焦点；残片由四维回响遗迹保底给出（不靠刷概率）。
+// 一次只能升一支：四处遗迹 = 四次升级，先升哪一潮由玩家决定。
+addShapeless('gale_cross_focus', 1, ['echo_shard', 'gale_focus'], ['magic']);
+addShapeless('ember_ring_focus', 1, ['echo_shard', 'ember_focus'], ['magic']);
+addShapeless('tide_ward_focus', 1, ['echo_shard', 'rain_focus'], ['magic']);
+addShapeless('void_dash_focus', 1, ['echo_shard', 'tideless_focus'], ['magic']);
+
 // 匹配函数：输入是 grid 二维数组（每行一个数组），返回匹配结果或 null
 // manifest 缺省 = 双关（fail-closed）：带归属需求的配方不会在未声明清单的世界里命中
 export function matchRecipe(grid, manifest) {
