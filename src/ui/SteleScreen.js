@@ -42,6 +42,10 @@ export class SteleScreen {
       id = sm && sm.steleChapterAt ? sm.steleChapterAt(x, y, z) : null;
     }
     if (!chapterIdOverride && id && this.game.journal) this.game.journal.recordStele(id);
+    // B55 R3：回响碑同时把这座遗迹的形制记成蓝图（一次性；非回响章节由 Game 侧忽略）
+    if (!chapterIdOverride && id && this.game.grantEchoSteleBlueprint) {
+      this.game.grantEchoSteleBlueprint(id, x, y, z);
+    }
     this.chapter = (id && STELE_CHAPTERS[id]) || STELE_BLANK;
     this.visible = true;
     this.el.style.display = 'flex';

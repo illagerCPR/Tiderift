@@ -12,6 +12,7 @@ import { blockId } from './StructureManager.js';
 import { clearBox } from './StructureKit.js';
 import { Chunk, CHUNK_SIZE } from '../../core/Chunk.js';
 import { probeIsland } from './aetherStructures.js';
+import { steleStack } from '../steles.js';
 
 const LAVA_SEA_TOP = 33;
 
@@ -115,7 +116,7 @@ export function solveRain(rng, ax, groundY, az) {
   const CHEST = blockId('chest');
   const y0 = groundY;
   const blocks = [];
-  const meta = { kind: 'echo_rain', center: [ax, y0, az], chests: [], plinth: null };
+  const meta = { kind: 'echo_rain', center: [ax, y0, az], chests: [], steles: [], plinth: null };
 
   const brick = () => {
     const r = rng();
@@ -169,9 +170,14 @@ export function solveRain(rng, ax, groundY, az) {
   blocks.push([ax, y0 + 3, az, LAMP]);
   blocks.push([ax, y0 + 2, az, 0]); // 灯下留空——雨停在半空，不落地
 
-  // 龛位：北墙内角（R3 落碑；R1 只清空）
+  // 龛位：北墙内角（R3 落碑）
   meta.plinth = [ax - 2, y0 + 1, az - 3];
   clearBox(blocks, ax - 2, y0 + 1, az - 3, ax - 2, y0 + 2, az - 3);
+  // R3：龛位落四格碑（底座/碑/荧石/顶帽），碑文解释这一潮的回响来历
+  meta.steles.push([meta.plinth[0], meta.plinth[1], meta.plinth[2], 'echo_rain']);
+  for (const [bx, by, bz, bid] of steleStack(meta.plinth[0], meta.plinth[1], meta.plinth[2], 'overworld')) {
+    blocks.push([bx, by, bz, bid]);
+  }
 
   meta.chests.push([ax + 2, y0 + 1, az + 2, 'echo_rain']);
   blocks.push([ax + 2, y0 + 1, az + 2, CHEST]);
@@ -190,7 +196,7 @@ export function solveEmber(rng, ax, groundY, az) {
   const CHEST = blockId('chest');
   const y0 = groundY;
   const blocks = [];
-  const meta = { kind: 'echo_ember', center: [ax, y0, az], chests: [], plinth: null };
+  const meta = { kind: 'echo_ember', center: [ax, y0, az], chests: [], steles: [], plinth: null };
 
   clearBox(blocks, ax - 4, y0 + 1, az - 4, ax + 4, y0 + 4, az + 4);
 
@@ -238,6 +244,11 @@ export function solveEmber(rng, ax, groundY, az) {
   // 龛位：北墙内侧（R3 落碑）
   meta.plinth = [ax, y0 + 1, az - 3];
   clearBox(blocks, ax, y0 + 1, az - 3, ax, y0 + 2, az - 3);
+  // R3：龛位落四格碑（底座/碑/荧石/顶帽），碑文解释这一潮的回响来历
+  meta.steles.push([meta.plinth[0], meta.plinth[1], meta.plinth[2], 'echo_ember']);
+  for (const [bx, by, bz, bid] of steleStack(meta.plinth[0], meta.plinth[1], meta.plinth[2], 'nether')) {
+    blocks.push([bx, by, bz, bid]);
+  }
 
   meta.chests.push([ax - 2, y0 + 1, az + 2, 'echo_ember']);
   blocks.push([ax - 2, y0 + 1, az + 2, CHEST]);
@@ -254,7 +265,7 @@ export function solveGale(rng, ax, groundY, az) {
   const CHEST = blockId('chest');
   const y0 = groundY;
   const blocks = [];
-  const meta = { kind: 'echo_gale', center: [ax, y0, az], chests: [], plinth: null };
+  const meta = { kind: 'echo_gale', center: [ax, y0, az], chests: [], steles: [], plinth: null };
 
   clearBox(blocks, ax - 3, y0 + 1, az - 3, ax + 3, y0 + 6, az + 3);
 
@@ -292,6 +303,11 @@ export function solveGale(rng, ax, groundY, az) {
   // 龛位：台心北侧（R3 落碑）
   meta.plinth = [ax - 1, y0 + 1, az - 2];
   clearBox(blocks, ax - 1, y0 + 1, az - 2, ax - 1, y0 + 2, az - 2);
+  // R3：龛位落四格碑（底座/碑/荧石/顶帽），碑文解释这一潮的回响来历
+  meta.steles.push([meta.plinth[0], meta.plinth[1], meta.plinth[2], 'echo_gale']);
+  for (const [bx, by, bz, bid] of steleStack(meta.plinth[0], meta.plinth[1], meta.plinth[2], 'aether')) {
+    blocks.push([bx, by, bz, bid]);
+  }
 
   meta.chests.push([ax + 2, y0 + 1, az + 2, 'echo_gale']);
   blocks.push([ax + 2, y0 + 1, az + 2, CHEST]);
@@ -308,7 +324,7 @@ export function solveTideless(rng, ax, groundY, az) {
   const CHEST = blockId('chest');
   const y0 = groundY;
   const blocks = [];
-  const meta = { kind: 'echo_tideless', center: [ax, y0, az], chests: [], plinth: null };
+  const meta = { kind: 'echo_tideless', center: [ax, y0, az], chests: [], steles: [], plinth: null };
 
   clearBox(blocks, ax - 4, y0 + 1, az - 4, ax + 4, y0 + 4, az + 4);
 
@@ -334,6 +350,11 @@ export function solveTideless(rng, ax, groundY, az) {
   // 龛位：台心北侧（R3 落碑）
   meta.plinth = [ax, y0 + 1, az - 2];
   clearBox(blocks, ax, y0 + 1, az - 2, ax, y0 + 2, az - 2);
+  // R3：龛位落四格碑（底座/碑/荧石/顶帽），碑文解释这一潮的回响来历
+  meta.steles.push([meta.plinth[0], meta.plinth[1], meta.plinth[2], 'echo_tideless']);
+  for (const [bx, by, bz, bid] of steleStack(meta.plinth[0], meta.plinth[1], meta.plinth[2], 'end')) {
+    blocks.push([bx, by, bz, bid]);
+  }
 
   meta.chests.push([ax + 2, y0 + 1, az - 1, 'echo_tideless']);
   blocks.push([ax + 2, y0 + 1, az - 1, CHEST]);

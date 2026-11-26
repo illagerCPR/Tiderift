@@ -136,6 +136,64 @@ export function captureBlueprint(world, first, second, { id, name, byId = '' } =
   return { ok: true, blueprint, voxels, origin: min };
 }
 
+// B55 R3：把一份结构记录的方块表转成可保存的蓝图（回响遗迹的"形制"）。
+//   blocks = [[wx, wy, wz, blockId], ...]，同坐标后写覆盖先写（StructureKit 约定）；
+//   包围盒只按非空气格取，空气留在图里当空腔；体素顺序与 captureBlueprint 一致（y→z→x）。
+//   返回 { ok, blueprint, voxels, origin } 或 { ok:false, reason }。
+export function blueprintFromBlocks({ id, name, dim, blocks } = {}) {
+  if (typeof id !== 'string' || !ID_PATTERN.test(id)) return { ok: false, reason: 'id' };
+  if (!validateBlueprintName(name)) return { ok: false, reason: 'name' };
+  if (!BLUEPRINT_DIMS.includes(dim)) return { ok: false, reason: 'dim' };
+  if (!Array.isArray(blocks) || blocks.length === 0) return { ok: false, reason: 'empty' };
+  const cells = new Map();
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (const b of blocks) {
+    if (!Array.isArray(b) || b.length < 4) continue;
+    const [x, y, z, blockId] = b;
+    if (![x, y, z, blockId].every(Number.isInteger)) continue;
+    if (blockId < 0 || blockId > 255) continue;
+    cells.set(x + ',' + y + ',' + z, blockId);
+    if (blockId === 0) continue; // 空气不撑包围盒
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  if (!(maxX >= minX) || !(maxY >= minY) || !(maxZ >= minZ)) return { ok: false, reason: 'empty' };
+  const size = { x: maxX - minX + 1, y: maxY - minY + 1, z: maxZ - minZ + 1 };
+  const volume = validateSize(size);
+  if (volume === null) return { ok: false, reason: 'size' };
+  const palette = [0];
+  const indexOf = new Map([[0, 0]]);
+  const voxels = new Array(volume).fill(0);
+  let offset = 0;
+  for (let y = minY; y <= maxY; y++) {
+    for (let z = minZ; z <= maxZ; z++) {
+      for (let x = minX; x <= maxX; x++) {
+        const blockId = cells.get(x + ',' + y + ',' + z) || 0;
+        if (blockId !== 0) {
+          let index = indexOf.get(blockId);
+          if (index === undefined) {
+            if (palette.length >= BLUEPRINT_LIMITS.palette) return { ok: false, reason: 'palette' };
+            index = palette.length;
+            indexOf.set(blockId, index);
+            palette.push(blockId);
+          }
+          voxels[offset] = palette[index];
+        }
+        offset++;
+      }
+    }
+  }
+  let data;
+  try { data = encodeBlueprintRLE(voxels, palette); }
+  catch (error) { return { ok: false, reason: error.message.includes('16 KB') ? 'data' : 'palette' }; }
+  const blueprint = { id, name, dim, rev: 1, byId: '', size, palette, data };
+  const checked = validateBlueprint(blueprint);
+  if (!checked.ok) return { ok: false, reason: checked.reason };
+  return { ok: true, blueprint, voxels: checked.voxels, origin: { x: minX, y: minY, z: minZ } };
+}
+
 export function inventoryBlockCount(inventory, blockName) {
   if (!inventory || !Array.isArray(inventory.slots) || typeof blockName !== 'string') return 0;
   const block = BlockRegistry.getByName(blockName);

@@ -17,6 +17,7 @@ import { NetherGenerator } from '../src/world/dimensions/nether.js';
 import { EndGenerator } from '../src/world/dimensions/end.js';
 import { AetherGenerator } from '../src/world/dimensions/aether.js';
 import { chestLoot } from '../src/world/loot.js';
+import { STELE_STELE_BY_DIM } from '../src/world/steles.js';
 import {
   ECHO_RAIN_DEF, ECHO_EMBER_DEF, ECHO_GALE_DEF, ECHO_TIDELESS_DEF,
   solveRain, solveEmber, solveGale, solveTideless,
@@ -144,8 +145,14 @@ for (const k of KINDS) {
   const { rec } = hit;
   ok(rec.meta.kind === k.name, `${k.name}：meta.kind 与类型一致`);
   ok(Array.isArray(rec.meta.chests) && rec.meta.chests.length === 1, `${k.name}：meta.chests 一条`);
-  ok(Array.isArray(rec.meta.plinth) && rec.meta.plinth.length === 3, `${k.name}：meta.plinth 已登记（R3 落碑位）`);
-  ok(blockAt(rec, ...rec.meta.plinth) === 0, `${k.name}：碑位在 R1 留空（不得预放方块）`);
+  ok(Array.isArray(rec.meta.plinth) && rec.meta.plinth.length === 3, `${k.name}：meta.plinth 已登记`);
+  // R3 起碑位落四格碑：碑身在该维度的石碑方块上，meta.steles 与 sm.steles 三向一致
+  ok(blockAt(rec, ...rec.meta.plinth) === BlockRegistry.getId(STELE_STELE_BY_DIM[k.dim]),
+    `${k.name}：碑位上是 ${STELE_STELE_BY_DIM[k.dim]}（四格碑的碑身）`);
+  ok(Array.isArray(rec.meta.steles) && rec.meta.steles.length === 1, `${k.name}：meta.steles 一条`);
+  ok(rec.meta.steles[0][3] === k.name, `${k.name}：碑的章节 id 与遗迹同名`);
+  ok(gen.structureManager.steles.get(rec.meta.plinth.join(',')) === k.name, `${k.name}：碑已注册进 sm.steles`);
+  ok(gen.structureManager.steleChapterAt(...rec.meta.plinth) === k.name, `${k.name}：steleChapterAt 解析出章节`);
 
   // 箱子三向一致：meta ↔ 实际 chest 方块 ↔ StructureManager.chests
   const ch = rec.meta.chests[0];

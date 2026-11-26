@@ -868,4 +868,23 @@ export const pt = {
   '无潮的回响：路可以很长，只要中间什么都不放。': 'Eco do sem maré: o caminho pode ser longo, desde que nada fique no meio.',
   '潮护：生命 +{n}，涤除负面': 'Guarda da maré: +{n} de vida, efeitos negativos lavados',
 
+  // ── B55 R3 四维回响碑（4 标题 + 12 行碑文 + 蓝图提示）──
+  '回响碑·雨停在半空': 'Estela do eco · A chuva suspensa',
+  '回响碑·火不肯落': 'Estela do eco · O fogo não quer cair',
+  '回响碑·风替你走': 'Estela do eco · O vento anda por você',
+  '回响碑·路中间什么都没有': 'Estela do eco · Nada no meio do caminho',
+  '这龛里的水从来没落下来过。我们把它舀出去，第二天它又齐着盆沿，一滴不少。': 'A água deste nicho nunca caiu. Nós a tiramos; no dia seguinte ela estava de novo na borda, nem uma gota a menos.',
+  '不是雨不肯落，是那一刻还没过去——雨还停在半空，等着有人伸手。伸了手的人会听见自己的伤在响。': 'Não é que a chuva se recuse a cair — aquele instante ainda não passou. A chuva fica no ar, esperando uma mão. Quem a estende ouve as próprias feridas soar.',
+  '把这座龛的样子记下来吧。走出很远以后，照着它再建一座，替下一场雨留住那个"还没"。': 'Lembre a forma deste nicho. Quando estiver longe, construa outro igual e guarde esse "ainda não" para a próxima chuva.',
+  '我们试过把火引出来，让它落在别处。它不肯——在半空散成一圈，什么也没烧着。': 'Tentamos puxar o fogo para fora e fazê-lo cair noutro lugar. Ele recusou — abriu-se em anel no ar e não queimou nada.',
+  '老炉工说：那是坠潮还在落。落了几千年也不肯落地，好像底下还有什么不想点着。': 'O velho fornalheiro dizia: é a maré de brasa que ainda cai. Cai há milênios e não chega ao chão, como se embaixo houvesse algo que não deve ser aceso.',
+  '所以别指望这里的火暖你。它只肯把远处的东西推开——你瞄准的那个，才是它要说的。': 'Então não espere que este fogo te aqueça. Ele só empurra o que está longe — aquilo que você mira é o que ele quer dizer.',
+  '站上来，别急着迈步。风会先替你走一段：它比人快，也比人先看见那边有没有地方落。': 'Suba e não apresse o passo. O vento caminha à frente: é mais rápido e vê antes de você se há onde pousar.',
+  '我们叫它"渡"：一步出去，剩下的路被风对折了；风不白驮人，它拿你身上一点回响当路费。': 'Chamamos de "Travessia": um passo e o vento dobra o resto do caminho. O vento não carrega de graça — leva um pouco de eco como pagamento.',
+  '把这座台记下来。等有一天风停了，你照着它垒一座，对着它说话——它会替你走。': 'Lembre esta plataforma. Se um dia o vento parar, construa uma igual e fale com ela — ela andará por você.',
+  '这里没有水，也没有雨。我们问过拾遗者：末地为什么没有潮？他说：因为这里不需要涨落。': 'Aqui não há água nem chuva. Perguntamos aos Catadores: por que o Fim não tem maré? Disseram: porque aqui nada precisa subir e descer.',
+  '后来我们自己量出来了：路可以很长，只要中间什么都不放。空的地方不是没有路，空就是路。': 'Depois medimos nós mesmos: um caminho pode ser longo se no meio não houver nada. O vazio não é falta de caminho — o vazio é o caminho.',
+  '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。': 'Por isso esta plataforma também está vazia no centro. Não preencha essa fenda — no dia em que preencher, você só andará no pequeno pedaço sob os pés.',
+  '记下蓝图「{name}」': 'Planta anotada: "{name}"',
+
 };

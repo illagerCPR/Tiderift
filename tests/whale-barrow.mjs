@@ -38,10 +38,10 @@ ok(!chText.includes('原初纹章') && !chText.includes('纹章'), '归云章不
 ok(chText.includes('潮退的时候'), '归云章开场锚定退潮时刻');
 const byDim = {};
 for (const [, c] of Object.entries(STELE_CHAPTERS)) byDim[c.dim] = (byDim[c.dim] || 0) + 1;
-ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
+ok(byDim.aether === 12, `天域 12 章（含回响碑）（${byDim.aether}）`);
 // B53 R4：主世界新增潮工纪一章（3 → 4）；下界/末地计数不变
-ok(byDim.nether === 4 && byDim.overworld === 4 && byDim.end === 2,
-  `第一章计数：下界 4 / 主世界 4（含潮工纪）/ 末地 2 (${byDim.nether}/${byDim.overworld}/${byDim.end})`);
+ok(byDim.nether === 5 && byDim.overworld === 5 && byDim.end === 3,
+  `第一章计数：下界 5 / 主世界 5（含潮工纪与回响碑）/ 末地 3 (${byDim.nether}/${byDim.overworld}/${byDim.end})`);
 
 // ── ③ solve 确定性 ×2 seed ──
 function sig(seed) {

@@ -36,11 +36,11 @@ const byDim = {};
 for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
   byDim[ch.dim] = (byDim[ch.dim] || 0) + 1;
 }
-ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
-ok(byDim.nether === 4, `下界 4 章 (${byDim.nether})`);
+ok(byDim.aether === 12, `天域 12 章（含回响碑）（${byDim.aether}）`);
+ok(byDim.nether === 5, `下界 5 章（含回响碑）（${byDim.nether}）`);
 // B53 R4：主世界 +1（潮工纪）；末地计数仍 2 章
-ok(byDim.overworld === 4, `主世界 4 章（含潮工纪）(${byDim.overworld})`);
-ok(byDim.end === 2, `末地 2 章 (${byDim.end})`);
+ok(byDim.overworld === 5, `主世界 5 章（雨土纪 + 潮工纪 + 回响碑）（${byDim.overworld}）`);
+ok(byDim.end === 3, `末地 3 章（含回响碑）（${byDim.end}）`);
 
 // ── ③ 潜影盒 / 鞘翅 / 紫颂 lore ──
 const elytra = ItemRegistry.getByName('elytra');

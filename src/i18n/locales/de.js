@@ -868,4 +868,23 @@ export const de = {
   '无潮的回响：路可以很长，只要中间什么都不放。': 'Echo der Gezeitenlosigkeit: Der Weg darf lang sein, solange in der Mitte nichts steht.',
   '潮护：生命 +{n}，涤除负面': 'Flutwacht: +{n} Leben, Leiden abgewaschen',
 
+  // ── B55 R3 四维回响碑（4 标题 + 12 行碑文 + 蓝图提示）──
+  '回响碑·雨停在半空': 'Echostein · Der Regen hängt in der Luft',
+  '回响碑·火不肯落': 'Echostein · Das Feuer will nicht fallen',
+  '回响碑·风替你走': 'Echostein · Der Wind geht für dich',
+  '回响碑·路中间什么都没有': 'Echostein · Nichts in der Mitte des Weges',
+  '这龛里的水从来没落下来过。我们把它舀出去，第二天它又齐着盆沿，一滴不少。': 'Das Wasser in dieser Nische ist nie gefallen. Wir schöpften es aus; am nächsten Tag stand es wieder bis zum Rand, keinen Tropfen weniger.',
+  '不是雨不肯落，是那一刻还没过去——雨还停在半空，等着有人伸手。伸了手的人会听见自己的伤在响。': 'Nicht der Regen weigert sich zu fallen — jener Augenblick ist noch nicht vorbei. Der Regen hängt in der Luft und wartet auf eine Hand. Wer sie ausstreckt, hört die eigenen Wunden klingen.',
+  '把这座龛的样子记下来吧。走出很远以后，照着它再建一座，替下一场雨留住那个"还没"。': 'Behalte die Form dieser Nische. Baue weit von hier eine gleiche und bewahre jenes „noch nicht" für den nächsten Regen.',
+  '我们试过把火引出来，让它落在别处。它不肯——在半空散成一圈，什么也没烧着。': 'Wir versuchten, das Feuer herauszuziehen und anderswo landen zu lassen. Es wollte nicht — es breitete sich in der Luft zu einem Ring und verbrannte nichts.',
+  '老炉工说：那是坠潮还在落。落了几千年也不肯落地，好像底下还有什么不想点着。': 'Der alte Ofenwärter sagte: Das ist die Glutflut, die noch fällt. Sie fällt seit Jahrtausenden und will nicht landen, als dürfte da unten nichts entzündet werden.',
+  '所以别指望这里的火暖你。它只肯把远处的东西推开——你瞄准的那个，才是它要说的。': 'Erwarte also nicht, dass dieses Feuer dich wärmt. Es stößt nur fort — das, worauf du zielst, ist das, was es meint.',
+  '站上来，别急着迈步。风会先替你走一段：它比人快，也比人先看见那边有没有地方落。': 'Stell dich herauf, eile nicht mit dem Schritt. Der Wind geht voraus: Er ist schneller und sieht vor dir, ob es dort einen Ort zum Landen gibt.',
+  '我们叫它"渡"：一步出去，剩下的路被风对折了；风不白驮人，它拿你身上一点回响当路费。': 'Wir nennen es „Übergang": ein Schritt, und der Wind faltet den Rest des Weges. Der Wind trägt nicht umsonst — er nimmt ein wenig Echo als Wegzoll.',
+  '把这座台记下来。等有一天风停了，你照着它垒一座，对着它说话——它会替你走。': 'Behalte diese Plattform. Sollte der Wind je aufhören, baue eine gleiche und sprich zu ihr — sie geht für dich.',
+  '这里没有水，也没有雨。我们问过拾遗者：末地为什么没有潮？他说：因为这里不需要涨落。': 'Hier gibt es kein Wasser und keinen Regen. Wir fragten die Sammler: Warum hat das Ende keine Gezeiten? Sie sagten: weil hier nichts steigen und fallen muss.',
+  '后来我们自己量出来了：路可以很长，只要中间什么都不放。空的地方不是没有路，空就是路。': 'Später haben wir es selbst gemessen: Ein Weg darf lang sein, solange in der Mitte nichts steht. Die Leere ist kein fehlender Weg — die Leere ist der Weg.',
+  '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。': 'Darum ist auch diese Plattform in der Mitte leer. Füll diese Fuge nicht — an dem Tag, an dem du sie füllst, gehst du nur noch auf dem kleinen Stück unter dir.',
+  '记下蓝图「{name}」': 'Bauplan notiert: „{name}"',
+
 };

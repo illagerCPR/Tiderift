@@ -55,11 +55,11 @@ const byDim = {};
 for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {
   byDim[ch.dim] = (byDim[ch.dim] || 0) + 1;
 }
-ok(byDim.aether === 11, `天域 11 章 (${byDim.aether})`);
-ok(byDim.nether === 4, `下界 4 章 (${byDim.nether})`);
+ok(byDim.aether === 12, `天域 12 章（含回响碑）（${byDim.aether}）`);
+ok(byDim.nether === 5, `下界 5 章（含回响碑）（${byDim.nether}）`);
 // B53 R4：主世界再添「潮工纪」（断坊碑）——雨土纪 3 章不动，计数随新增章节 +1
-ok(byDim.overworld === 4, `主世界 4 章（雨土纪 3 + 潮工纪 1）(${byDim.overworld})`);
-ok(byDim.end === 2, `末地 2 章（E1 已交付）(${byDim.end})`);
+ok(byDim.overworld === 5, `主世界 5 章（雨土纪 3 + 潮工纪 1 + 回响 1）（${byDim.overworld}）`);
+ok(byDim.end === 3, `末地 3 章（E1 两章 + 回响 1）(${byDim.end})`);
 
 // ── ⑤ 行文纪律（全表兜底）──
 for (const [id, ch] of Object.entries(STELE_CHAPTERS)) {

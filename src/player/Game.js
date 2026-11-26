@@ -63,7 +63,8 @@ import { LocalPlayerModel } from '../entity/LocalPlayerModel.js';
 import { VoxelLightUniforms, GfxState, ShadowUniforms } from '../render/VoxelLight.js';
 import { RedstoneSystem } from '../core/RedstoneSystem.js';
 import { SaveSystem } from '../core/SaveSystem.js';
-import { Blueprints, captureBlueprint } from '../core/Blueprints.js';
+import { Blueprints, captureBlueprint, blueprintFromBlocks } from '../core/Blueprints.js';
+import { ECHO_RUIN_BLUEPRINTS } from '../world/steles.js';
 import { GhostPreview } from '../render/GhostPreview.js';
 import { BlueprintScreen } from '../ui/BlueprintScreen.js';
 import { Journal } from '../core/Journal.js';
@@ -1251,6 +1252,30 @@ export class Game {
   _addRuinBlueprint(blueprint) {
     if (!this.blueprints || !blueprint) return false;
     return this.blueprints.addPersonalUnique(blueprint); // 同名/同 id 去重
+  }
+
+  // B55 R3：读到回响遗迹的碑 → 把这座遗迹的形制记成蓝图（一次性，按 id 去重）。
+  //   蓝图不是战利品、也不是解锁点：它只是把"回响长什么样"带走，玩家照着能再垒一座。
+  //   形制来自结构记录的方块表（确定性），所以同一座遗迹在世界里怎么摆，图就是什么样。
+  grantEchoSteleBlueprint(chapterId, x, y, z) {
+    const def = ECHO_RUIN_BLUEPRINTS[chapterId];
+    if (!def || !this.blueprints || !this.world || !this.world.generator) return false;
+    if (this.blueprints.personal.some((b) => b.id === def.blueprintId)) return false;
+    const sm = this.world.generator.structureManager;
+    const hit = sm && sm.structureRecordAt ? sm.structureRecordAt(x, z) : null;
+    if (!hit || hit.name !== def.structure) return false;
+    const built = blueprintFromBlocks({
+      id: def.blueprintId,
+      name: hit.label,
+      dim: this.world.dimension,
+      blocks: hit.record.blocks,
+    });
+    if (!built.ok) return false;
+    const added = this._addRuinBlueprint(built.blueprint);
+    if (added && this.hud && typeof this.hud.showToast === 'function') {
+      this.hud.showToast(t('记下蓝图「{name}」', { name: built.blueprint.name }));
+    }
+    return added;
   }
 
 // ── 天域旧航路航标（Build 34 B）─────────────────────────────────────────

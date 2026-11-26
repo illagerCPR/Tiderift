@@ -267,4 +267,52 @@ export const STELE_CHAPTERS = {
       '后来的人啊，别学我们一口气把轴接到看不见的地方。一百二十八节，就是它翻脸的地方。',
     ],
   },
+  // ── B55 R3 四维回响遗迹（四潮各一章：解释"回响"到底在重演什么）──
+  // 纪律：追加在表末尾（键序不变），不重写任何旧章节，不触碰 finaleDone 奖励。
+  echo_rain: {
+    dim: 'overworld',
+    title: '回响碑·雨停在半空',
+    lines: [
+      '这龛里的水从来没落下来过。我们把它舀出去，第二天它又齐着盆沿，一滴不少。',
+      '不是雨不肯落，是那一刻还没过去——雨还停在半空，等着有人伸手。伸了手的人会听见自己的伤在响。',
+      '把这座龛的样子记下来吧。走出很远以后，照着它再建一座，替下一场雨留住那个"还没"。',
+    ],
+  },
+  echo_ember: {
+    dim: 'nether',
+    title: '回响碑·火不肯落',
+    lines: [
+      '我们试过把火引出来，让它落在别处。它不肯——在半空散成一圈，什么也没烧着。',
+      '老炉工说：那是坠潮还在落。落了几千年也不肯落地，好像底下还有什么不想点着。',
+      '所以别指望这里的火暖你。它只肯把远处的东西推开——你瞄准的那个，才是它要说的。',
+    ],
+  },
+  echo_gale: {
+    dim: 'aether',
+    title: '回响碑·风替你走',
+    lines: [
+      '站上来，别急着迈步。风会先替你走一段：它比人快，也比人先看见那边有没有地方落。',
+      '我们叫它"渡"：一步出去，剩下的路被风对折了；风不白驮人，它拿你身上一点回响当路费。',
+      '把这座台记下来。等有一天风停了，你照着它垒一座，对着它说话——它会替你走。',
+    ],
+  },
+  echo_tideless: {
+    dim: 'end',
+    title: '回响碑·路中间什么都没有',
+    lines: [
+      '这里没有水，也没有雨。我们问过拾遗者：末地为什么没有潮？他说：因为这里不需要涨落。',
+      '后来我们自己量出来了：路可以很长，只要中间什么都不放。空的地方不是没有路，空就是路。',
+      '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。',
+    ],
+  },
+
 };
+
+// ── B55 R3：回响碑 → 可领取的形制蓝图（读到碑时把这座遗迹记成图，一次性）──
+// blueprintId 走 Blueprints 的 ID 规则（[a-z0-9]{6,20}）；structure 用于核对玩家站的正是这类遗迹。
+export const ECHO_RUIN_BLUEPRINTS = Object.freeze({
+  echo_rain: Object.freeze({ structure: 'echo_rain', blueprintId: 'echorain01' }),
+  echo_ember: Object.freeze({ structure: 'echo_ember', blueprintId: 'echoember1' }),
+  echo_gale: Object.freeze({ structure: 'echo_gale', blueprintId: 'echogale01' }),
+  echo_tideless: Object.freeze({ structure: 'echo_tideless', blueprintId: 'echotidel1' }),
+});

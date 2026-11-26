@@ -868,4 +868,23 @@ export const en = {
   '无潮的回响：路可以很长，只要中间什么都不放。': 'Echo of the Tideless: the road may be long, as long as nothing stands in the middle.',
   '潮护：生命 +{n}，涤除负面': 'Tide Ward: +{n} health, debuffs washed away',
 
+  // ── B55 R3 四维回响碑（4 标题 + 12 行碑文 + 蓝图提示）──
+  '回响碑·雨停在半空': 'Stele of Echoes · The Rain Hangs Midair',
+  '回响碑·火不肯落': 'Stele of Echoes · Fire Refuses to Fall',
+  '回响碑·风替你走': 'Stele of Echoes · The Wind Walks for You',
+  '回响碑·路中间什么都没有': 'Stele of Echoes · Nothing in the Middle of the Road',
+  '这龛里的水从来没落下来过。我们把它舀出去，第二天它又齐着盆沿，一滴不少。': 'The water in this niche has never fallen. We scooped it out; the next day it was level with the rim again, not a drop less.',
+  '不是雨不肯落，是那一刻还没过去——雨还停在半空，等着有人伸手。伸了手的人会听见自己的伤在响。': 'It is not that the rain refuses to fall — that moment has not passed yet. The rain hangs midair, waiting for a hand. Whoever reaches out hears their own wounds ring.',
+  '把这座龛的样子记下来吧。走出很远以后，照着它再建一座，替下一场雨留住那个"还没"。': 'Remember the shape of this niche. When you are far away, build another like it, and keep that "not yet" for the next rain.',
+  '我们试过把火引出来，让它落在别处。它不肯——在半空散成一圈，什么也没烧着。': 'We tried to draw the fire out and let it land elsewhere. It refused — it spread into a ring in midair and burned nothing.',
+  '老炉工说：那是坠潮还在落。落了几千年也不肯落地，好像底下还有什么不想点着。': 'The old furnace-keeper said: that is the Ember Tide still falling. It has fallen for thousands of years and will not reach the ground, as if something below should not be lit.',
+  '所以别指望这里的火暖你。它只肯把远处的东西推开——你瞄准的那个，才是它要说的。': 'So do not expect this fire to warm you. It only pushes things away — the one you aim at is the one it means to speak to.',
+  '站上来，别急着迈步。风会先替你走一段：它比人快，也比人先看见那边有没有地方落。': 'Stand here, do not rush your step. The wind walks ahead for you: it is faster, and it sees before you whether there is anywhere to land.',
+  '我们叫它"渡"：一步出去，剩下的路被风对折了；风不白驮人，它拿你身上一点回响当路费。': 'We call it "Crossing": you take one step and the wind folds the rest of the road. The wind does not carry for free — it takes a little echo from you as fare.',
+  '把这座台记下来。等有一天风停了，你照着它垒一座，对着它说话——它会替你走。': 'Remember this platform. If the wind ever stops, build one like it and speak to it — it will walk for you.',
+  '这里没有水，也没有雨。我们问过拾遗者：末地为什么没有潮？他说：因为这里不需要涨落。': 'There is no water here, and no rain. We asked the Gleaners: why has the End no tide? They said: because here nothing needs to rise and fall.',
+  '后来我们自己量出来了：路可以很长，只要中间什么都不放。空的地方不是没有路，空就是路。': 'Later we measured it ourselves: a road may be long, as long as nothing is placed in the middle. The empty stretch is not a missing road — the empty is the road.',
+  '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。': 'So this platform is empty in the middle too. Do not fill that seam — the day you fill it, you can only walk the small patch beneath you.',
+  '记下蓝图「{name}」': 'Blueprint noted: "{name}"',
+
 };

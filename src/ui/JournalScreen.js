@@ -155,6 +155,14 @@ export class JournalScreen {
     }).filter(Boolean);
     this.sidebar.appendChild(this._section('潮候观测', phenomenaRows));
     this.sidebar.appendChild(this._section('已发现遗迹', discoveries));
+    // B55 R3：四维回响遗迹的发现进度（四潮各一处；发现走 Game._updateJournal 的通用结构记录）
+    const echoRows = [
+      ['echo_rain', '雨痕水龛'], ['echo_ember', '烬痕炉龛'],
+      ['echo_gale', '风纹哨台'], ['echo_tideless', '无潮静台'],
+    ].map(([type, label]) => ({
+      label: `${t(label)} · ${journal.discoveries.some((d) => d.type === type) ? t('已记录') : t('未记录')}`,
+    }));
+    this.sidebar.appendChild(this._section('回响遗迹', echoRows));
     this.sidebar.appendChild(this._section('已读碑文', [...journal.readSteles].map((id) => ({ label: t(STELE_CHAPTERS[id]?.title || id) }))));
 
     const personal = document.createElement('section');

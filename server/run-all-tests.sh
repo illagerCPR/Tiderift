@@ -109,6 +109,7 @@ PURE_NODE_SUITES=(
     build54-lifecycle-split     # B54 R3 死亡/换维规则与四类分流（纯 node：生命周期表留回响留冷却·清蓄力弹道缓降防护/冷却清洗/自我效果只作用本人/怪物单点结算/魔法 PvP 走既有闸门且服务器封顶/远端只表现/换维透传与重生清理绊线）
     build55-echo-ruins          # B55 R1 四维回响遗迹（纯 node：四类独立盐与维度隔离·关魔法零生成·标志材质与碑位留空·四表残片 FORCED·确定性·旧结构随机流不变·残片 ID 钉值与十语 lore）
     build55-advanced-tides      # B55 R2 四潮进阶（纯 node：四支 handler 复用·费用冷却均高于基础·蓄力上限·残片+基础焦点配方·ID 147~150 钉值与十语·落点上限 22·冷却认进阶 ID·溅射真值表与唯一玩家伤害入口·缓降上限由法术给）
+    build55-echo-narrative      # B55 R3 回响碑/游记/蓝图（纯 node：四章追加表尾且旧章不动·十语碑文与蓝图提示·四格碑三向一致·blueprintFromBlocks 合法性/确定性/体素对拍/非法输入·读碑记图接线与游记回响段）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
