@@ -892,4 +892,10 @@ export const en = {
   '缺少回响残片': 'Missing echo shard',
   '残片': 'Shard',
   '纹样压印：{input} + {shard} → {output}': 'Inscribing: {input} + {shard} → {output}',
+  // ── B56 R2 风压超载（失败码 / 施放提示 / 压力表联合读数）──
+  '这条轴已经在过载': 'This shaft is already overloaded',
+  '这个世界的过载已经用满，先等它们散掉': 'Every overload slot in this world is taken; wait for them to fade',
+  '准星没有指向潮工机器': 'Your crosshair is not on a tidework machine',
+  '风压超载：这条轴 ×{rate}，{n} 秒': 'Wind Overload: this shaft ×{rate} for {n} s',
+  '风压超载：剩 {n} 秒（×{rate}）': 'Wind Overload: {n} s left (×{rate})',
 };

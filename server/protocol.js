@@ -143,7 +143,7 @@ export const MSG = {
   INDUSTRY_STATE: 'industry_state',   // S2C {x,y,z,d,by,state,net?,res?}（res 只随发起者的那一份下发）
 
   // B51 R4：四潮回响（本机权威结算；服务器只做启用/形状/频率硬约束后转发表现事件）
-  MAGIC_CAST: 'magic_cast',     // C2S {spell, echo, x,y,z, dx,dy,dz}
+  MAGIC_CAST: 'magic_cast',     // C2S {spell, echo, x,y,z, dx,dy,dz, x2,y2,z2?, tx,ty,tz?}（后两组可选：折步落点 / 联动目标方块）
   MAGIC_EFFECT: 'magic_effect', // S2C {by, spell, x,y,z, dx,dy,dz}（同维广播，不含发起者）
 
   // 世界

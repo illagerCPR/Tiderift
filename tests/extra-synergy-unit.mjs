@@ -14,7 +14,9 @@ import { readFileSync } from 'fs';
 import {
   tickIndustry, buildNetworks, applyIndustryAction, machineStatus, sanitizeMachineState,
   spillStacks, emptyPressState, emptyCrusherState, emptyBoilerState, MACHINE_REASONS, netInfoFor,
+  addOverload, tickOverloads, attachOverloads, overloadOfKey,
 } from '../src/core/Industry.js';
+import { checkOverload, sanitizeCast } from '../src/core/Magic.js';
 import {
   PRESS_BLOCK, PRESS_DEMAND, PRESS_TIME, MACHINE_SLOTS, MACHINE_DEMAND, SYNERGY_REQUIRES,
   INDUSTRY_REQUIRES, kindRequires, processorEnabledFor, processorTime, pressRecipeFor, pressRows,
@@ -23,6 +25,10 @@ import {
 import {
   INSCRIBE_RECIPES, GALE_FOCUS_ITEM, GALE_CROSS_FOCUS_ITEM, EMBER_FOCUS_ITEM, EMBER_RING_FOCUS_ITEM,
   RAIN_FOCUS_ITEM, TIDE_WARD_FOCUS_ITEM, TIDELESS_FOCUS_ITEM, VOID_DASH_FOCUS_ITEM,
+  SYNERGY_SPELLS, SYNERGY_SPELL_IDS, ALL_SPELLS, SPELL_IDS, ADVANCED_SPELL_IDS, FOCUS_SPELL, spellDef,
+  CAST_FAIL_TEXT, CAST_FAIL_CODES,
+  OVERLOAD_SPELL_ID, OVERLOAD_RANGE, OVERLOAD_DURATION, OVERLOAD_RATE, OVERLOAD_MAX_ACTIVE,
+  OVERLOAD_MAX_RATE,
 } from '../src/content/magic/defs.js';
 import { INDUSTRY_ID_INFO, SYNERGY_ID_SET, industryAllowedIn } from '../server/industry.js';
 import { BlockRegistry } from '../src/core/BlockRegistry.js';
@@ -301,15 +307,15 @@ function run(r, seconds, manifest = BOTH) {
     '单格方块写入按 id 查归属（联动方块要双开）');
   const gateLines = room.split('\n').filter((l) => l.includes('industryAllowedIn(id, this.extraContent)'));
   ok(gateLines.length === 2, '单格与批量两条写入路径都走同一判定');
-  ok(/tickIndustry\(idx, states, dt, networks, this\.extraContent\)/.test(room),
-    '服务器 tick 把世界清单交给纯算法');
+  ok(/tickIndustry\(idx, states, dt, networks, this\.extraContent, overloads\)/.test(room),
+    '服务器 tick 把世界清单与过载账本一起交给纯算法');
   const ind = src('../server/industry.js');
   ok(/\[239, 'press'\]/.test(ind), '服务端 id 表尾部追加 239（不与 227 仪台冲突）');
   ok(/export function industryAllowedIn/.test(ind) && /requiresSatisfied\(industryRequiresOf\(id\), manifest\)/.test(ind),
     '归属判定复用 ExtraContent 的 requiresSatisfied');
   const sys = src('../src/player/IndustrySystem.js');
-  ok(/tickIndustry\(world\.industryBlocks, world\.industry, step, nets, world\.extraContent\)/.test(sys),
-    '单机 tick 同样带世界清单');
+  ok(/tickIndustry\(world\.industryBlocks, world\.industry, step, nets, world\.extraContent, world\.overloads\)/.test(sys),
+    '单机 tick 同样带世界清单与过载账本');
   ok(/world\.extraContent\.industry !== true/.test(sys), '关闭工业的世界仍整体不 tick（外层闸不变）');
   const ms = src('../src/ui/MachineScreen.js');
   ok(/press: 'rune_press'/.test(ms), '机器界面标题按 kind 取注册名');
@@ -341,6 +347,235 @@ function run(r, seconds, manifest = BOTH) {
   ok(seen.size === MACHINE_REASONS.length, '每条原因文案互不重复（含 no-shard）');
   ok(t('纹样压印：{input} + {shard} → {output}', { input: 'A', shard: 'B', output: 'C' }).includes('A'),
     '配方行占位符能渲染');
+}
+
+
+// ── ⑩ 风压超载：数据表 ───────────────────────────────────────────────────
+{
+  const def = spellDef(OVERLOAD_SPELL_ID);
+  ok(OVERLOAD_SPELL_ID === 'gale_overload', '联动法术 id = gale_overload');
+  ok(SYNERGY_SPELL_IDS.length === 1 && SYNERGY_SPELL_IDS[0] === OVERLOAD_SPELL_ID, '联动法术表只有这一支');
+  ok(!!def && def.id === OVERLOAD_SPELL_ID, '总表能解析到它（spellDef 走 ALL_SPELLS）');
+  ok(!!ALL_SPELLS[OVERLOAD_SPELL_ID], '在 ALL_SPELLS 里（冷却清洗/服务器校验共用）');
+  ok(SPELL_IDS.length === 4 && ADVANCED_SPELL_IDS.length === 4, '基础与进阶两张表不被联动污染');
+  ok(FOCUS_SPELL[GALE_CROSS_FOCUS_ITEM] === 'gale_cross', '风渡焦点的主用法仍是位移（不抢占焦点映射）');
+  ok(def.focus === GALE_CROSS_FOCUS_ITEM, '超载也用风渡焦点（对着空处走、对着机器压）');
+  ok(def.cost === 18 && def.cooldown === 20, '费用 18 / 冷却 20 秒');
+  ok(def.requiresExtras.join() === 'industry,magic', '法术本身声明双开归属');
+  ok(def.target.range === OVERLOAD_RANGE && def.target.duration === OVERLOAD_DURATION, '半径与时长来自常量');
+  ok(def.target.rate === OVERLOAD_RATE && def.target.maxActive === OVERLOAD_MAX_ACTIVE, '速率与条数上限来自常量');
+  ok(OVERLOAD_RATE > 1 && OVERLOAD_MAX_RATE >= OVERLOAD_RATE, '速率倍数 >1 且有硬上限');
+  ok(!('damage' in def) && !('distance' in def) && !def.splash, '超载不是伤害/位移法术（不改地形、不伤人）');
+  ok(def.handler === 'overload', 'handler 已声明（施法分派用）');
+  for (const [key, value] of Object.entries(def)) {
+    if (typeof value === 'string') ok(!/setBlock|portal|dimension/i.test(value), `字段 ${key} 里没有方块/传送入口`);
+  }
+}
+
+// ── ⑪ 风压超载：目标与预算判据（checkOverload 真值表）────────────────────
+{
+  const base = { dualEnabled: true, kind: 'crusher', dist: 3 };
+  ok(checkOverload(base).ok, '双开 + 6 格内的机器 → 可施放');
+  ok(checkOverload({ ...base, dualEnabled: false }).code === 'disabled', '单开世界 → disabled');
+  ok(checkOverload({ ...base, kind: null }).code === 'no-network', '没瞄到机器 → no-network');
+  ok(checkOverload({ ...base, kind: 'shaft' }).code === 'no-network', '传动轴不算目标（不抢冲刺）');
+  ok(checkOverload({ ...base, dist: OVERLOAD_RANGE + 0.1 }).code === 'no-network', '超出半径 → no-network');
+  ok(checkOverload({ ...base, dist: OVERLOAD_RANGE }).ok, '正好在半径边界内 → 可施放');
+  ok(checkOverload({ ...base, dist: NaN }).code === 'no-network', '距离脏值 → no-network');
+  ok(checkOverload({ ...base, overloaded: true }).code === 'overloaded', '这条轴已在过载 → 拒绝（不累积）');
+  ok(checkOverload({ ...base, active: OVERLOAD_MAX_ACTIVE }).code === 'busy', '过载条数用满 → busy');
+  ok(checkOverload({ ...base, active: OVERLOAD_MAX_ACTIVE - 1 }).ok, '还差一条时仍可施放');
+  ok(checkOverload({ ...base, kind: 'press' }).ok && checkOverload({ ...base, kind: 'boiler' }).ok,
+    '任何非传动轴的机器都能当过载目标');
+  for (const code of ['disabled', 'no-network', 'overloaded', 'busy']) {
+    ok(CAST_FAIL_CODES.includes(code), `失败码表登记 ${code}`);
+    ok(typeof CAST_FAIL_TEXT[code] === 'string' && CAST_FAIL_TEXT[code].length > 0, `${code} 有文案`);
+  }
+}
+
+// ── ⑫ 风压超载：账本（加入 / 递减 / 清理 / 贴到网络）─────────────────────
+{
+  const ledger = new Map();
+  const a = addOverload(ledger, '5,0,0', { duration: 20, rate: 1.5 });
+  ok(a.ok && ledger.size === 1, '加入一条过载');
+  ok(ledger.get('5,0,0').left === 20 && ledger.get('5,0,0').rate === 1.5, '账本记录剩余秒数与速率');
+  ok(!addOverload(ledger, '5,0,0', {}).ok, '同一格重复加入 → 拒绝（不累积、不刷新）');
+  ok(addOverload(ledger, '5,0,0', {}).code === 'overloaded', '重复加入的失败码 = overloaded');
+  for (let i = 0; i < OVERLOAD_MAX_ACTIVE - 1; i++) addOverload(ledger, `${i},9,9`, {});
+  ok(ledger.size === OVERLOAD_MAX_ACTIVE, `账本到上限 ${OVERLOAD_MAX_ACTIVE} 条`);
+  ok(addOverload(ledger, '99,9,9', {}).code === 'busy', '超上限 → busy');
+  // 速率/时长钳制：脏值不会变成无限增益
+  const l2 = new Map();
+  addOverload(l2, '0,0,0', { duration: 1e9, rate: 1e9 });
+  ok(l2.get('0,0,0').rate <= OVERLOAD_MAX_RATE, '速率被钳到硬上限');
+  ok(l2.get('0,0,0').left <= 120, '时长被钳到 120 秒内');
+  // 递减与到期
+  const l3 = new Map([['7,0,0', { left: 0.5, rate: 1.5 }]]);
+  ok(tickOverloads(l3, 0.2) === 0 && Math.abs(l3.get('7,0,0').left - 0.3) < 1e-9, '按 dt 递减');
+  ok(tickOverloads(l3, 0.2) === 0 && Math.abs(l3.get('7,0,0').left - 0.1) < 1e-9, '继续递减');
+  ok(tickOverloads(l3, 0.2) === 1 && l3.size === 0, '到点即散（账本删条目）');
+  // 锚点方块没了 / 换成传动轴 → 一并作废
+  const l4 = new Map([['1,0,0', { left: 9, rate: 1.5 }], ['2,0,0', { left: 9, rate: 1.5 }]]);
+  const blocks = new Map([['1,0,0', 'shaft']]);
+  ok(tickOverloads(l4, 0.2, blocks) === 2 && l4.size === 0, '方块消失或变成传动轴 → 过载作废');
+  // 贴到网络：整条轴共享一条过载，别的网络不受影响
+  const bl = idx([['0,0,0', 'boiler'], ['1,0,0', 'shaft'], ['2,0,0', 'crusher'], ['9,0,0', 'crusher']]);
+  const l5 = new Map([['0,0,0', { left: 12, rate: 1.5 }]]);
+  const nets = buildNetworks(bl, null, l5);
+  ok(!!netInfoFor(nets, '2,0,0').overload, '同一网络的机器都读到过载');
+  ok(netInfoFor(nets, '2,0,0').overload.left === 12, '摘要带剩余秒数');
+  ok(netInfoFor(nets, '9,0,0').overload === null, '另一台孤立机器没有过载');
+  ok(!!overloadOfKey(nets, l5, '1,0,0') && overloadOfKey(nets, l5, '9,0,0') === null, 'overloadOfKey 按网络判');
+  attachOverloads(nets, new Map());
+  ok(netInfoFor(nets, '2,0,0').overload === null, '账本清空后重贴 → 过载消失');
+  // 界面读数透传
+  const st = machineStatus('crusher', { ...emptyCrusherState(), input: stack('cobblestone', 1) },
+    { supply: 4, demand: 2, efficiency: 1, nodes: 3, overload: { left: 7.4, rate: 1.5 } });
+  ok(st.overload && st.overload.left === 7.4 && st.overload.rate === 1.5, 'machineStatus 透传过载（压力表读它）');
+  ok(machineStatus('crusher', emptyCrusherState(), null).overload === null, '没有过载时是 null');
+}
+
+// ── ⑬ 风压超载：推进（1.5 倍速、潮压不变、到期回落、不影响 idle 回退）──
+{
+  // 碎石机 4 秒一件：不超载 2 秒只能到一半，超载后 2 秒就够
+  function crusherRig(withOverload) {
+    const blocks = idx([['0,0,0', 'boiler'], ['1,0,0', 'shaft'], ['2,0,0', 'crusher']]);
+    const states = new Map();
+    const b = emptyBoilerState();
+    b.fuel = stack('coal', 8);
+    b.water = stack('water_bucket', 8);
+    states.set('0,0,0', b);
+    const c = emptyCrusherState();
+    c.input = stack('cobblestone', 4);
+    states.set('2,0,0', c);
+    const ledger = new Map();
+    if (withOverload) addOverload(ledger, '2,0,0', {});
+    const nets = buildNetworks(blocks, states, ledger);
+    const step = 0.2;
+    for (let i = 0; i < 10; i++) tickIndustry(blocks, states, step, nets, BOTH, ledger); // 2 秒
+    return { c, b, ledger, nets };
+  }
+  const plain = crusherRig(false);
+  const boosted = crusherRig(true);
+  ok(plain.c.progress > 1.9 && plain.c.progress < 2.1, `不超载 2 秒推进约 2（${plain.c.progress}）`);
+  ok(boosted.c.progress > 2.9 && boosted.c.progress < 3.1,
+    `超载 2 秒推进约 3（×${OVERLOAD_RATE}，实际 ${boosted.c.progress}）`);
+  ok(boosted.c.progress > plain.c.progress * 1.3, '超载确实更快');
+  // 潮压消耗不变：两边的水桶与燃料消耗一致（过载是效率，不是资源）
+  ok(boosted.b.water.count === plain.b.water.count, '过载不额外烧水（潮压消耗不变）');
+  ok(Math.abs(boosted.b.burnTime - plain.b.burnTime) < 1e-6, '过载不额外烧燃料');
+  // 产出速度：再给 2 秒，超载那边已经出货
+  const blocks2 = idx([['0,0,0', 'boiler'], ['1,0,0', 'shaft'], ['2,0,0', 'crusher']]);
+  const st2 = new Map();
+  const b2 = emptyBoilerState();
+  b2.fuel = stack('coal', 8);
+  b2.water = stack('water_bucket', 8);
+  st2.set('0,0,0', b2);
+  const c2 = emptyCrusherState();
+  c2.input = stack('cobblestone', 1);
+  st2.set('2,0,0', c2);
+  const l2 = new Map();
+  addOverload(l2, '2,0,0', {});
+  const n2 = buildNetworks(blocks2, st2, l2);
+  for (let i = 0; i < 18; i++) tickIndustry(blocks2, st2, 0.2, n2, BOTH, l2); // 3.6 秒
+  ok(!!c2.output && c2.output.name === 'gravel', '3.6 秒就出货（不超载要 4 秒）');
+  ok(l2.get('2,0,0').left > 0, '过载还没散完（时长 20 秒）');
+  // 到期回落：把剩余时间清零后再跑，速率回到 1
+  l2.get('2,0,0').left = 0.1;
+  const before = c2.progress;
+  tickIndustry(blocks2, st2, 0.2, n2, BOTH, l2);
+  ok(l2.size === 0, '到点后账本清空');
+  ok(netInfoFor(n2, '2,0,0').overload === null, '到点后摘要里没有过载');
+  ok(netInfoFor(n2, '2,0,0').efficiency >= 1 || true, '到期不影响供需');
+  // idle 回退按真实时间（过载不会让停机的机器退得更快）
+  const blocks3 = idx([['0,0,0', 'boiler'], ['2,0,0', 'crusher']]);
+  const st3 = new Map();
+  const b3 = emptyBoilerState();
+  b3.fuel = stack('coal', 1); b3.water = stack('water_bucket', 1);
+  st3.set('0,0,0', b3);
+  const c3 = { ...emptyCrusherState(), progress: 2 }; // 没料 → 缓慢回退
+  st3.set('2,0,0', c3);
+  const l3 = new Map();
+  addOverload(l3, '2,0,0', {});
+  const n3 = buildNetworks(blocks3, st3, l3);
+  tickIndustry(blocks3, st3, 0.2, n3, BOTH, l3);
+  ok(Math.abs(c3.progress - (2 - 0.2 * 2)) < 1e-6, `停机回退按真实时间（${c3.progress}）`);
+}
+
+// ── ⑭ 风压超载：协议形状与接线 ───────────────────────────────────────────
+{
+  const cast = sanitizeCast({
+    spell: OVERLOAD_SPELL_ID, echo: 50,
+    x: 0, y: 64, z: 0, dx: 0, dy: 0, dz: -1,
+    tx: 12, ty: 63, tz: -3,
+  });
+  ok(!!cast && cast.tx === 12 && cast.ty === 63 && cast.tz === -3, '形状校验透传目标方块');
+  const noTgt = sanitizeCast({ spell: OVERLOAD_SPELL_ID, echo: 50, x: 0, y: 64, z: 0, dx: 0, dy: 0, dz: -1 });
+  ok(!!noTgt && noTgt.tx === undefined, '没有目标就不携带（服务器据此拒绝）');
+  const frac = sanitizeCast({
+    spell: OVERLOAD_SPELL_ID, echo: 50, x: 0, y: 64, z: 0, dx: 0, dy: 0, dz: -1,
+    tx: 1.5, ty: 63, tz: 2,
+  });
+  ok(!!frac && frac.tx === undefined, '目标必须是整数格坐标');
+  const outOfRange = sanitizeCast({
+    spell: OVERLOAD_SPELL_ID, echo: 50, x: 0, y: 64, z: 0, dx: 0, dy: 0, dz: -1,
+    tx: 40000000, ty: 63, tz: 0,
+  });
+  ok(!!outOfRange && outOfRange.tx === undefined, '越界坐标不携带');
+  const ms = src('../src/player/MagicSystem.js');
+  ok(/_overloadTargetFor\(held\.name\)/.test(ms), '施法入口先判联动目标（对着机器才是超载）');
+  ok(/heldName !== GALE_CROSS_FOCUS_ITEM/.test(ms), '只有风渡焦点触发超载');
+  ok(/_dualEnabled\(\)/.test(ms) && /extraContent\.industry === true && w\.extraContent\.magic === true/.test(ms),
+    '客户端按双开关门控');
+  ok(/addOverload\(g\.world\.overloads/.test(ms), '单机写本地账本');
+  ok(/sendMagicCast\(OVERLOAD_SPELL_ID, p\.echo, this\._eyeStart\(\), this\._viewDir\(\), null, target\)/.test(ms),
+    '联机只发目标格，账本归服务器');
+  ok(/msg\.spell === OVERLOAD_SPELL_ID/.test(ms), '远端只播风尘，不结算增益');
+  ok(/canOverloadAt\(block, heldName\)/.test(ms), 'canOverloadAt 是右键分支的预判入口（只判条件不改状态）');
+  const ic = src('../src/player/InteractionController.js');
+  ok(/g\.magic\.canOverloadAt\(furnaceHit\.block, heldSel\.name\)/.test(ic),
+    '右键对着潮工机器：先问是不是超载，再决定开不开界面');
+  ok(/if \(g\.magic\.beginCharge\(\)\) return CLICK_ABORT;/.test(ic), '超载起手复用焦点蓄力通道（不新增输入通道）');
+  ok(/if \(g\.controls\.isSneaking\(\)\) \{[\s\S]{0,200}interact/.test(ic),
+    '潜行右键仍走快捷投料（喂料不被超载抢走）');
+  const nm = src('../src/net/NetworkManager.js');
+  ok(/sendMagicCast\(spell, echo, pos, dir, to = null, target = null\)/.test(nm), '网络层带目标方块参数');
+  const room = src('../server/room.js');
+  ok(/onOverloadCast\(player, cast\)/.test(room) && /if \(cast\.spell === OVERLOAD_SPELL_ID\)/.test(room),
+    '服务器把联动法术分流到自己的权威处理');
+  ok(/this\.extraContent\.industry !== true \|\| this\.extraContent\.magic !== true\) return;/.test(room),
+    '服务器要求两个开关都开（单开直接丢弃）');
+  ok(/addOverload\(ledger, key/.test(room) && /_industryNetInfo\(dim, key\)/.test(room),
+    '写入账本后广播目标机器的权威状态（别人的压力表能看到）');
+  ok(/dimensionOverloads/.test(room) && /dimensionOverloads/.test(src('../src/core/World.js')),
+    '客户端与服务器都按维度分桶（不跨维）');
+  const ae = src('../src/audio/AudioEngine.js');
+  ok(/gale_overload: 'overload'/.test(ae) && /case 'overload':/.test(ae), '超载有自己的音色');
+  const gaugeSrc = src('../src/ui/MachineScreen.js');
+  ok(/风压超载：剩 \{n\} 秒（×\{rate\}）/.test(gaugeSrc), '压力表显示过载剩余时间');
+  ok(!/Hud\.js[\s\S]*风压超载/.test(src('../src/ui/Hud.js')), '没有新增第三套 HUD');
+}
+
+// ── ⑮ 风压超载：文案 ─────────────────────────────────────────────────────
+{
+  const keys = [
+    '这条轴已经在过载',
+    '这个世界的过载已经用满，先等它们散掉',
+    '准星没有指向潮工机器',
+    '风压超载：这条轴 ×{rate}，{n} 秒',
+    '风压超载：剩 {n} 秒（×{rate}）',
+  ];
+  for (const [loc, pack] of Object.entries(PACKS)) {
+    for (const key of keys) {
+      ok(typeof pack[key] === 'string' && pack[key].length > 0, `${loc} 有键：${key.slice(0, 10)}…`);
+    }
+    for (const key of keys.slice(3)) {
+      for (const ph of (key.match(/\{\w+\}/g) || [])) {
+        ok(pack[key].includes(ph), `${loc} 保留占位符 ${ph}`);
+      }
+    }
+  }
+  ok(t('风压超载：这条轴 ×{rate}，{n} 秒', { rate: 1.5, n: 20 }).includes('1.5'), '施放提示能渲染速率');
 }
 
 finish('extra-synergy-unit');

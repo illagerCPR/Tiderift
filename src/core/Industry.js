@@ -13,6 +13,9 @@ import {
   NETWORK_MAX_NODES, processorRecipeFor, processorTime, crushByproductFor,
   pressRecipeFor, processorEnabledFor, ECHO_SHARD_ITEM,
 } from '../content/industry/defs.js';
+import {
+  OVERLOAD_DURATION, OVERLOAD_RATE, OVERLOAD_MAX_ACTIVE, OVERLOAD_MAX_RATE,
+} from '../content/magic/defs.js';
 import { getFuelTime } from './Smelting.js';
 
 const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
@@ -143,7 +146,7 @@ function stateSig(st) {
 // blocks: Map("x,y,z" -> 'boiler'|'shaft'|'crusher'|'cutter'|'clutch')
 // states: Map("x,y,z" -> state)（可选；只用于读离合闸通断，缺状态按接通）
 // 返回 { compOf: Map(key -> 分量下标), comps: [{nodes, boilers, machines, crushers, cutters, overLimit, supply, demand, efficiency}] }
-export function buildNetworks(blocks, states = null) {
+export function buildNetworks(blocks, states = null, overloads = null) {
   const compOf = new Map();
   const comps = [];
   if (!blocks || blocks.size === 0) return { compOf, comps };
@@ -183,14 +186,17 @@ export function buildNetworks(blocks, states = null) {
     comps.push(comp);
   }
   const nets = { compOf, comps };
-  if (states) evaluateNetworks(nets, states); // 新图立即带上供需（机器界面/服务器摘要不会读到 0）
+  // 新图立即带上供需与过载（界面摘要不会读到 0 / 不会漏掉过载）；只给账本时也照样贴过载
+  if (states) evaluateNetworks(nets, states, overloads);
+  else if (overloads) attachOverloads(nets, overloads);
   return nets;
 }
 
 // 供需与效率：全网一致口径；超限网络整体停摆。
 // 建图即调用一次（供界面/摘要读），tick 里再算一次（锅炉刚点火的那一帧要反映出来）。
-export function evaluateNetworks(nets, states) {
+export function evaluateNetworks(nets, states, overloads = null) {
   if (!nets || !states) return nets;
+  attachOverloads(nets, overloads);
   for (const comp of nets.comps) {
     let supply = 0;
     let demand = 0;
@@ -211,6 +217,63 @@ export function evaluateNetworks(nets, states) {
   return nets;
 }
 
+// ── 风压超载账本（B56 R2）──────────────────────────────────────────────────
+// ledger: Map("x,y,z" -> { left(秒), rate })，key 是**被点的那一格**。
+// 语义（计划 §七）：过载跟着被点的那一格走——拆轴/拆机器后只有含该格的子网继续过载；
+// 账本按维度分桶（不跨维）、不进存档（临时增益，重启即散）、不累积（同一条轴只吃一次）。
+export function addOverload(ledger, key, opts = {}) {
+  if (!ledger || !key) return { ok: false, code: 'invalid' };
+  const maxActive = Math.max(1, Math.floor(Number(opts.maxActive) || OVERLOAD_MAX_ACTIVE));
+  if (ledger.size >= maxActive) return { ok: false, code: 'busy' };
+  if (ledger.has(key)) return { ok: false, code: 'overloaded' };
+  const d = Math.max(1, Math.min(120, Number(opts.duration) || OVERLOAD_DURATION));
+  const r = Math.max(1, Math.min(OVERLOAD_MAX_RATE, Number(opts.rate) || OVERLOAD_RATE));
+  ledger.set(key, { left: d, rate: r });
+  return { ok: true, code: 'ok', entry: ledger.get(key) };
+}
+
+// 递减与清理：到点即散；锚点方块不见了/换成传动轴也一并作废（不留幽灵过载）
+export function tickOverloads(ledger, dtSec, blocks = null) {
+  if (!ledger || !ledger.size) return 0;
+  const dt = Math.max(0, Math.min(1, Number(dtSec) || 0));
+  let removed = 0;
+  for (const [key, entry] of [...ledger]) {
+    if (blocks) {
+      const kind = blocks.get(key);
+      if (!kind || kind === 'shaft') { ledger.delete(key); removed++; continue; }
+    }
+    entry.left = Math.max(0, Number(entry.left) - dt);
+    if (!(entry.left > 0)) { ledger.delete(key); removed++; }
+  }
+  return removed;
+}
+
+// 把账本贴到网络分量上（机器界面/摘要/推进都读 comp.overload，不再各自扫一遍）
+export function attachOverloads(nets, ledger) {
+  if (!nets) return nets;
+  for (const comp of nets.comps) {
+    let best = null;
+    if (ledger && ledger.size) {
+      for (const key of comp.nodes) {
+        const e = ledger.get(key);
+        if (!e) continue;
+        if (!best || e.left > best.left) best = e;
+      }
+    }
+    comp.overload = best ? { left: best.left, rate: best.rate } : null;
+  }
+  return nets;
+}
+
+// 某一格所在网络的过载（"这条轴已经在过载"的判定；需先 buildNetworks(..., 账本)）
+export function overloadOfKey(networks, ledger, key) {
+  if (!networks || !ledger || !ledger.size) return null;
+  const idx = networks.compOf.get(key);
+  if (idx === undefined) return null;
+  const comp = networks.comps[idx];
+  return (comp && comp.overload) || null;
+}
+
 // 某台机器所在网络的供需摘要（机器界面读它；不返回节点列表，避免每帧拷贝）
 export function netInfoFor(networks, key) {
   if (!networks || !networks.compOf) return null;
@@ -229,6 +292,8 @@ export function netInfoFor(networks, key) {
     machines: comp.machines.length,
     cuts: comp.cuts.slice(0, 6),
     cutsTotal: comp.cuts.length,
+    // B56 R2：风压超载（剩余秒数 + 速率倍数）；null = 这条轴没有在过载
+    overload: comp.overload ? { left: Math.max(0, comp.overload.left), rate: comp.overload.rate } : null,
   };
 }
 
@@ -254,11 +319,13 @@ export function projectedNetworkSize(networks, blocks, x, y, z, states = null) {
 // ── 单机推进 ────────────────────────────────────────────────────────────
 // states: Map(key -> state)（惰性建条目）；networks: buildNetworks 的缓存（可选，需含离合闸状态）
 // 返回 { networks, changed:Set<key>, ticked:boolean }
-export function tickIndustry(blocks, states, dtSec, networks = null, manifest = null) {
-  const nets = networks || buildNetworks(blocks, states);
+export function tickIndustry(blocks, states, dtSec, networks = null, manifest = null, overloads = null) {
+  const nets = networks || buildNetworks(blocks, states, overloads);
   const changed = new Set();
   const dt = Math.max(0, Math.min(1, Number(dtSec) || 0)); // 大步长钳制：不追赶离线生产
   if (!(dt > 0)) return { networks: nets, changed, ticked: false };
+  // 过载计时先走：到点的这一拍就不再计入速率（不会多送一帧的便宜）
+  if (overloads) tickOverloads(overloads, dt, blocks);
 
   // 1) 锅炉：点火（燃料 + 桶装水 → 空桶）与燃烧计时
   for (const comp of nets.comps) {
@@ -270,20 +337,22 @@ export function tickIndustry(blocks, states, dtSec, networks = null, manifest = 
     }
   }
 
-  // 2) 供给 / 需求 / 效率（全网一致口径；超限网络整体停摆）
-  evaluateNetworks(nets, states);
+  // 2) 供给 / 需求 / 效率 / 过载（全网一致口径；超限网络整体停摆）
+  evaluateNetworks(nets, states, overloads);
 
   // 3) 加工机推进（按所在网络的效率降速；超限网络效率强制 0）
   //    B56 R1：联动机器（压印机）额外要求两个模块都开——关掉任一边的世界里它不产不耗
   for (const comp of nets.comps) {
     const eff = comp.overLimit ? 0 : comp.efficiency;
+    // B56 R2：风压超载只加快进度（潮压消耗不变）——效率上限仍是 1，速率有硬上限
+    const rate = comp.overload ? Math.min(OVERLOAD_MAX_RATE, Math.max(1, comp.overload.rate)) : 1;
     for (const key of comp.machines) {
       const st = states.get(key);
       if (!st) continue;
       if (manifest && !processorEnabledFor(st.kind, manifest)) continue;
       const before = stateSig(st);
       const beforeProgress = st.progress;
-      tickProcessor(st, dt, eff);
+      tickProcessor(st, dt, eff, rate);
       if (stateSig(st) !== before || st.progress !== beforeProgress) changed.add(key);
     }
   }
@@ -343,7 +412,7 @@ function processorCanWork(st) {
   return spaceIn(st.output, r.output) >= r.count;
 }
 
-function tickProcessor(st, dt, eff) {
+function tickProcessor(st, dt, eff, rate = 1) {
   const r = processorRecipe(st);
   // 无料 / 不认的料：进度缓慢回退（不瞬间清零，同熔炉口径）
   if (!r) {
@@ -353,7 +422,8 @@ function tickProcessor(st, dt, eff) {
   if (!processorCanWork(st)) return; // 产物已满：保温（不推进也不回退）
   if (eff <= 0) return;              // 无供给：停转保温，等压恢复后继续
   const total = processorTime(st.kind);
-  st.progress += dt * eff;
+  // 速率倍数只作用于进度；idle 回退仍按真实时间（过载不会让停机的机器"退得更快"）
+  st.progress += dt * eff * Math.max(1, Number(rate) || 1);
   let guard = 0;
   while (st.progress >= total && guard++ < 16) {
     const cur = processorRecipe(st);
@@ -500,6 +570,8 @@ export function machineStatus(kind, st, net = null) {
     machines: net ? Math.max(0, net.machines | 0) : 0,
     cuts: (net && Array.isArray(net.cuts)) ? net.cuts : [],
     cutsTotal: net ? Math.max(0, net.cutsTotal | 0) : 0,
+    // B56 R2：风压超载（压力表读数用）；null = 这条轴没有在过载
+    overload: (net && net.overload) ? { left: Math.max(0, Number(net.overload.left) || 0), rate: Number(net.overload.rate) || 1 } : null,
     recipe: null,
     progress: 0,
     progressFrac: 0,

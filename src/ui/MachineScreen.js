@@ -422,12 +422,15 @@ export class MachineScreen {
     const cutLine = cuts.length
       ? `\n${t('断路 {n} 处：{list}', { n: status.cutsTotal, list: cuts.map((k) => `(${k})`).join(' ') })}`
       : '';
-    const text = `${parts.join('   ')}\n${t('在烧锅炉 {n} 台 · 在跑机器 {m} 台', { n: status.boilers, m: status.machines })}${cutLine}`;
+    // B56 R2：联合读数——过载剩余时间只在压力表上加一行（不新增第三套 HUD）
+    const ov = status.overload;
+    const ovLine = ov ? `\n${t('风压超载：剩 {n} 秒（×{rate}）', { n: Math.ceil(ov.left), rate: ov.rate })}` : '';
+    const text = `${parts.join('   ')}\n${t('在烧锅炉 {n} 台 · 在跑机器 {m} 台', { n: status.boilers, m: status.machines })}${cutLine}${ovLine}`;
     if (this.statsEl._gaugeText !== text) {
       this.statsEl._gaugeText = text;
       this.statsEl.textContent = text;
       this.statsEl.style.whiteSpace = 'pre-line';
-      this.statsEl.style.color = (status.overLimit || cuts.length) ? '#8a1f1f' : '#333';
+      this.statsEl.style.color = (status.overLimit || cuts.length) ? '#8a1f1f' : (ov ? '#1f5f6a' : '#333');
     }
     this.reasonEl.textContent = `${t('状态')}：${gaugeText(status.reason)}`;
   }

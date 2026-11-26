@@ -892,4 +892,10 @@ export const de = {
   '缺少回响残片': 'Echosplitter fehlt',
   '残片': 'Splitter',
   '纹样压印：{input} + {shard} → {output}': 'Einprägen: {input} + {shard} → {output}',
+  // ── B56 R2 风压超载（失败码 / 施放提示 / 压力表联合读数）──
+  '这条轴已经在过载': 'Diese Welle ist bereits überlastet',
+  '这个世界的过载已经用满，先等它们散掉': 'Alle Überlastungen dieser Welt sind belegt; warte, bis sie abklingen',
+  '准星没有指向潮工机器': 'Dein Fadenkreuz zeigt auf keine Gezeitenmaschine',
+  '风压超载：这条轴 ×{rate}，{n} 秒': 'Windüberlast: diese Welle ×{rate} für {n} s',
+  '风压超载：剩 {n} 秒（×{rate}）': 'Windüberlast: noch {n} s (×{rate})',
 };

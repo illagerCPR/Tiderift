@@ -1442,13 +1442,15 @@ export class NetworkManager {
   sendGamemode(mode) { this._send(MSG.GAMEMODE, { mode }); }
   // B51 R4：施法事件广播（本机权威结算；服务器只校验并转发表现）
   // B54 R1：折步附带落点 to（可选，便于远端画起止两团尘）
-  sendMagicCast(spell, echo, pos, dir, to = null) {
+  sendMagicCast(spell, echo, pos, dir, to = null, target = null) {
     const msg = {
       spell, echo: echo | 0,
       x: pos.x, y: pos.y, z: pos.z,
       dx: dir.x, dy: dir.y, dz: dir.z,
     };
     if (to) { msg.x2 = to.x; msg.y2 = to.y; msg.z2 = to.z; }
+    // B56 R2：目标方块（风压超载用整数格坐标；服务器据此校验目标网络）
+    if (target) { msg.tx = target.x; msg.ty = target.y; msg.tz = target.z; }
     this._send(MSG.MAGIC_CAST, msg);
   }
 

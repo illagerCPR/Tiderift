@@ -18,13 +18,14 @@ import {
   machineSig, spillStacks, industryKindOf, isIndustryId, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
   projectedNetworkSize, NETWORK_MAX_NODES,
   netInfoFor, toggleClutch, setClutchPowered, isMachineSlot,
-  industryAllowedIn,
+  industryAllowedIn, addOverload, overloadOfKey, attachOverloads,
 } from './industry.js';
 
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
 import { roomStats } from './stats.js';
 // B51 R4：四潮回响——法术表与形状校验（本机权威、服务器只做启用/形状/频率硬约束）
-import { sanitizeCast, spellDef, isMagicId, MAGIC_PVP_DAMAGE_CAP } from './magic.js';
+import { sanitizeCast, spellDef, isMagicId, MAGIC_PVP_DAMAGE_CAP, checkOverload } from './magic.js';
+import { OVERLOAD_SPELL_ID } from '../src/content/magic/defs.js';
 
 // B51：额外内容世界清单（与客户端共用同一份纯模块：规范化/启用列表/序列化）
 import {
@@ -545,6 +546,8 @@ export class Room {
     // 状态（槽位 + 进度）进快照；索引与拓扑纯派生自方块账本，不落盘。
     this.dimensionIndustry = new Map();
     this.dimensionIndustryBlocks = new Map();
+    // B56 R2：风压超载账本（dim -> Map("x,y,z" -> {left, rate})）。临时增益：不进快照、重启即散。
+    this.dimensionOverloads = new Map();
     this._industryVersion = 0;        // 方块索引版本（拓扑缓存失效判据）
     this._industryNetCache = new Map(); // dim -> { version, networks }
     this._industrySig = new Map();    // "dim|key" -> 槽位签名（即时广播判据）
@@ -698,6 +701,7 @@ export class Room {
     // B51 R3：潮工账本恢复（旧快照无该字段 → 空表；坏项跳过）+ 方块索引重建
     this.dimensionIndustry = new Map();
     this.dimensionIndustryBlocks = new Map();
+    this.dimensionOverloads = new Map(); // 过载不落盘：读档/重启回到无过载
     this._industryVersion++;
     this._industryNetCache = new Map();
     this._industrySig = new Map();
@@ -1325,6 +1329,7 @@ export class Room {
     // B51 R3：重建世界 = 新地形，工业机器账本与索引一并作废（世界规则不变）
     this.dimensionIndustry.clear();
     this.dimensionIndustryBlocks.clear();
+    this.dimensionOverloads.clear();
     this._industryVersion++;
     this._industryNetCache.clear();
     this._industrySig.clear();
@@ -2094,7 +2099,10 @@ export class Room {
   _industryNetInfo(dim, key) {
     const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
     if (!idx.has(key)) return null;
-    return netInfoFor(this._industryNetworks(dim), key);
+    const nets = this._industryNetworks(dim);
+    // 过载可能在两次拓扑重建之间加入/到点：摘要前重贴一次（O(节点数)，只在界面读时发生）
+    attachOverloads(nets, this.dimBucket(this.dimensionOverloads, dim));
+    return netInfoFor(nets, key);
   }
 
   // 方块索引与账本同步（单格与批量路径共用）：进入/离开工业家族都要更新
@@ -2206,6 +2214,9 @@ export class Room {
 
   // 机器方块消失 → 账本条目删除 + 内容物散落（联机端不再本地散落，避免双份）
   dropIndustryAt(dim, key) {
+    // B56 R2：机器没了，挂在它身上的过载也一并作废（不留幽灵增益）
+    const ov = this.dimensionOverloads.get(dim);
+    if (ov) ov.delete(key);
     if (!this.dimensionIndustry.size) return;
     const states = this.dimBucket(this.dimensionIndustry, dim);
     const st = states.get(key);
@@ -2236,7 +2247,11 @@ export class Room {
     if (entry && entry.version === this._industryVersion) return entry.networks;
     const idx = this.dimBucket(this.dimensionIndustryBlocks, dim);
     // 传状态：离合闸通断参与导流，且建图即算供需（界面摘要不会读到 0）
-    const networks = buildNetworks(idx, this.dimBucket(this.dimensionIndustry, dim));
+    const networks = buildNetworks(
+      idx,
+      this.dimBucket(this.dimensionIndustry, dim),
+      this.dimBucket(this.dimensionOverloads, dim),
+    );
     entry = { version: this._industryVersion, networks };
     this._industryNetCache.set(dim, entry);
     return networks;
@@ -2262,7 +2277,8 @@ export class Room {
       }
       if (!states.size) continue;
       // B56 R1：把世界清单交给 tick——联动机器（压印机）在缺任一模块时不产不耗
-      const r = tickIndustry(idx, states, dt, networks, this.extraContent);
+      const overloads = this.dimBucket(this.dimensionOverloads, dim);
+      const r = tickIndustry(idx, states, dt, networks, this.extraContent, overloads);
       for (const key of r.changed) {
         const st = states.get(key);
         if (!st) continue;
@@ -2304,6 +2320,8 @@ export class Room {
     const dist = Math.hypot(cast.x - px, cast.y - py, cast.z - pz);
     if (dist > 12) return;
     this._magicCastAt.set(key, now);
+    // B56 R2：联动法术（风压超载）走自己的权威路径——要查双开关、目标机器与网络预算
+    if (cast.spell === OVERLOAD_SPELL_ID) { this.onOverloadCast(player, cast); return; }
     // 只广播表现给同维其他人（发起者本端已自行结算）；折步可带落点供远端画起止两团尘
     const fx = {
       by: player.id, spell: cast.spell,
@@ -2312,6 +2330,53 @@ export class Room {
     };
     if (typeof cast.x2 === 'number') { fx.x2 = cast.x2; fx.y2 = cast.y2; fx.z2 = cast.z2; }
     this.broadcastDim(MSG.MAGIC_EFFECT, fx, player.dim, player.id);
+  }
+
+  // B56 R2 风压超载：服务器权威维护过载账本（客户端只发目标格）
+  //   校验顺序：双开关 → 目标格是工业机器且不是传动轴 → 距离 → 该网络是否已过载 → 每维度上限。
+  //   通过后写账本（到时自动散，不累积），再广播表现与目标机器的权威状态（别人的压力表能看到）。
+  onOverloadCast(player, cast) {
+    if (!this.extraContent || this.extraContent.industry !== true || this.extraContent.magic !== true) return;
+    const def = spellDef(OVERLOAD_SPELL_ID);
+    if (!def || !def.target) return;
+    const tx = cast.tx, ty = cast.ty, tz = cast.tz;
+    if (!Number.isInteger(tx) || !Number.isInteger(ty) || !Number.isInteger(tz)) return;
+    const dim = player.dim;
+    const key = `${tx},${ty},${tz}`;
+    const kind = this._industryKindAt(dim, key);
+    const px = safeNum(player.pos && player.pos.x, 0);
+    const py = safeNum(player.pos && player.pos.y, 0);
+    const pz = safeNum(player.pos && player.pos.z, 0);
+    // 距离按方块中心到玩家眼睛（服务器手里的玩家位置）——客户端报的坐标只当"哪一格"
+    const dist = Math.hypot(tx + 0.5 - px, ty + 0.5 - (py + 1.62), tz + 0.5 - pz);
+    const ledger = this.dimBucket(this.dimensionOverloads, dim);
+    const nets = this._industryNetworks(dim);
+    attachOverloads(nets, ledger);
+    const gate = checkOverload({
+      dualEnabled: true, // 上面已按两个开关判过
+      kind,
+      dist,
+      overloaded: !!overloadOfKey(nets, ledger, key),
+      active: ledger.size,
+      range: def.target.range,
+      maxActive: def.target.maxActive,
+    });
+    if (!gate.ok) return;
+    const added = addOverload(ledger, key, {
+      duration: def.target.duration, rate: def.target.rate, maxActive: def.target.maxActive,
+    });
+    if (!added.ok) return;
+    // 表现：同维其他人看到目标处一团风尘（不含发起者，他自己已结算表现）
+    this.broadcastDim(MSG.MAGIC_EFFECT, {
+      by: player.id, spell: OVERLOAD_SPELL_ID,
+      x: cast.x, y: cast.y, z: cast.z,
+      dx: cast.dx, dy: cast.dy, dz: cast.dz,
+      tx, ty, tz,
+    }, dim, player.id);
+    // 权威状态：摘要里带上刚写入的过载，别人的压力表不用等下一拍
+    const st = this.dimBucket(this.dimensionIndustry, dim).get(key) || emptyStateFor(kind);
+    this.broadcastDim(MSG.INDUSTRY_STATE,
+      this.industryMessage(tx, ty, tz, dim, st, 0, this._industryNetInfo(dim, key)), dim);
   }
 
   // 掉落物：客户端请求生成 -> 服务器分配唯一 id 并广播（含发起者，各端据此创建同一实体；M4：同维度广播）

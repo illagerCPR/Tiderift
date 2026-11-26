@@ -51,7 +51,8 @@ const PAIRS = [
 {
   ok(SPELL_IDS.length === 4, '基础四支保持不变（进阶另表，不混进基础 ID）');
   ok(ADVANCED_SPELL_IDS.length === 4, `进阶四支（${ADVANCED_SPELL_IDS.join(', ')}）`);
-  ok(Object.keys(ALL_SPELLS).length === 8, '总表 8 支 = 4 基础 + 4 进阶');
+  // B56 R2：总表再并入 1 支联动法术（风压超载），基础与进阶两张表本身仍是 4+4
+  ok(Object.keys(ALL_SPELLS).length === 9, '总表 9 支 = 4 基础 + 4 进阶 + 1 联动');
   for (const p of PAIRS) {
     const adv = ADVANCED_SPELLS[p.adv];
     const base = SPELLS[p.base];

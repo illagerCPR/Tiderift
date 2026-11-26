@@ -316,6 +316,12 @@ export class InteractionController {
             return CLICK_CONSUMED;
           }
         } else if (kind !== 'shaft' && g.machineScreen) {
+          // B56 R2：手持风渡焦点对着机器 → 这个右键归「风压超载」的起手蓄力，
+          // 不打开机器界面（否则联动的施法永远被界面抢走）。潜行右键仍走快捷投料（上面那支）。
+          const heldSel = g.inventory.getSelected();
+          if (heldSel && g.magic && g.magic.canOverloadAt(furnaceHit.block, heldSel.name)) {
+            if (g.magic.beginCharge()) return CLICK_ABORT;
+          }
           g.machineScreen.show(furnaceHit.block.x, furnaceHit.block.y, furnaceHit.block.z);
           g.controls.mouseRight = false;
           return CLICK_CONSUMED;

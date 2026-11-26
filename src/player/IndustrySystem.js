@@ -43,7 +43,8 @@ export class IndustrySystem {
   _networksFor(world) {
     if (this._dirty || !this._networks) {
       // B52 R1：离合闸断开会锯断网络——拓扑必须读状态里的通断
-      this._networks = buildNetworks(world.dumpIndustryBlocks(), world.industry);
+      // B56 R2：把风压过载账本一起交给建图（界面摘要即时有 overload，不用等下一拍）
+      this._networks = buildNetworks(world.dumpIndustryBlocks(), world.industry, world.overloads);
       this._dirty = false;
     }
     return this._networks;
@@ -66,7 +67,7 @@ export class IndustrySystem {
       this._acc -= step;
       const nets = this._networksFor(world);
       // B56 R1：清单一并交给纯算法——联动机器（压印机）要求工业 + 魔法同时开
-      const r = tickIndustry(world.industryBlocks, world.industry, step, nets, world.extraContent);
+      const r = tickIndustry(world.industryBlocks, world.industry, step, nets, world.extraContent, world.overloads);
       if (r.changed.size && this._warnedLimit) this._warnedLimit = false;
       this._noteOverLimit(r.networks);
     }

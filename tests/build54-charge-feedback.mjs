@@ -81,7 +81,8 @@ const HUD_KINDS = ['none', 'echo-low', 'cooldown', 'target'];
 
 // ── ③ 反馈统一 ──────────────────────────────────────────────────────────
 {
-  ok(CAST_FAIL_CODES.length === 9, `失败码共 9 个（${CAST_FAIL_CODES.join(', ')}）`);
+  // B56 R2：+3 个联动失败码（overloaded / busy / no-network）
+  ok(CAST_FAIL_CODES.length === 12, `失败码共 12 个（${CAST_FAIL_CODES.join(', ')}）`);
   for (const code of CAST_FAIL_CODES) {
     const fb = castFeedback(code);
     ok(fb.code === code, `${code} 反馈回显原码`);

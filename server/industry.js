@@ -5,7 +5,7 @@ import {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
   sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
   clutchEngaged, toggleClutch, setClutchPowered, pendingClutchSignals, isMachineSlot, slotInsertable,
-  projectedNetworkSize,
+  projectedNetworkSize, addOverload, tickOverloads, attachOverloads, overloadOfKey,
 } from '../src/core/Industry.js';
 import {
   INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS, NETWORK_MAX_NODES,
@@ -17,7 +17,8 @@ export {
   tickIndustry, buildNetworks, applyIndustryAction, emptyStateFor,
   sanitizeMachineState, spillStacks, machineSig, netInfoFor, evaluateNetworks,
   clutchEngaged, toggleClutch, setClutchPowered, pendingClutchSignals, isMachineSlot, slotInsertable,
-  projectedNetworkSize, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS, NETWORK_MAX_NODES,
+  projectedNetworkSize, addOverload, tickOverloads, attachOverloads, overloadOfKey,
+  INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS, NETWORK_MAX_NODES,
   INDUSTRY_REQUIRES, SYNERGY_REQUIRES,
 };
 

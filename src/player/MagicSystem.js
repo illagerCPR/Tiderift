@@ -9,11 +9,13 @@ import * as THREE from 'three';
 import {
   SPELLS, SPELL_IDS, FOCUS_SPELL, spellDef, ECHO_MAX,
   ECHO_REGEN_SECONDS, ECHO_REGEN_DELAY, ECHO_PER_LEVEL, CHARGE_FULL_SECONDS,
+  GALE_CROSS_FOCUS_ITEM, OVERLOAD_SPELL_ID, OVERLOAD_RANGE,
 } from '../content/magic/defs.js';
 import {
   clampEcho, checkCast, tuneEcho, resolveDashTarget, resolveBlinkTarget, planMend, cooldownLeft,
-  spellAtCharge, castFeedback, sanitizeCooldowns, boltDamage,
+  spellAtCharge, castFeedback, sanitizeCooldowns, boltDamage, checkOverload,
 } from '../core/Magic.js';
+import { addOverload, overloadOfKey } from '../core/Industry.js';
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { PLAYER_EYE_HEIGHT } from './constants.js';
 import { t } from '../i18n/index.js';
@@ -172,6 +174,9 @@ export class MagicSystem {
     const p = g.player;
     const held = g.inventory ? g.inventory.getSelected() : null;
     if (!held) return false;
+    // B56 R2：手持风渡焦点、准星指着潮工机器 → 这一下是「风压超载」，不是位移
+    const overloadTarget = this._overloadTargetFor(held.name);
+    if (overloadTarget) return this._castOverload(held.name, overloadTarget);
     const spellId = FOCUS_SPELL[held.name];
     if (!spellId) return false;
     const base = spellDef(spellId);
@@ -533,6 +538,86 @@ export class MagicSystem {
     }
   }
 
+  // ── 风压超载（B56 R2）：联动法术，只在双开世界对机械网络生效 ────────────────
+  // 触发口径：手持风渡焦点 + 准星指向潮工机器（传动轴不算——指着轴多半只是想走过去）。
+  // 不改地形/水位/时间，不产潮压也不产物品：只把网络的工作速率临时乘上去，到时回落。
+  _dualEnabled() {
+    const w = this.game.world;
+    return !!(w && w.extraContent && w.extraContent.industry === true && w.extraContent.magic === true);
+  }
+
+  // 右键分支的预判（InteractionController 用）：拿着风渡焦点对着潮工机器时，
+  // 这一下右键该归「风压超载」而不是打开机器界面。只判条件，不改状态。
+  canOverloadAt(block, heldName) {
+    return !!this._overloadTargetFor(heldName, block);
+  }
+
+  _overloadTargetFor(heldName, block = null) {
+    if (heldName !== GALE_CROSS_FOCUS_ITEM) return null;
+    if (!this.enabled || !this._dualEnabled()) return null;
+    const g = this.game;
+    const hit = block ? { block } : g.selectedBlock;
+    const w = g.world;
+    if (!hit || !hit.block || !w || !w.industryBlocks) return null;
+    const key = `${hit.block.x},${hit.block.y},${hit.block.z}`;
+    const kind = w.industryBlocks.get(key);
+    if (!kind || kind === 'shaft') return null;
+    const eye = this._eyeStart();
+    const dist = Math.hypot(hit.block.x + 0.5 - eye.x, hit.block.y + 0.5 - eye.y, hit.block.z + 0.5 - eye.z);
+    if (!(dist <= OVERLOAD_RANGE)) return null; // 够不着：这一下仍是位移
+    return { x: hit.block.x, y: hit.block.y, z: hit.block.z, kind, dist, key };
+  }
+
+  _castOverload(heldName, target) {
+    const g = this.game;
+    const p = g.player;
+    const def = spellDef(OVERLOAD_SPELL_ID);
+    if (!def) return false;
+    const spec = def.target;
+    const networks = g.industry ? g.industry._networksFor(g.world) : null;
+    const already = networks ? overloadOfKey(networks, g.world.overloads, target.key) : null;
+    const gate = checkOverload({
+      dualEnabled: this._dualEnabled(),
+      kind: target.kind,
+      dist: target.dist,
+      overloaded: !!already,
+      active: g.world.overloads ? g.world.overloads.size : 0,
+      range: spec.range,
+      maxActive: spec.maxActive,
+    });
+    if (!gate.ok) { this._feedback(gate.code); return true; }
+    const check = checkCast({
+      spellId: OVERLOAD_SPELL_ID,
+      held: heldName,
+      echo: p.echo,
+      cooldownLeft: this.cooldownLeft(OVERLOAD_SPELL_ID),
+      magicEnabled: this.enabled,
+      spectator: p.spectator,
+      creative: p.creative,
+    });
+    if (!check.ok) { this._feedback(check.code); return true; }
+    // 联机：服务器权威持有过载账本（客户端不本地记账，只发目标格）；单机：本地账本
+    if (g.networkMode && g.net) {
+      g.net.sendMagicCast(OVERLOAD_SPELL_ID, p.echo, this._eyeStart(), this._viewDir(), null, target);
+    } else {
+      const added = addOverload(g.world.overloads, target.key, {
+        duration: spec.duration, rate: spec.rate, maxActive: spec.maxActive,
+      });
+      if (!added.ok) { this._feedback(added.code === 'busy' ? 'busy' : 'overloaded'); return true; }
+      if (g.industry) g.industry.markDirty(); // 建图即带上新过载（界面不用等下一拍）
+    }
+    p.echo = clampEcho(p.echo - def.cost, p.echoMax);
+    this._lastCast.set(OVERLOAD_SPELL_ID, Date.now());
+    this._lastSpendAt = Date.now();
+    audio.spellCast(OVERLOAD_SPELL_ID, 0);
+    this._impactFx(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+    if (g.hud) {
+      g.hud.showToast(t('风压超载：这条轴 ×{rate}，{n} 秒', { rate: spec.rate, n: spec.duration }));
+    }
+    this._pushHud();
+    return true;
+  }
+
   // ── 仪台调谐 ────────────────────────────────────────────────────────────
   tuneTable() {
     const g = this.game;
@@ -555,6 +640,13 @@ export class MagicSystem {
     const dir = new THREE.Vector3(msg.dx, msg.dy, msg.dz);
     if (dir.lengthSq() < 1e-6) return;
     dir.normalize();
+    if (msg.spell === OVERLOAD_SPELL_ID) {
+      // 远端风压超载：只在目标机器处放一团风尘（网络增益由各端读权威账本，不在这里结算）
+      if (Number.isFinite(msg.tx) && Number.isFinite(msg.ty) && Number.isFinite(msg.tz)) {
+        this._impactFx(msg.tx + 0.5, msg.ty + 0.5, msg.tz + 0.5);
+      }
+      return;
+    }
     if (msg.spell === 'gale_step') {
       // 远端风步：起手位置一团风尘（位移由 player_state 自己同步，不在这里挪人）
       this._impactFx(msg.x, msg.y, msg.z);

@@ -31,6 +31,7 @@ export function blockCategory(def) {
 // 进阶法术 → 基础法术音色族（B55 R2；没有列出的 ID 直接用自身）
 const SPELL_SOUND_FAMILY = Object.freeze({
   gale_cross: 'gale_step',
+  gale_overload: 'overload', // B56 R2：风压超载——一阵被压进机器的风，不是冲刺的呼啸
   ember_ring: 'ember_bolt',
   tide_ward: 'tide_mend',
   void_dash: 'void_step',
@@ -217,6 +218,11 @@ class AudioEngine {
       case 'ember_bolt': // 坠潮：低而短的一记
         this._tone({ dur: 0.16, from: 240 - c * 50, to: 110, type: 'sawtooth', gain: 0.17 });
         this._noise({ dur: 0.14, filter: 'lowpass', freq: 780 + c * 240, gain: 0.13, rate: 1.3 });
+        break;
+      case 'overload': // 风压超载：一段低频的灌气 + 金属被压紧的一记
+        this._noise({ dur: 0.42, filter: 'lowpass', freq: 520, gain: 0.16, rate: 0.85 });
+        this._tone({ dur: 0.22, from: 150, to: 96, type: 'triangle', gain: 0.16 });
+        this._noise({ dur: 0.12, filter: 'bandpass', freq: 1400, q: 2.2, gain: 0.09, rate: 1.1 });
         break;
       case 'tide_mend': // 雨潮：上行的两滴水
         this._tone({ dur: 0.3, from: 420, to: 660 + c * 120, type: 'sine', gain: 0.15 });

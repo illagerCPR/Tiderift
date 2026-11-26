@@ -892,4 +892,10 @@ export const fr = {
   '缺少回响残片': "Éclat d'écho manquant",
   '残片': 'Éclat',
   '纹样压印：{input} + {shard} → {output}': 'Inscription : {input} + {shard} → {output}',
+  // ── B56 R2 风压超载（失败码 / 施放提示 / 压力表联合读数）──
+  '这条轴已经在过载': 'Cet arbre est déjà en surcharge',
+  '这个世界的过载已经用满，先等它们散掉': "Toutes les surcharges de ce monde sont prises ; attendez qu'elles se dissipent",
+  '准星没有指向潮工机器': 'Votre viseur ne pointe pas sur une machine de marée',
+  '风压超载：这条轴 ×{rate}，{n} 秒': 'Surcharge de vent : cet arbre ×{rate} pendant {n} s',
+  '风压超载：剩 {n} 秒（×{rate}）': 'Surcharge de vent : {n} s restantes (×{rate})',
 };

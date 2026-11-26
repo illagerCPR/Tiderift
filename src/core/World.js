@@ -46,6 +46,8 @@ export class World {
     // 状态（槽位 + 进度）进存档；索引纯派生自方块账本、不落盘。
     this.dimensionIndustry = new Map();
     this.dimensionIndustryBlocks = new Map();
+    // B56 R2：风压超载账本（dim -> Map("x,y,z" -> {left, rate})）。临时增益：不进存档、换维即散。
+    this.dimensionOverloads = new Map();
     this.modifiedBlocks = this.dimBucket(this.dimensionBlocks, true);
     this.containers = this.dimBucket(this.dimensionContainers);
     this.furnaces = this.dimBucket(this.dimensionFurnaces);
@@ -53,6 +55,7 @@ export class World {
     this.harvesters = this.dimBucket(this.dimensionHarvesters);
     this.industry = this.dimBucket(this.dimensionIndustry);
     this.industryBlocks = this.dimBucket(this.dimensionIndustryBlocks);
+    this.overloads = this.dimBucket(this.dimensionOverloads);
     // T5 容器：打开时惰性生成（结构箱子按 (seed,表名,坐标) 确定性 loot），
     // 玩家改动即落 Map（存档持久化；联机经 container_set 广播收敛）
     this.onLocalBlockChange = null;  // 本地发起方块修改回调 (x,y,z,id)，由 NetworkManager 注册（联机上报）
@@ -146,6 +149,9 @@ export class World {
     }
     this.industry = this.dimBucket(this.dimensionIndustry);
     this.industryBlocks = this.dimBucket(this.dimensionIndustryBlocks);
+    // B56 R2：过载是临时增益——换维/读档一律从空账本开始（不跨维、不跨存档累积）
+    this.dimensionOverloads.clear();
+    this.overloads = this.dimBucket(this.dimensionOverloads);
     // 账本与状态对不上的条目直接丢（旧存档/异常导入/方块已被换掉）——绝不留下幽灵机器
     for (const [dim, states] of this.dimensionIndustry) {
       const idx = this.dimensionIndustryBlocks.get(dim);

@@ -11,6 +11,7 @@
 //   · 所有施法都要先过「世界启用魔法 + 手持对应焦点 + 回响足够 + 冷却已过 + 非创造/旁观」五关。
 import {
   ECHO_MAX, ECHO_PER_LEVEL, spellDef, SPELLS, ALL_SPELLS, CAST_FAIL_TEXT,
+  OVERLOAD_SPELL_ID, OVERLOAD_RANGE, OVERLOAD_DURATION, OVERLOAD_RATE, OVERLOAD_MAX_ACTIVE,
 } from '../content/magic/defs.js';
 
 // 回响资源（纯函数式存取；上限内钳制，绝不透支）
@@ -46,6 +47,9 @@ const FEEDBACK_HUD = Object.freeze({
   cooldown: 'cooldown',
   target: 'target',
   wounded: 'target',
+  'no-network': 'target', // B56 R2：没瞄到机器 = 目标无效（回响条脉冲同一路）
+  overloaded: 'target',
+  busy: 'target',
 });
 export function castFeedback(code) {
   const text = CAST_FAIL_TEXT[code] || CAST_FAIL_TEXT.unknown;
@@ -226,6 +230,27 @@ export function selectSplashTargets(candidates, cx, cy, cz, radius, maxTargets =
   return out;
 }
 
+// ── 风压超载的目标与预算判据（B56 R2）──────────────────────────────────────
+// 纯函数：客户端与服务器、单机与联机都用同一张判据，不在两边各写一套 if。
+//   kind     准星指向方块在工业账本里的种类（null = 不是工业方块）
+//   dist     该方块中心到玩家眼睛的距离（格）
+//   active   当前维度已生效的过载条数（上限 maxActive）；overloaded = 该网络已有过载
+// 返回 { ok, code }：code ∈ disabled | no-network | overloaded | busy | ok
+export function checkOverload({
+  dualEnabled, kind, dist, overloaded = false, active = 0,
+  range = OVERLOAD_RANGE, maxActive = OVERLOAD_MAX_ACTIVE,
+}) {
+  if (!dualEnabled) return { ok: false, code: 'disabled' };
+  // 传动轴不是「机器」：准星指着轴施放，玩家多半只是想走过去（不抢这个右键）
+  if (!kind || kind === 'shaft') return { ok: false, code: 'no-network' };
+  const d = Number(dist);
+  const r = Number(range);
+  if (!Number.isFinite(d) || !Number.isFinite(r) || d > r) return { ok: false, code: 'no-network' };
+  if (overloaded) return { ok: false, code: 'overloaded' };
+  if (Number(active) >= Number(maxActive)) return { ok: false, code: 'busy' };
+  return { ok: true, code: 'ok' };
+}
+
 // 服务器侧形状校验：法术 ID 合法 + 数值在允许区间（轻信任模型的硬约束，不宣称反作弊）
 //   B54：折步可带落点 (x2,y2,z2) 供远端画两团尘；落在允许范围内才透传，否则丢弃该字段。
 export function sanitizeCast(msg) {
@@ -245,6 +270,14 @@ export function sanitizeCast(msg) {
     dx: msg.dx / len, dy: msg.dy / len, dz: msg.dz / len,
     echo,
   };
+  // 目标方块（可选，B56 R2 联动法术用）：必须三点齐全且是整数格坐标，否则不携带
+  const tgt = [msg.tx, msg.ty, msg.tz];
+  if (tgt.every((n) => typeof n === 'number' && Number.isInteger(n))) {
+    if (Math.abs(msg.tx) <= 30000000 && Math.abs(msg.tz) <= 30000000
+      && msg.ty >= -300 && msg.ty <= 1000) {
+      out.tx = msg.tx; out.ty = msg.ty; out.tz = msg.tz;
+    }
+  }
   // 落点（可选）：必须三点齐全、在起点附近且在同一高度带内，否则不携带
   const to = [msg.x2, msg.y2, msg.z2];
   if (to.every((n) => typeof n === 'number' && Number.isFinite(n))) {

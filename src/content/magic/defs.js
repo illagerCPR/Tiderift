@@ -58,6 +58,10 @@ export const CAST_FAIL_TEXT = Object.freeze({
   cooldown: '法术还在冷却',
   target: '那里没有可落的空隙',
   wounded: '身上没有需要回潮的伤',
+  // B56 R2：风压超载——目标网络已经在过载 / 这片选区没有可过载的机器
+  overloaded: '这条轴已经在过载',
+  busy: '这个世界的过载已经用满，先等它们散掉',
+  'no-network': '准星没有指向潮工机器',
   unknown: '未知的法术',
 });
 export const CAST_FAIL_CODES = Object.freeze(Object.keys(CAST_FAIL_TEXT));
@@ -185,8 +189,41 @@ export const ADVANCED_SPELLS = Object.freeze({
 
 export const ADVANCED_SPELL_IDS = Object.freeze(Object.keys(ADVANCED_SPELLS));
 
-// 全部法术（基础 + 进阶）：spellDef / 冷却清洗 / 服务器形状校验共用这一张总表
-export const ALL_SPELLS = Object.freeze({ ...SPELLS, ...ADVANCED_SPELLS });
+// ── 联动法术（B56 R2）：只在「工业 + 魔法」双开世界可用 ────────────────────────
+// 风压超载：手持风渡焦点对准潮工机器施放，用风潮替这条轴加一段时间的风压。
+// 纪律（计划 §七）：
+//   · 它是效率，不是资源：不产潮压、不产物品，只把网络的工作速率临时乘上去；
+//   · 有界：半径内的一格为目标、整条轴同时只吃一次、到时回落、上限 8 条、不跨维（账本按维度分桶）；
+//   · 它不解锁任何独占内容——双开关缺一，配方/方块/交互/消息全部不可见或拒绝。
+export const OVERLOAD_SPELL_ID = 'gale_overload';
+export const OVERLOAD_RANGE = 6;        // 目标机器必须在 6 格内（准星可达的距离）
+export const OVERLOAD_DURATION = 20;    // 过载持续秒数（不累积：期间再放直接拒绝）
+export const OVERLOAD_RATE = 1.5;       // 网络工作速率倍数（进度推进乘它，潮压消耗不变）
+export const OVERLOAD_MAX_RATE = 2;     // 速率硬上限（将来若有叠加来源也不会失控）
+export const OVERLOAD_MAX_ACTIVE = 8;   // 每个维度同时生效的过载条数上限
+
+export const SYNERGY_SPELLS = Object.freeze({
+  [OVERLOAD_SPELL_ID]: Object.freeze({
+    id: OVERLOAD_SPELL_ID,
+    focus: GALE_CROSS_FOCUS_ITEM, // 风渡焦点：对着空处是位移，对着机器是风压
+    handler: 'overload',
+    name: '风压超载',
+    cost: 18,
+    cooldown: 20,
+    requiresExtras: Object.freeze(['industry', 'magic']),
+    target: Object.freeze({
+      range: OVERLOAD_RANGE,
+      duration: OVERLOAD_DURATION,
+      rate: OVERLOAD_RATE,
+      maxActive: OVERLOAD_MAX_ACTIVE,
+    }),
+  }),
+});
+
+export const SYNERGY_SPELL_IDS = Object.freeze(Object.keys(SYNERGY_SPELLS));
+
+// 全部法术（基础 + 进阶 + 联动）：spellDef / 冷却清洗 / 服务器形状校验共用这一张总表
+export const ALL_SPELLS = Object.freeze({ ...SPELLS, ...ADVANCED_SPELLS, ...SYNERGY_SPELLS });
 
 export function spellDef(id) { return (id && ALL_SPELLS[id]) || null; }
 
