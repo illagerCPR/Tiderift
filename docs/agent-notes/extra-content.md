@@ -1,6 +1,6 @@
 # extra-content.md — B51 额外内容（工业 / 魔法）防回退备忘
 
-> 覆盖 `docs/extra-content-master-plan.md` 的 Build 51–56 实现。改 `src/content/ExtraContent.js`、
+> 覆盖 `docs/archives/extra-content-master-plan.md` 的 Build 51–56 实现。改 `src/content/ExtraContent.js`、
 > 注册表的 `requiresExtras`、`Crafting/Smelting` 归属过滤、`StructureManager.typeActive`、
 > 创造栏/配方查询的归属闸口前**必读**。
 > 分轮交付；本文按轮追加，当前：**B51 R4（魔法最小闭环：回响仪台 / 回响值 / 风步 + 烬矢）**。
@@ -554,3 +554,92 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 | `tests/build55-echo-narrative.mjs` | 四章在表尾且旧章不动、十语 16 键（含 `{name}` 占位符）、四格碑四向一致、`blueprintFromBlocks` 合法/确定/体素对拍/非法输入、读碑记图接线、游记「回响遗迹」段 |
 | `server/test-magic.mjs` | 服务器接受进阶法术 ID、越界落点（500 格）仍被清洗、PvP 封顶仍按基础烬矢满蓄 |
 | 既有套件 | `magic-unit` / `build54-*` 的计数与字面量断言随「进阶独立表 + `def.id` 广播」同步；碑文计数四处同步 |
+
+## 十四、B56 双开联动与总收尾（刻纹压印机 / 风压超载 / 四组合矩阵 / 性能收尾）
+
+> 处置口径：**联动只在两个模块都开的世界里存在**；它只做「自动化」和「效率」两件事，
+> 不产新资源、不解锁独占内容。单开世界里没有第三条路径——不是隐藏，是根本不参与。
+
+### 14.1 R1：刻纹压印机（`rune_press`，方块 239）
+
+- **形态**：潮工网络里的双料加工机（`industryKind: 'press'`），槽位 `input`（基础焦点）+ `shard`（回响残片）
+  → `output`（进阶焦点）；需求 3 潮压 / 5 秒一支 / 无副产物。
+- **单一真相**：四潮进阶的映射抽到 `content/magic/defs.js` 的 `INSCRIBE_RECIPES`，
+  `Crafting.js` 的 shapeless 与机器的 `pressRecipeFor` 都从它来——界面行（`pressRows`）同源。
+  新增潮向只改这一张表，配方、机器、界面三处同时跟上。
+- **归属三道闸**：方块 `requiresExtras: ['industry','magic']`（创造栏/配方可见性走同一判定）；
+  服务端 `onBlockSet` 与 `onBlockSetBatch` 都走 `industryAllowedIn(id, manifest)`（按 id 查表，
+  普通潮工 = `['industry']`，联动 = 两个都要）；`tickIndustry(..., manifest)` 里逐台 `processorEnabledFor`——
+  **同一网络里的碎石机照常跑**，联动门槛不误伤工业主线。
+- **UI**：机器界面的槽位布局改为**派生自 `MACHINE_SLOTS`**（原先是手写 per-kind 数组，压印机上手就露馅：
+  残片槽没画、还多画一个不存在的副产物槽）。新增停转原因 `no-shard` 与残片槽标签（10 语）。
+
+### 14.2 R2：风压超载（`gale_overload`）
+
+- **触发**：手持**风渡焦点** + 准星指向潮工机器（非传动轴、≤6 格）→ 右键是超载的起手，复用焦点蓄力通道。
+  **必须在机器界面分支里预判**（`canOverloadAt → beginCharge`）：右键链是分段顺序判定，机器界面排在
+  焦点通道之前，只在 `castHeld` 里实现的话真实右键永远被界面吃掉。潜行右键仍是快捷投料。
+- **效果**：网络工作速率 ×1.5（硬上限 ×2）、20 秒、回响 18、冷却 20 秒；潮压消耗不变、不产物品。
+- **有界**：同一条轴只吃一次（第二次拒绝、也不刷新计时）、每维度最多 8 条、按维度分桶、不进存档、
+  锚点方块消失或换成传动轴即作废（`tickOverloads(ledger, dt, blocks)` 清理）。
+- **账本形状（关键）**：不自造网络 ID（拓扑每次方块变化都重建）。账本按**被点的那一格**记
+  `Map("x,y,z" -> {left, rate})`，`evaluateNetworks` 时扫分量节点贴成 `comp.overload`，`netInfoFor` 摘要带 `overload`。
+  拆轴后只有含该格的子网继续过载，语义自然是"增益跟着你点的机器走"。
+- **服务器**：`onMagicCast` 把 `gale_overload` 分流到 `onOverloadCast`（双开关 → 目标机器 → 距离 →
+  该网络已过载 → 维度预算），写入后广播表现与目标机器权威摘要。协议 `magic_cast` 加可选 `tx,ty,tz`
+  （`sanitizeCast` 只收整数格坐标）。新增失败码 `overloaded` / `busy` / `no-network`（10 语）。
+- **读数**：压力表多一行「风压超载：剩 N 秒（×1.5）」，不新增第三套 HUD。
+
+### 14.3 R3：四组合世界规则矩阵
+
+| 环节 | 纯 node（`tests/extra-matrix.mjs`，137 条） | 联机（`server/test-extra-matrix.mjs`，48 条） |
+|---|---|---|
+| 创建 | 清单落定、生成器同源、序列化往返、过载账本从空开始 | `world_info` 清单与请求一致 |
+| 加入 | —— | 缺魔法客户端被拒且点名；旧客户端（不报能力）只在双关房间放行 |
+| 读取 / 导入导出 | `normalizeSaveData` 保留、未知 schema 拒绝、`sanitizeSaveData` 保留、导入后重建规则不变 | —— |
+| 联动判定 | 方块/物品/配方逐项真值表；`processorEnabledFor` 与 `checkOverload` 组合 | 压印机只在双开入账、风压超载只在双开写账本 |
+| 换房 / 换维 | `serializeExtraContent` 透传后规则不变、换维清过载账本 | 换到新房间继承清单，门控跟着走 |
+| 重建 / 恢复 | 连续创建四种世界无串扰 | `world_reset` 保留清单换种子；离开重进从落盘恢复 |
+
+浏览器创造栏搜索计数（真实 UI，非模拟）：
+双关 全 0｜仅工业 只有锅炉｜仅魔法 只有焦点与仪台｜双开 四者齐全。
+**统计口径坑**：创造栏无结果时会塞一个 `…` 占位 div，按 `children.length` 统计会把"没找到"数成 1。
+
+### 14.4 R4：性能收尾（同环境实测，WSL + Node 26，非真机结论）
+
+| 指标 | 实测 | 口径 |
+|---|---|---|
+| 全关世界：工业域 600 帧 | 0.087ms | 每帧早退，不建拓扑缓存、不建条目 |
+| 全关世界：魔法域 600 帧 | 0.089ms | `enabled=false` 时只推进空弹道表 |
+| 拓扑重建（512 方块 / 4 条 128 节点网络） | 0.88ms | 只在方块变化后发生（版本号缓存） |
+| 满预算 `tickIndustry` | 0.027ms/拍 | 节拍 200ms，占 0.013% |
+| 满预算 + 4 条过载 | 0.017ms/拍 | 噪声级：过载只是每拍一次线性扫描 |
+| `attachOverloads`（贴账本到网络） | 0.0004ms | 只在界面读摘要时发生 |
+
+- **弹体上限**：`MAX_MAGIC_BOLTS = 24`，池满丢最旧（只摘 scene，不 dispose 共享几何/材质）。
+  正常节奏下单人最多两三条，这个上限只防联机远端事件灌爆。
+- **粒子池**：`ParticleSystem` 本来就硬上限 1600 且满即丢弃（本次只补断言，不改实现）。
+- **释放**：两个域都无定时器、无全局监听，只由 `Game.update` 驱动；`dispose()` 清账后置 null，
+  `Game._disposeWorld` 调用它们；机器界面每次 `render` 先清槽位引用、`hide` 复位坐标与种类。
+- **回归**：`tests/build56-perf.mjs`（39 条）把上面这些写成可失败的断言（含"满预算跑 60 秒槽位计数仍在 1..64"）。
+
+### 14.5 六 Build 总体验收（计划 §9.4）
+
+| # | 验收口径 | 结论 |
+|---|---|---|
+| 1 | 世界创建前有独立、清晰、双模块可分别选择的界面 | ✅ ExtraContentScreen 四组合，默认全关 |
+| 2 | 四种组合都有正确且持久的世界规则，旧世界默认不变 | ✅ 存档/快照/WORLD_INFO/换维/导入导出全链路；旧档缺字段回落全关 |
+| 3 | 工业与魔法各自形成完整生存闭环，联动只在双开生效 | ✅ 两条主线互不依赖；联动方块/配方/机器/法术在单开世界全部不参与 |
+| 4 | 单机、LAN、重连、重启、换维、导入导出、Worker 均不串规则或复制资源 | ✅ B51–B56 各轮矩阵与其回归；本轮补四组合矩阵 |
+| 5 | 世界观保持「一潮三分」的因果与留白 | ✅ 联动叙事只写"替人守着刻完""借来的风"，不新增神明 |
+| 6 | 全量回归、i18n、构建、浏览器/联机手测、性能与资源释放全部通过，文档不超前承诺 | ✅ `npm test` 全绿、i18n 33994 条、`npm run build` ✓、四组合浏览器实测、性能见 14.4 |
+
+### 14.6 回归一览（B56 新增）
+
+| 套件 | 守什么 |
+|---|---|
+| `tests/extra-synergy-unit.mjs`（338） | 压印机 id 钉值/双模块归属/槽位路由/1:1 守恒/缺残片·缺压·产物满；风压超载真值表/账本有界与到期/1.5 倍速且潮压不变/idle 回退不受影响/协议目标格/接线绊线/10 语文案 |
+| `server/test-extra-synergy.mjs`（41） | 单开房间拒绝写入与丢弃联动法术；双开房间写入、广播、计时不重置、够不着/轴拒绝、**4.2 秒内出货**、拆机散落、两人同抢不复制 |
+| `tests/extra-matrix.mjs`（137） | 四组合的创建/读取/导入导出/可见性/门控/换维/无串扰 |
+| `server/test-extra-matrix.mjs`（48） | 四组合的创建/能力协商/联动写入判定/换房继承/重建保留/离开重进恢复 |
+| `tests/build56-perf.mjs`（39） | 全关零常驻、满预算 tick 预算、过载线性扫描、弹体/粒子上限、dispose 与界面释放 |

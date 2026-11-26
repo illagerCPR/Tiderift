@@ -21,6 +21,10 @@ import { PLAYER_EYE_HEIGHT } from './constants.js';
 import { t } from '../i18n/index.js';
 import { audio } from '../audio/AudioEngine.js';
 
+// B56 R4：屏上同时存在的魔法弹体上限（纯表现，池满丢最旧的一条）。
+// 正常的蓄力/冷却节奏下令牌最多两三条；这个上限只防联机里"远端事件灌爆"的画面与内存。
+export const MAX_MAGIC_BOLTS = 24;
+
 // 弹道视觉资源（模块级懒建、永不 dispose——与箭矢同款；despawn 只摘 scene）
 let boltGeo = null;
 let boltMatLocal = null;
@@ -111,6 +115,16 @@ export class MagicSystem {
     const p = this.game.player;
     if (p) { p.slowFall = 0; p.slowFallVy = 0; }
     this._pushHud();
+  }
+
+  // 入列即封顶：满员先摘掉最旧的一条（只摘 scene，不 dispose 共享几何/材质）
+  _pushBolt(bolt) {
+    const g = this.game;
+    if (this._bolts.length >= MAX_MAGIC_BOLTS) {
+      const old = this._bolts.shift();
+      if (old && old.mesh && g && g.renderer) g.renderer.scene.remove(old.mesh);
+    }
+    this._bolts.push(bolt);
   }
 
   _clearBolts() {
@@ -270,7 +284,7 @@ export class MagicSystem {
       damage: def.damage, // B54 R4：蓄力插值出的伤害钉在弹体上（推进阶段不再回表）
     };
     this._spawnBoltMesh(bolt, true, charge);
-    this._bolts.push(bolt);
+    this._pushBolt(bolt);
     if (g.networkMode && g.net) g.net.sendMagicCast(def.id, p.echo, start, dir);
     return { ok: true };
   }
@@ -670,7 +684,7 @@ export class MagicSystem {
       life: def.life, dead: false, spell: def.id, local: false,
     };
     this._spawnBoltMesh(bolt, false);
-    this._bolts.push(bolt);
+    this._pushBolt(bolt);
   }
 
   // 远端回潮水汽（位置来自事件，不读本端玩家）

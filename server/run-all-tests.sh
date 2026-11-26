@@ -112,6 +112,7 @@ PURE_NODE_SUITES=(
     build55-echo-narrative      # B55 R3 回响碑/游记/蓝图（纯 node：四章追加表尾且旧章不动·十语碑文与蓝图提示·四格碑三向一致·blueprintFromBlocks 合法性/确定性/体素对拍/非法输入·读碑记图接线与游记回响段）
     extra-synergy-unit          # B56 R1/R2 双开联动（纯 node：压印机 id 钉值·双模块归属与单开拒绝·槽位路由·1:1 守恒·缺残片/缺压/产物满·风压超载真值表/账本有界/1.5 倍速·服务端两条写入路径·i18n 九键）
     extra-matrix                # B56 R3 四组合世界规则矩阵（纯 node：四种清单各自的创建/读取/导入导出/屏幕与配方可见性/门控真值表/换维透传/无串扰）
+    build56-perf                # B56 R4 性能与资源收尾（纯 node：全关零常驻/满预算 512 方块的 tick 与拓扑预算/过载线性扫描/弹体与粒子池上限/dispose 释放）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do

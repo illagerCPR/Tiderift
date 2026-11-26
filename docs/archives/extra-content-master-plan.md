@@ -4,7 +4,8 @@
 > 一边把潮压进管道与传动轴，一边让潮在回响里重演；两条主线各自成立，同时开启才出现联动。
 >
 > 2026-11-22 制定；基线：**Tiderift Beta Build 50**。
-> 性质：总纲 + 分阶段计划，**本轮只规划，不实施功能、不升版本、不发布**。
+> 性质：总纲 + 分阶段计划（**已全部交付**：Build 51–56，`beta-build-51` … `beta-build-56`）。
+> 状态：**已归档（只读留档）**。交付记录与防回退见 `docs/agent-notes/extra-content.md`。
 > 关联：`docs/worldview.md`、`docs/TODO.md`、`docs/agent-notes/multiplayer.md`、`docs/agent-notes/world-ledger.md`。
 > 建议节奏：以当前 BUILD=50 为基准，规划 **Build 51–56**；若正式开工时版本已前进，编号整体顺延，开工前重新核对代码与远端状态。
 

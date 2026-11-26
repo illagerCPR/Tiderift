@@ -1,7 +1,7 @@
 // ExtraContent.js -- 「额外内容」世界清单：规范化 / 相等 / 归属过滤（Build 51 基石）
 // 纯模块：无 DOM、无模块级可变状态；主线程、地形 Worker、服务器、测试共用同一份口径。
 //
-// 纪律（docs/extra-content-master-plan.md 四、十）：
+// 纪律（docs/archives/extra-content-master-plan.md 四、十）：
 //   ① 注册永远全量——开关只决定生成/获取/放置/交互/模拟是否启用，绝不按开关增删定义；
 //   ② 清单必须显式传入（生成器、配方匹配、tick、房间），禁止"当前世界开关"全局变量；
 //   ③ 旧档/旧快照缺字段一律回落"双关"；未知 schema 返回 null，由调用方拒绝加载/加入。
