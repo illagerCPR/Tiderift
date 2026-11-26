@@ -321,6 +321,10 @@ export class StructureManager {
         if (name === 'gleaner_ring') return '拾遗者石环';
         if (name === 'whale_barrow') return '鲸骨冢';
         if (name === 'tide_workshop') return '潮工断坊'; // B53 R4
+        if (name === 'echo_rain') return '雨痕水龛'; // B55 R1 四维回响遗迹
+        if (name === 'echo_ember') return '烬痕炉龛';
+        if (name === 'echo_gale') return '风纹哨台';
+        if (name === 'echo_tideless') return '无潮静台';
         if (RUIN_KIND_LABEL[name]) return RUIN_KIND_LABEL[name]; // B35 D：三种机关房
         return name;
       }
@@ -349,6 +353,10 @@ export class StructureManager {
         else if (name === 'gleaner_ring') label = '拾遗者石环';
         else if (name === 'whale_barrow') label = '鲸骨冢';
         else if (name === 'tide_workshop') label = '潮工断坊'; // B53 R4
+        else if (name === 'echo_rain') label = '雨痕水龛'; // B55 R1 四维回响遗迹
+        else if (name === 'echo_ember') label = '烬痕炉龛';
+        else if (name === 'echo_gale') label = '风纹哨台';
+        else if (name === 'echo_tideless') label = '无潮静台';
         else if (RUIN_KIND_LABEL[name]) label = RUIN_KIND_LABEL[name]; // B35 D：三种机关房
         return { name, label, record: rec };
       }

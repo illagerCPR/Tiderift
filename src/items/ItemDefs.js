@@ -1132,6 +1132,21 @@ reg('tideless_focus', { stack: 1, requiresExtras: ['magic'], lore: ['无潮的�
   g.s(8, 5, spark); g.s(5, 8, spark); g.s(12, 11, spark);
 }));
 
+// ── Build 55 R1 回响探索（**文件末尾追加**，物品 ID 零漂移）────────────────────
+// 回响残片：遗迹里唯一还留着"那时"的东西——一枚只够刻一支焦点（进阶材料，非概率刷取）。
+reg('echo_shard', { stack: 16, requiresExtras: ['magic'], lore: ['一片还没散尽的回响。贴在耳边，能听见潮退回去的声音。'] }, art(g => {
+  const pale = 'rgb(206, 238, 236)', mid = 'rgb(128, 200, 204)', deep = 'rgb(74, 132, 150)';
+  g.hl(5, 6, 9, mid);          // 上棱
+  g.hl(4, 8, 8, mid);          // 中棱
+  g.vl(9, 6, 10, deep);        // 右侧断口
+  g.vl(5, 8, 11, deep);        // 左侧断口
+  g.hl(6, 11, 9, deep);        // 底棱
+  g.d(8, 8, 2, 2, 'rgb(96, 168, 178)');
+  g.s(8, 8, pale);
+  g.s(4, 6, 'rgb(255,255,255)'); g.s(11, 10, deep);
+  g.spi(4, 5, 8, 8, pale, 302, 0.16);
+}));
+
 export const ItemSVGDefinitions = svgMap;
 
 export function getItemCount() {

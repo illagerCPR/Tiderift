@@ -854,4 +854,11 @@ export const de = {
   "身上没有需要回潮的伤": "Du hast keine Wunden, die die Flut schließen könnte",
   "回潮：生命 +{n}": "Flutheilung: +{n} Leben",
   "蓄力 {p}%": "Aufladung {p} %",
+  // ── B55 R1 四维回响遗迹（残片 lore + 四类结构名）──
+  '一片还没散尽的回响。贴在耳边，能听见潮退回去的声音。': 'Ein Echo, das noch nicht verklungen ist. Hältst du es ans Ohr, hörst du die Flut zurückweichen.',
+  '雨痕水龛': 'Regenspur-Nische',
+  '烬痕炉龛': 'Glutspur-Ofennische',
+  '风纹哨台': 'Windspur-Warte',
+  '无潮静台': 'Gezeitenlose Stille',
+
 };

@@ -854,4 +854,11 @@ export const es = {
   "身上没有需要回潮的伤": "No tienes heridas que la marea pueda cerrar",
   "回潮：生命 +{n}": "Marea sanadora: +{n} de vida",
   "蓄力 {p}%": "Carga {p}%",
+  // ── B55 R1 四维回响遗迹（残片 lore + 四类结构名）──
+  '一片还没散尽的回响。贴在耳边，能听见潮退回去的声音。': 'Un eco que aún no se ha disipado. Póntelo en la oreja y oirás retirarse la marea.',
+  '雨痕水龛': 'Nicho de la huella de lluvia',
+  '烬痕炉龛': 'Nicho del horno de ascuas',
+  '风纹哨台': 'Atalaya de la veta de viento',
+  '无潮静台': 'Plataforma sin marea',
+
 };

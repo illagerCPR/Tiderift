@@ -129,6 +129,32 @@ const TABLES = {
     ['emerald', 1, 2, 6], ['book', 1, 1, 5], ['ender_pearl', 1, 1, 4],
     ['golden_apple', 1, 1, 2], ['diamond', 1, 1, 3],
   ],
+
+  // ── B55 R1 四维回响遗迹：每处保底一枚回响残片（FORCED），杂项按维度口味 ──
+  // 雨痕水龛（主世界·雨土纪）：黏土/骨/旧书与雨潮残页低权
+  echo_rain: [
+    ['clay_ball', 3, 7, 14], ['bone', 2, 5, 10], ['gold_nugget', 2, 6, 10],
+    ['iron_ingot', 1, 3, 10], ['bread', 1, 3, 8], ['emerald', 1, 2, 6],
+    ['book', 1, 1, 4], ['page_rain', 1, 1, 4], ['diamond', 1, 1, 2],
+  ],
+  // 烬痕炉龛（下界·烬火纪）：金屑/烈焰系/黑曜石与哀潮之泪低权
+  echo_ember: [
+    ['gold_nugget', 2, 6, 12], ['coal', 3, 8, 11], ['obsidian', 1, 3, 9],
+    ['flint', 1, 3, 8], ['gold_ingot', 1, 3, 8], ['blaze_rod', 1, 2, 6],
+    ['mourn_tear', 1, 1, 4], ['diamond', 1, 1, 3],
+  ],
+  // 风纹哨台（天域·天海纪元）：云絮/星髓/荧石与涨潮残页低权
+  echo_gale: [
+    ['cloud_fluff', 2, 5, 12], ['quartz_block', 2, 5, 10], ['glowstone', 1, 4, 9],
+    ['star_marrow', 1, 2, 8], ['iron_ingot', 1, 3, 8], ['emerald', 1, 2, 6],
+    ['page_rising', 1, 1, 4], ['golden_apple', 1, 1, 2],
+  ],
+  // 无潮静台（末地·无潮彼岸）：末影珍珠/紫颂/紫珀与裂潮残页低权
+  echo_tideless: [
+    ['ender_pearl', 1, 3, 11], ['chorus_fruit', 2, 6, 11], ['purpur_block', 2, 5, 9],
+    ['obsidian', 2, 4, 8], ['emerald', 1, 3, 8], ['page_sunder', 1, 1, 4],
+    ['diamond', 1, 2, 4],
+  ],
 };
 
 // 必出项（表名 → [物品, min, max] 列表）：占用最低序槽位，消耗同一 rng 流。
@@ -139,6 +165,11 @@ const FORCED = {
   tidefire_hearth: [['mourn_tear', 1, 2]], // 世界观批次 N2：哀潮之泪保底（跨维度收集线材料）
   tide_barrow: [['page_rain', 1, 1]], // 世界观批次 W2：雨潮残页保底（跨维度收集线材料）
   tide_workshop: [['bucket', 1, 1]], // B53 R4：锅炉要桶装水——断坊保底给一只桶
+  // B55 R1：四维回响遗迹保底一枚回响残片（进阶焦点唯一的材料；不靠刷概率）
+  echo_rain: [['echo_shard', 1, 1]],
+  echo_ember: [['echo_shard', 1, 1]],
+  echo_gale: [['echo_shard', 1, 1]],
+  echo_tideless: [['echo_shard', 1, 1]],
 };
 
 // 生成箱子内容：27 槽数组（索引 0-26），空槽为 null

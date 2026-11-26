@@ -854,4 +854,11 @@ export const fr = {
   "身上没有需要回潮的伤": "Tu n'as aucune blessure à refermer",
   "回潮：生命 +{n}": "Marée salvatrice : +{n} de vie",
   "蓄力 {p}%": "Charge {p} %",
+  // ── B55 R1 四维回响遗迹（残片 lore + 四类结构名）──
+  '一片还没散尽的回响。贴在耳边，能听见潮退回去的声音。': 'Un écho qui ne s\'est pas encore dissipé. Collez-le à votre oreille et vous entendrez la marée se retirer.',
+  '雨痕水龛': 'Niche des traces de pluie',
+  '烬痕炉龛': 'Niche du four aux braises',
+  '风纹哨台': 'Belvédère des veines de vent',
+  '无潮静台': 'Plateau sans marée',
+
 };

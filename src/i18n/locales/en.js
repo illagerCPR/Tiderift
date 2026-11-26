@@ -854,4 +854,11 @@ export const en = {
   "身上没有需要回潮的伤": "You have no wounds for the tide to close",
   "回潮：生命 +{n}": "Tide Mend: +{n} health",
   "蓄力 {p}%": "Charge {p}%",
+  // ── B55 R1 四维回响遗迹（残片 lore + 四类结构名）──
+  '一片还没散尽的回响。贴在耳边，能听见潮退回去的声音。': 'An echo that has not yet faded. Hold it to your ear and you can hear the tide receding.',
+  '雨痕水龛': 'Rainmark Niche',
+  '烬痕炉龛': 'Embermark Kiln Niche',
+  '风纹哨台': 'Windmark Watch',
+  '无潮静台': 'Tideless Still',
+
 };

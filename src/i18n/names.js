@@ -12,6 +12,7 @@ export const NAME_I18N = {
   ember_focus: ['坠潮焦点', '墜潮焦點', 'Ember Focus', 'Focalisateur de braise', 'Glutbrand-Fokus', '墜潮の焦点', '불씨潮 초점', 'بؤرة جمر', "Фокус углей", 'Foco de ascua', 'Foco de brasa'],
   rain_focus: ['雨潮焦点', '雨潮焦點', 'Rain Focus', 'Focalisateur de pluie', 'Regenfokus', '雨潮の焦点', '비潮 초점', 'بؤرة مطر', "Фокус дождя", 'Foco de lluvia', 'Foco de chuva'], // B54 R1
   tideless_focus: ['无潮焦点', '無潮焦點', 'Tideless Focus', 'Focalisateur sans marée', 'Gezeitenlos-Fokus', '無潮の焦点', '무조 초점', 'بؤرة بلا مدّ', "Фокус безводья", 'Foco sin marea', 'Foco sem maré'], // B54 R1
+  echo_shard: ['回响残片', '回響殘片', 'Echo Shard', "Éclat d'écho", 'Echosplitter', '残響の欠片', '메아리 조각', 'شظية صدى', 'Осколок отзвука', 'Fragmento de eco', 'Fragmento de eco'], // B55 R1
   // B51 R3 潮工三件套（工业内容）
   tide_boiler: ['潮压锅炉', '潮壓鍋爐', 'Tide Boiler', 'Chaudière de marée', 'Tide-Druckkessel', '潮圧ボイラー', '조류압 보일러', 'مرجل المدّ', "Котёл приливного давления", 'Caldera de marea', 'Caldeira de maré'],
   drive_shaft: ['传动轴', '傳動軸', 'Drive Shaft', 'Arbre de transmission', 'Antriebswelle', '伝動軸', '전동축', 'ناقل الحركة', "Вал передачи", 'Eje de transmisión', 'Eixo de transmissão'],

@@ -46,3 +46,10 @@ import { FRAME_RACK_DEF } from './frame_rack.js';
 registerStructureType('tide_sluice', TIDE_SLUICE_DEF);
 registerStructureType('ember_circuit', EMBER_CIRCUIT_DEF);
 registerStructureType('frame_rack', FRAME_RACK_DEF);
+
+// ── B55 R1 四维回响遗迹（magic 归属；四类各占一维，各自独立 salt）──────────────
+import { ECHO_RAIN_DEF, ECHO_EMBER_DEF, ECHO_GALE_DEF, ECHO_TIDELESS_DEF } from './echoRuins.js';
+registerStructureType('echo_rain', ECHO_RAIN_DEF);
+registerStructureType('echo_ember', ECHO_EMBER_DEF);
+registerStructureType('echo_gale', ECHO_GALE_DEF);
+registerStructureType('echo_tideless', ECHO_TIDELESS_DEF);
