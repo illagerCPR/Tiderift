@@ -109,8 +109,18 @@ const MAGIC = normalizeExtraContent({ schema: 1, industry: false, magic: true })
     '基础方块在双关世界全部启用（注册不随开关增删）');
   ok(BlockRegistry.all().filter((b) => b.requiresExtras && b.requiresExtras.includes('industry'))
     .every((b) => !isContentEnabled(b, NONE_EXTRA_CONTENT)), '工业方块在双关世界不启用');
-  ok(BlockRegistry.all().filter((b) => b.requiresExtras && b.requiresExtras.includes('industry'))
-    .every((b) => isContentEnabled(b, INDUSTRY)), '工业方块在启用工业的世界全部启用');
+  // B56 R1：只要求工业的潮工方块在「仅工业」世界全部启用；联动方块（刻纹压印机）要两个都开
+  const industrialOnly = BlockRegistry.all().filter((b) => b.requiresExtras
+    && b.requiresExtras.includes('industry') && b.requiresExtras.length === 1);
+  ok(industrialOnly.length > 0 && industrialOnly.every((b) => isContentEnabled(b, INDUSTRY)),
+    '纯工业方块在启用工业的世界全部启用');
+  const synergy = BlockRegistry.all().filter((b) => b.requiresExtras
+    && b.requiresExtras.includes('industry') && b.requiresExtras.includes('magic'));
+  ok(synergy.length > 0, '存在要求双开的联动方块（刻纹压印机）');
+  ok(synergy.every((b) => !isContentEnabled(b, INDUSTRY) && !isContentEnabled(b, MAGIC)),
+    '联动方块在单开世界（仅工业 / 仅魔法）都不启用');
+  ok(synergy.every((b) => isContentEnabled(b, normalizeExtraContent({ schema: 1, industry: true, magic: true }))),
+    '联动方块在双开世界启用');
 }
 
 // ── ⑤ 配方闸口 ──────────────────────────────────────────────────────────────

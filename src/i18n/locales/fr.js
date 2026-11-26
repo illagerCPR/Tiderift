@@ -887,4 +887,9 @@ export const fr = {
   '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。': 'C\'est pourquoi cette plateforme est vide en son centre. Ne comble pas cette fente : le jour où tu la combleras, tu ne pourras plus marcher que sur le petit carré sous tes pieds.',
   '记下蓝图「{name}」': 'Plan noté : « {name} »',
 
+  // ── B56 R1 刻纹压印机（双开联动：方块 lore / 槽位 / 缺料 / 压印配方行）──
+  '潮压替你的手：焦点压进纹样，残片化在纹里，出来就是另一支焦点。': "La pression de marée fait le travail de ta main : le focalisateur est pressé dans le motif, l'éclat se dissout dans les rainures, et un autre focalisateur en sort.",
+  '缺少回响残片': "Éclat d'écho manquant",
+  '残片': 'Éclat',
+  '纹样压印：{input} + {shard} → {output}': 'Inscription : {input} + {shard} → {output}',
 };

@@ -19,6 +19,24 @@ export const EMBER_RING_FOCUS_ITEM = 'ember_ring_focus';   // 烬环
 export const TIDE_WARD_FOCUS_ITEM = 'tide_ward_focus';     // 潮护
 export const VOID_DASH_FOCUS_ITEM = 'void_dash_focus';     // 长折
 
+// 回响残片：只从四维回响遗迹来（B55 R1）；一枚残片刻一支进阶焦点
+export const ECHO_SHARD_ITEM = 'echo_shard';
+
+// 纹样加工表（B56 R1）：基础焦点 + 回响残片 → 进阶焦点。
+// **单一真相**：手工（工作台的 shapeless 配方）与刻纹压印机都读这张表——
+// 机器只是同一件事的自动化，配方与扣料不得各写一份（计划 §6.5 末条）。
+export const INSCRIBE_RECIPES = Object.freeze({
+  [GALE_FOCUS_ITEM]: GALE_CROSS_FOCUS_ITEM,
+  [EMBER_FOCUS_ITEM]: EMBER_RING_FOCUS_ITEM,
+  [RAIN_FOCUS_ITEM]: TIDE_WARD_FOCUS_ITEM,
+  [TIDELESS_FOCUS_ITEM]: VOID_DASH_FOCUS_ITEM,
+});
+
+// 基础焦点 → 进阶焦点（不在表里返回 null）
+export function inscribeOutput(focusName) {
+  return (focusName && INSCRIBE_RECIPES[focusName]) || null;
+}
+
 // ── 回响资源 ────────────────────────────────────────────────────────────
 export const ECHO_MAX = 100;
 export const ECHO_PER_LEVEL = 25;      // 仪台调谐：1 级经验 → 25 回响

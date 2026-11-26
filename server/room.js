@@ -18,6 +18,7 @@ import {
   machineSig, spillStacks, industryKindOf, isIndustryId, INDUSTRY_BLOCK_LIMIT, INDUSTRY_SYNC_MS,
   projectedNetworkSize, NETWORK_MAX_NODES,
   netInfoFor, toggleClutch, setClutchPowered, isMachineSlot,
+  industryAllowedIn,
 } from './industry.js';
 
 // B38 L2：消息速率统计（出向计数；与 index.mjs 共用同一份进程级单例）
@@ -1420,7 +1421,8 @@ export class Room {
       return;
     }
     // B51 R3：未启用工业的世界拒绝写入工业方块（回滚发起者本地预测；只放方块，不做猜测修复）
-    if (isIndustryId(id) && !(this.extraContent && this.extraContent.industry === true)) {
+    // B56 R1：联动方块（刻纹压印机）还要魔法也开着——归属需求按 id 查同一张表
+    if (isIndustryId(id) && !industryAllowedIn(id, this.extraContent)) {
       this.sendTo(player, MSG.BLOCK_CHANGE, { x, y, z, id: blocks.has(key) ? blocks.get(key) : 0, by: 0, d: dim });
       return;
     }
@@ -1481,7 +1483,8 @@ export class Room {
       if (id < 0 || id > 65535) continue;
       const key = `${x},${y},${z}`;
       // B51 R3/R4：未启用对应模块的世界拒绝该模块的方块（批量路径逐格跳过）
-      if (isIndustryId(id) && !(this.extraContent && this.extraContent.industry === true)) continue;
+      // B56 R1：联动方块要求两个模块同时开（与单条路径同一判定）
+      if (isIndustryId(id) && !industryAllowedIn(id, this.extraContent)) continue;
       if (isMagicId(id) && !(this.extraContent && this.extraContent.magic === true)) continue;
       // 与单条路径同义：显式保留空气值，容器内容另行清理。
       blocks.set(key, id);
@@ -2258,7 +2261,8 @@ export class Room {
         else if (st.kind !== kind) { states.delete(key); this._industrySig.delete(`${dim}|${key}`); dirty = true; }
       }
       if (!states.size) continue;
-      const r = tickIndustry(idx, states, dt, networks);
+      // B56 R1：把世界清单交给 tick——联动机器（压印机）在缺任一模块时不产不耗
+      const r = tickIndustry(idx, states, dt, networks, this.extraContent);
       for (const key of r.changed) {
         const st = states.get(key);
         if (!st) continue;

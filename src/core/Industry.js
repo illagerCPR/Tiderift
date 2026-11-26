@@ -11,6 +11,7 @@
 import {
   BOILER_SUPPLY, IDLE_DECAY_PER_SEC, MACHINE_DEMAND, MACHINE_SLOTS, MACHINE_SLOT_LIMIT,
   NETWORK_MAX_NODES, processorRecipeFor, processorTime, crushByproductFor,
+  pressRecipeFor, processorEnabledFor, ECHO_SHARD_ITEM,
 } from '../content/industry/defs.js';
 import { getFuelTime } from './Smelting.js';
 
@@ -38,6 +39,11 @@ export function emptyProcessorState(kind) {
 export function emptyCrusherState() { return emptyProcessorState('crusher'); }
 export function emptyCutterState() { return emptyProcessorState('cutter'); }
 
+// 压印机（B56 R1）：双料加工机——焦点（input）+ 残片（shard）各一格，产物一格
+export function emptyPressState() {
+  return { kind: 'press', input: null, shard: null, output: null, progress: 0, cycles: 0 };
+}
+
 // 离合闸：manual = 手动拨杆（默认接通）；powered = 是否有红石信号（信号优先 → 强制断开）
 export function emptyClutchState() {
   return { kind: 'clutch', manual: true, powered: false };
@@ -46,6 +52,7 @@ export function emptyClutchState() {
 export function emptyStateFor(kind) {
   if (kind === 'boiler') return emptyBoilerState();
   if (kind === 'crusher' || kind === 'cutter') return emptyProcessorState(kind);
+  if (kind === 'press') return emptyPressState();
   if (kind === 'clutch') return emptyClutchState();
   // B53 R3：潮压表是纯只读仪表——状态只为界面取标题/读数而存在，永不落盘、不产不耗
   if (kind === 'gauge') return { kind: 'gauge' };
@@ -128,6 +135,7 @@ function stateSig(st) {
   if (!st) return '';
   if (st.kind === 'boiler') return `${slotSig(st.fuel)}/${slotSig(st.water)}/${slotSig(st.output)}`;
   if (st.kind === 'clutch') return `m${st.manual === false ? 0 : 1}p${st.powered ? 1 : 0}`;
+  if (st.kind === 'press') return `${slotSig(st.input)}/${slotSig(st.shard)}/${slotSig(st.output)}`;
   return `${slotSig(st.input)}/${slotSig(st.output)}/${slotSig(st.bonus)}`;
 }
 
@@ -147,7 +155,7 @@ export function buildNetworks(blocks, states = null) {
     if (compOf.has(key)) continue;
     const idx = comps.length;
     const comp = {
-      nodes: [], boilers: [], machines: [], crushers: [], cutters: [],
+      nodes: [], boilers: [], machines: [], crushers: [], cutters: [], presses: [],
       cuts: [], // B53 R3：本网络里断开的离合闸（"断路位置"，压力表读它）
       overLimit: false, supply: 0, demand: 0, efficiency: 0,
     };
@@ -158,10 +166,11 @@ export function buildNetworks(blocks, states = null) {
       comp.nodes.push(k);
       const kind = blocks.get(k);
       if (kind === 'boiler') comp.boilers.push(k);
-      else if (kind === 'crusher' || kind === 'cutter') {
+      else if (kind === 'crusher' || kind === 'cutter' || kind === 'press') {
         comp.machines.push(k);
         if (kind === 'crusher') comp.crushers.push(k);
-        else comp.cutters.push(k);
+        else if (kind === 'cutter') comp.cutters.push(k);
+        else comp.presses.push(k); // B56 R1：压印机也是加工机（吃需求、按效率推进）
       }
       if (!conducts(k)) { comp.cuts.push(k); continue; } // 断开的离合闸：自身在网内但不导流（轴被锯断）
       for (const nk of neighborKeys(k)) {
@@ -245,7 +254,7 @@ export function projectedNetworkSize(networks, blocks, x, y, z, states = null) {
 // ── 单机推进 ────────────────────────────────────────────────────────────
 // states: Map(key -> state)（惰性建条目）；networks: buildNetworks 的缓存（可选，需含离合闸状态）
 // 返回 { networks, changed:Set<key>, ticked:boolean }
-export function tickIndustry(blocks, states, dtSec, networks = null) {
+export function tickIndustry(blocks, states, dtSec, networks = null, manifest = null) {
   const nets = networks || buildNetworks(blocks, states);
   const changed = new Set();
   const dt = Math.max(0, Math.min(1, Number(dtSec) || 0)); // 大步长钳制：不追赶离线生产
@@ -265,11 +274,13 @@ export function tickIndustry(blocks, states, dtSec, networks = null) {
   evaluateNetworks(nets, states);
 
   // 3) 加工机推进（按所在网络的效率降速；超限网络效率强制 0）
+  //    B56 R1：联动机器（压印机）额外要求两个模块都开——关掉任一边的世界里它不产不耗
   for (const comp of nets.comps) {
     const eff = comp.overLimit ? 0 : comp.efficiency;
     for (const key of comp.machines) {
       const st = states.get(key);
       if (!st) continue;
+      if (manifest && !processorEnabledFor(st.kind, manifest)) continue;
       const before = stateSig(st);
       const beforeProgress = st.progress;
       tickProcessor(st, dt, eff);
@@ -313,8 +324,14 @@ function tickBoiler(st, dt) {
 }
 
 // 加工机当前可加工的配方（按机器种类选表；无料/不认的料为 null）
+//   压印机要两种料同时对：谁缺都算「没料」，不能半推半就（不吞料、不猜配方）。
 function processorRecipe(st) {
   if (!st) return null;
+  if (st.kind === 'press') {
+    const r = pressRecipeFor(st.input ? st.input.name : null, st.shard ? st.shard.name : null);
+    if (!r) return null;
+    return { output: r.output, count: r.count, consume: ['input', 'shard'] };
+  }
   return processorRecipeFor(st.kind, st.input ? st.input.name : null);
 }
 
@@ -344,8 +361,13 @@ function tickProcessor(st, dt, eff) {
     st.progress -= total;
     st.output = addToSlot(st.output, cur.output, cur.count);
     addByproduct(st);
-    st.input.count--;
-    if (st.input.count <= 0) st.input = null;
+    // 扣料：单料机器只消耗 input；压印机同时扣残片（缺一不可，故两者都在时才会走到这里）
+    for (const slot of (cur.consume || ['input'])) {
+      const s = st[slot];
+      if (!s) continue;
+      s.count--;
+      if (s.count <= 0) st[slot] = null;
+    }
     if (!st.input) { st.progress = 0; break; } // 断料清进度（同熔炉口径）
   }
 }
@@ -411,6 +433,12 @@ export function slotInsertable(kind, slot, name) {
     if (slot !== 'input') return false;
     return !!processorRecipeFor(kind, name);
   }
+  if (kind === 'press') {
+    // 输入槽只收「纹样加工表」里的基础焦点；残片槽只收回响残片（一格一种，不混装）
+    if (slot === 'input') return !!pressRecipeFor(name, ECHO_SHARD_ITEM);
+    if (slot === 'shard') return name === ECHO_SHARD_ITEM;
+    return false;
+  }
   return false;
 }
 
@@ -426,6 +454,11 @@ function insertTarget(kind, st, name) {
     if (st.input && st.input.name !== name) return 'input'; // 异类进=满（由 spaceIn 判 0 → full）
     return 'input';
   }
+  if (kind === 'press') {
+    if (name === ECHO_SHARD_ITEM) return 'shard';
+    if (pressRecipeFor(name, ECHO_SHARD_ITEM)) return 'input';
+    return null;
+  }
   return null;
 }
 
@@ -433,7 +466,7 @@ function insertTarget(kind, st, name) {
 export function spillStacks(st) {
   const out = [];
   if (!st) return out;
-  for (const k of ['input', 'fuel', 'water', 'output', 'bonus']) {
+  for (const k of ['input', 'shard', 'fuel', 'water', 'output', 'bonus']) {
     const s = st[k];
     if (s && s.name && s.count > 0) out.push({ name: s.name, count: s.count });
   }
@@ -451,6 +484,7 @@ export const MACHINE_REASONS = Object.freeze([
   'running', 'ready', 'idle', 'no-input', 'no-recipe', 'output-full',
   'no-fuel', 'no-water', 'no-power', 'over-limit', 'disengaged', 'stalled',
   'cut', // B53 R3：本网络里有闸断开（压力表与机器共用同一句提示）
+  'no-shard', // B56 R1：压印机缺回响残片（与「缺原料」分开说，玩家才知道该去补什么）
 ]);
 
 export function machineStatus(kind, st, net = null) {
@@ -499,13 +533,18 @@ export function machineStatus(kind, st, net = null) {
   }
   // 加工机
   const r = processorRecipe(st);
-  if (r) info.recipe = { input: st.input.name, output: r.output, count: r.count };
+  if (r) {
+    info.recipe = { input: st.input.name, output: r.output, count: r.count };
+    if (kind === 'press') info.recipe.shard = ECHO_SHARD_ITEM; // 界面要同时画出两种料
+  }
   const total = processorTime(kind);
   info.time = total;
   info.progress = Math.max(0, st.progress || 0);
   info.progressFrac = Math.max(0, Math.min(1, info.progress / total));
   if (info.overLimit) info.reason = 'over-limit';
   else if (!st.input) info.reason = 'no-input';
+  // 压印机双料：有焦点没残片 → 明确说缺残片（不是笼统的「没原料」）
+  else if (kind === 'press' && !st.shard) info.reason = 'no-shard';
   else if (!r) info.reason = 'no-recipe';
   else if (spaceIn(st.output, r.output) < r.count) info.reason = 'output-full';
   else if (!(info.efficiency > 0) && info.demand > 0) info.reason = 'no-power';
@@ -548,6 +587,17 @@ export function sanitizeMachineState(kind, raw) {
       input: sanitizeSlot(raw.input),
       output: sanitizeSlot(raw.output),
       bonus: sanitizeSlot(raw.bonus),
+      progress: Math.max(0, Math.min(total * 64, Number(raw.progress) || 0)),
+      cycles: Math.max(0, Math.min(1e9, Math.floor(Number(raw.cycles) || 0))),
+    };
+  }
+  if (kind === 'press') {
+    const total = processorTime(kind);
+    return {
+      kind: 'press',
+      input: sanitizeSlot(raw.input),
+      shard: sanitizeSlot(raw.shard),
+      output: sanitizeSlot(raw.output),
       progress: Math.max(0, Math.min(total * 64, Number(raw.progress) || 0)),
       cycles: Math.max(0, Math.min(1e9, Math.floor(Number(raw.cycles) || 0))),
     };

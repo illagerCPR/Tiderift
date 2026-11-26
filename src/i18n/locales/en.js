@@ -887,4 +887,9 @@ export const en = {
   '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。': 'So this platform is empty in the middle too. Do not fill that seam — the day you fill it, you can only walk the small patch beneath you.',
   '记下蓝图「{name}」': 'Blueprint noted: "{name}"',
 
+  // ── B56 R1 刻纹压印机（双开联动：方块 lore / 槽位 / 缺料 / 压印配方行）──
+  '潮压替你的手：焦点压进纹样，残片化在纹里，出来就是另一支焦点。': "Tide pressure does your hand's work: the focus is pressed into the pattern, the shard dissolves into the grooves, and another focus comes out.",
+  '缺少回响残片': 'Missing echo shard',
+  '残片': 'Shard',
+  '纹样压印：{input} + {shard} → {output}': 'Inscribing: {input} + {shard} → {output}',
 };

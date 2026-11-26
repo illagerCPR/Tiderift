@@ -15,6 +15,7 @@ import {
   spellDef,
   GALE_FOCUS_ITEM, EMBER_FOCUS_ITEM, RAIN_FOCUS_ITEM, TIDELESS_FOCUS_ITEM,
   GALE_CROSS_FOCUS_ITEM, EMBER_RING_FOCUS_ITEM, TIDE_WARD_FOCUS_ITEM, VOID_DASH_FOCUS_ITEM,
+  INSCRIBE_RECIPES,
 } from '../src/content/magic/defs.js';
 import { selectSplashTargets, sanitizeCast, sanitizeCooldowns, cooldownLeft, spellAtCharge } from '../src/core/Magic.js';
 import { ItemRegistry } from '../src/core/ItemRegistry.js';
@@ -205,7 +206,11 @@ const PAIRS = [
   for (const p of PAIRS) ok(audioSrc.includes(`${p.adv}: '${p.base}'`), `${p.name} 沿用 ${p.base} 音色`);
 
   const cr = src('../src/core/Crafting.js');
-  for (const p of PAIRS) ok(cr.includes(`'echo_shard', '${p.baseFocus}'`), `${p.name}：配方只吃残片 + 基础焦点`);
+  // B56 R1：配方表移进 content/magic/defs.js 的 INSCRIBE_RECIPES（与刻纹压印机共用一份）
+  for (const p of PAIRS) {
+    ok(INSCRIBE_RECIPES[p.baseFocus] === p.focus, `${p.name}：纹样加工表里是「残片 + 基础焦点 → 进阶焦点」`);
+    ok(cr.includes('addShapeless(advanced, 1, [ECHO_SHARD_ITEM, focus]'), `${p.name}：工作台配方由同一张表生成`);
+  }
 
   // 红线：进阶不得引入新的方块写入/传送入口
   for (const p of PAIRS) {

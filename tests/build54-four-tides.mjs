@@ -62,9 +62,15 @@ const INDUSTRY_NAMES = [
 
 // ── ② 配方：四系只认魔法，不依赖工业 ────────────────────────────────────
 {
+  // B56 R1：魔法侧配方仍是「只要求魔法」这一条主线；唯一例外是**联动**方块（刻纹压印机，
+  // 要求 industry + magic，计划 §七：联动只在双开出现）。这里把联动显式排除后再断言主线。
   const magicRecipes = getAllRecipes().filter((r) => (r.requiresExtras || []).includes('magic'));
+  const synergyRecipes = magicRecipes.filter((r) => (r.requiresExtras || []).includes('industry'));
   ok(magicRecipes.length >= 6, `魔法配方至少六条（实际 ${magicRecipes.length}）`);
+  ok(synergyRecipes.length === 1 && synergyRecipes[0].output === 'rune_press',
+    '魔法侧唯一捆工业的配方是联动方块刻纹压印机');
   for (const r of magicRecipes) {
+    if (synergyRecipes.includes(r)) continue;
     ok(r.requiresExtras.length === 1 && r.requiresExtras[0] === 'magic',
       `${r.output} 只要求魔法（不捆工业）`);
     const flat = r.type === 'shaped'

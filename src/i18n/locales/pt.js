@@ -887,4 +887,9 @@ export const pt = {
   '所以这座台中间也空着。别把那道缝填上——填上的那天，你就只能走脚下那一小块了。': 'Por isso esta plataforma também está vazia no centro. Não preencha essa fenda — no dia em que preencher, você só andará no pequeno pedaço sob os pés.',
   '记下蓝图「{name}」': 'Planta anotada: "{name}"',
 
+  // ── B56 R1 刻纹压印机（双开联动：方块 lore / 槽位 / 缺料 / 压印配方行）──
+  '潮压替你的手：焦点压进纹样，残片化在纹里，出来就是另一支焦点。': 'A pressão da maré faz o trabalho da tua mão: o foco é prensado no padrão, o fragmento dissolve-se nas ranhuras e sai outro foco.',
+  '缺少回响残片': 'Falta um fragmento de eco',
+  '残片': 'Fragmento',
+  '纹样压印：{input} + {shard} → {output}': 'Gravura: {input} + {shard} → {output}',
 };

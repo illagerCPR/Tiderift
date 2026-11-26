@@ -306,8 +306,11 @@ function idx(entries) {
   ok(/updateFurnaces\(dt\);[\s\S]{0,400}this\.industry\.update\(dt\)/.test(game), '工业推进在既有机器节拍附近');
   ok(/r\.tickIndustrySweep\(now\)/.test(indexSrc), '服务器 sweep 每秒推进工业');
   ok(/case MSG\.INDUSTRY_ACTION: this\.onIndustryAction/.test(room), '服务器路由工业动作');
-  ok(/isIndustryId\(id\) && !\(this\.extraContent && this\.extraContent\.industry === true\)/.test(room),
+  // B56 R1：归属需求改由 industryAllowedIn 按 id 查表（普通潮工 = industry，联动 = industry+magic）
+  ok(/isIndustryId\(id\) && !industryAllowedIn\(id, this\.extraContent\)/.test(room),
     '未启用工业的世界拒绝工业方块写入');
+  ok(/industryAllowedIn,[\s\S]{0,80}\} from '\.\/industry\.js'/.test(room),
+    '归属判定从 server/industry.js 取（服务器不另抄一份字符串）');
   ok(/g\.industry\?\.onBreak\(hit\.block\)/.test(ic), '拆机器 → 清账本 + 内容散落');
   ok(/g\.industry\.interact\(furnaceHit\.block\)/.test(ic), '右键机器 → 投料/取产物');
 }

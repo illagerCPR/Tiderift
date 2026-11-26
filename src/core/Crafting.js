@@ -3,6 +3,8 @@
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { ItemRegistry } from '../core/ItemRegistry.js';
 import { normalizeRequires, requiresSatisfied } from '../content/ExtraContent.js';
+import { INSCRIBE_RECIPES, ECHO_SHARD_ITEM } from '../content/magic/defs.js';
+import { SYNERGY_REQUIRES } from '../content/industry/defs.js';
 
 // 配方表：pattern 是二维数组（每行一个数组），元素为物品/方块名或 null
 // shaped: 必须匹配形状（包围盒收缩后比较）；shapeless: 顺序无关
@@ -247,10 +249,20 @@ addShaped('tideless_focus', 1, [
 // ── B55 R2 四潮进阶（同属 magic）：回响残片只能刻一支焦点，基础焦点是载体 ──
 // 一枚残片 + 一支基础焦点 → 该潮的进阶焦点；残片由四维回响遗迹保底给出（不靠刷概率）。
 // 一次只能升一支：四处遗迹 = 四次升级，先升哪一潮由玩家决定。
-addShapeless('gale_cross_focus', 1, ['echo_shard', 'gale_focus'], ['magic']);
-addShapeless('ember_ring_focus', 1, ['echo_shard', 'ember_focus'], ['magic']);
-addShapeless('tide_ward_focus', 1, ['echo_shard', 'rain_focus'], ['magic']);
-addShapeless('void_dash_focus', 1, ['echo_shard', 'tideless_focus'], ['magic']);
+// B56 R1：这张表移进 content/magic/defs.js 的 INSCRIBE_RECIPES，与刻纹压印机共用
+//（机器是同一件事的自动化，配方与扣料只有一份，界面与实际不可能各写一套）。
+for (const [focus, advanced] of Object.entries(INSCRIBE_RECIPES)) {
+  addShapeless(advanced, 1, [ECHO_SHARD_ITEM, focus], ['magic']);
+}
+
+// ── B56 R1 刻纹压印机（**联动内容**：要求工业 + 魔法同时开）──────────────────
+// 机器本体不产生资源：只是把「焦点 + 残片」的刻纹过程搬进潮工网络（1:1，不复制）。
+// 配方刻意做成"工业骨架 + 魔法刻纹"：铁壳承压、传动轴带机、回响尘做模面。
+addShaped('rune_press', 1, [
+  'iron_ingot', 'drive_shaft', 'iron_ingot',
+  'iron_ingot', 'echo_dust', 'iron_ingot',
+  'iron_ingot', 'quartz', 'iron_ingot',
+], SYNERGY_REQUIRES);
 
 // 匹配函数：输入是 grid 二维数组（每行一个数组），返回匹配结果或 null
 // manifest 缺省 = 双关（fail-closed）：带归属需求的配方不会在未声明清单的世界里命中

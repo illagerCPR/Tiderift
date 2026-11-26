@@ -55,6 +55,7 @@ const MAP = {
   filter_hopper: 'functional', // B53 R1（朝向变体是技术方块，不进创造栏，无需登记）
   harvester: 'functional', // B53 R2（收割机；朝向变体是技术方块）
   pressure_gauge: 'functional', // B53 R3（潮压表：只读仪表）
+  rune_press: 'functional', // B56 R1（刻纹压印机：双开联动方块）
   redstone_wire: 'redstone', redstone_torch: 'redstone', redstone_torch_item: 'redstone',
   redstone_lamp: 'redstone', redstone_block: 'redstone', lever: 'redstone', stone_button: 'redstone',
   oak_button: 'redstone', piston: 'redstone', sticky_piston: 'redstone', piston_head: 'redstone',

@@ -3,8 +3,14 @@
 // 纪律：
 //   ① 所有方块/物品名是**代码 ID**，一经落地不随显示名变动；显示名走 NAME_I18N（11 语）。
 //   ② 数值集中在本文件，单机与服务器共用同一张表（server/industry.js 只再加方块 id 表）。
-//   ③ 内容归属 = requiresExtras: ['industry']（只决定启用，不影响注册顺序）。
+//   ③ 内容归属 = requiresExtras: ['industry']（只决定启用，不影响注册顺序）；
+//      联动内容（B56）= ['industry','magic']，两个开关共同决定——不新增第三套选择项。
+import { INSCRIBE_RECIPES, ECHO_SHARD_ITEM } from '../magic/defs.js';
+export { ECHO_SHARD_ITEM };
+import { requiresSatisfied } from '../ExtraContent.js';
+
 export const INDUSTRY_EXTRA = 'industry';
+export const MAGIC_EXTRA = 'magic';           // 联动内容需要的第二个模块（本文件只用于归属表）
 
 export const BOILER_BLOCK = 'tide_boiler';   // 潮压锅炉：燃料 + 桶装水 → 潮压
 export const SHAFT_BLOCK = 'drive_shaft';   // 传动轴：六邻接组成有界机械网络
@@ -12,6 +18,7 @@ export const CRUSHER_BLOCK = 'crusher';     // 碎石机：圆石→砾石、砾
 export const CUTTER_BLOCK = 'tide_cutter';  // 潮压切割机（B52）：原木→木板、石料→石砖、骨→骨粉
 export const CLUTCH_BLOCK = 'drive_clutch'; // 离合闸（B52）：红石信号优先切断，无信号时按手动拨杆
 export const GAUGE_BLOCK = 'pressure_gauge'; // 潮压表（B53 R3）：只读仪表，显示供需/效率/断路位置
+export const PRESS_BLOCK = 'rune_press';    // 刻纹压印机（B56 R1）：双开专属，焦点 + 残片 → 进阶焦点
 
 // 方块名 → 机器种类（kind 是运行期身份，方块变体/朝向不改变它）
 export const INDUSTRY_BLOCK_KIND = Object.freeze({
@@ -21,7 +28,23 @@ export const INDUSTRY_BLOCK_KIND = Object.freeze({
   [CUTTER_BLOCK]: 'cutter',
   [CLUTCH_BLOCK]: 'clutch',
   [GAUGE_BLOCK]: 'gauge',
+  [PRESS_BLOCK]: 'press',
 });
+
+// 机器种类的启用需求（注册永远全量，开关只决定能不能跑）：
+//   普通潮工机器只要工业；刻纹压印机要工业 + 魔法（联动只在双开出现，计划 §七）。
+export const INDUSTRY_REQUIRES = Object.freeze([INDUSTRY_EXTRA]);
+export const SYNERGY_REQUIRES = Object.freeze([INDUSTRY_EXTRA, MAGIC_EXTRA]);
+
+export function kindRequires(kind) {
+  return kind === 'press' ? SYNERGY_REQUIRES : INDUSTRY_REQUIRES;
+}
+
+// 该机器种类在这个世界清单下是否允许运行（缺省清单 = 不额外门控，留给纯算法用例）
+export function processorEnabledFor(kind, manifest) {
+  if (manifest === null || manifest === undefined) return true;
+  return requiresSatisfied(kindRequires(kind), manifest);
+}
 
 // ── 潮压平衡（首版，实施后用基准测试复评）──────────────────────────────────
 // 供给 = 所有在烧锅炉的 BOILER_SUPPLY 之和；需求 = 所有有活可干的加工机 DEMAND 之和。
@@ -30,8 +53,10 @@ export const INDUSTRY_BLOCK_KIND = Object.freeze({
 export const BOILER_SUPPLY = 4;        // 每台在烧锅炉每秒提供的潮压
 export const CRUSHER_DEMAND = 2;       // 每台工作中的碎石机每秒消耗的潮压
 export const CUTTER_DEMAND = 3;        // 每台工作中的切割机每秒消耗的潮压（切口更细，更费压）
+export const PRESS_DEMAND = 3;         // 每台工作中的刻纹压印机每秒消耗的潮压（刻纹比切口更吃压）
 export const CRUSH_TIME = 4;           // 碎石机处理一个物品所需秒数（满效率）
 export const CUT_TIME = 3;             // 切割机处理一个物品所需秒数（满效率）
+export const PRESS_TIME = 5;           // 压印一支进阶焦点所需秒数（满效率；手工仍是瞬发，机器买的是自动化）
 export const IDLE_DECAY_PER_SEC = 2;   // 停机时进度回退速率（秒/秒）
 
 // 每台机器满效率时的需求；发电机 / 传动 / 闸门不消耗潮压。
@@ -43,6 +68,7 @@ export const MACHINE_DEMAND = Object.freeze({
   gauge: 0, // 只读仪表：不耗压、不产压，只把读数摆出来
   crusher: CRUSHER_DEMAND,
   cutter: CUTTER_DEMAND,
+  press: PRESS_DEMAND,
 });
 
 // ── 预算 ────────────────────────────────────────────────────────────────
@@ -82,11 +108,13 @@ export const CRUSH_BYPRODUCTS = Object.freeze({
 });
 
 // ── 机器槽位布局（UI 与服务器校验共用）───────────────────────────────────
+// 压印机（B56 R1）是唯一**双料**机器：焦点与残片各占一格，产物一格。
 export const MACHINE_SLOTS = Object.freeze({
   boiler: Object.freeze(['fuel', 'water', 'output']),
   crusher: Object.freeze(['input', 'output', 'bonus']),
   cutter: Object.freeze(['input', 'output', 'bonus']),
   gauge: Object.freeze([]), // B53 R3：仪表没有槽位，界面只显示读数
+  press: Object.freeze(['input', 'shard', 'output']),
 });
 
 export function crushRecipeFor(name) {
@@ -97,7 +125,25 @@ export function cutRecipeFor(name) {
   return (name && CUT_RECIPES[name]) || null;
 }
 
-// 加工机按种类取配方（碎石机只认碎石表、切割机只认切割表）
+// 压印配方（B56 R1）：基础焦点 + 回响残片 → 进阶焦点。与手工配方同源（INSCRIBE_RECIPES）。
+// 返回 { input, shard, output, count }；两种料任一不对都返回 null（不猜、不回落）。
+export function pressRecipeFor(focusName, shardName) {
+  if (shardName !== ECHO_SHARD_ITEM) return null;
+  const out = INSCRIBE_RECIPES[focusName];
+  if (!out) return null;
+  return { input: focusName, shard: ECHO_SHARD_ITEM, output: out, count: 1 };
+}
+
+// 压印机界面行数据（与 recipesFor 同形，额外带 shard）
+export function pressRows() {
+  const out = [];
+  for (const [input, output] of Object.entries(INSCRIBE_RECIPES)) {
+    out.push({ input, shard: ECHO_SHARD_ITEM, output, count: 1, time: PRESS_TIME, byproduct: null });
+  }
+  return out;
+}
+
+// 加工机按种类取配方（碎石机只认碎石表、切割机只认切割表、压印机要两种料）
 export function processorRecipeFor(kind, name) {
   if (kind === 'cutter') return cutRecipeFor(name);
   if (kind === 'crusher') return crushRecipeFor(name);
@@ -106,7 +152,9 @@ export function processorRecipeFor(kind, name) {
 
 // 加工时间（秒）：满效率下处理一个物品
 export function processorTime(kind) {
-  return kind === 'cutter' ? CUT_TIME : CRUSH_TIME;
+  if (kind === 'cutter') return CUT_TIME;
+  if (kind === 'press') return PRESS_TIME;
+  return CRUSH_TIME;
 }
 
 export function crushByproductFor(name) {
@@ -115,6 +163,7 @@ export function crushByproductFor(name) {
 
 // 机器界面要展示的配方表（配方 + 时间 + 副产物），单机/服务器/UI 同源
 export function recipesFor(kind) {
+  if (kind === 'press') return pressRows();
   const table = kind === 'cutter' ? CUT_RECIPES : (kind === 'crusher' ? CRUSH_RECIPES : null);
   if (!table) return [];
   const out = [];

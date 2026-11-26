@@ -163,7 +163,8 @@ const mapOf = (entries) => new Map(entries);
     ok(ms.includes(`case '${code}':`), `gaugeText/reasonText 覆盖 ${code}`);
   }
   ok(ms.includes('export function gaugeText'), '压力表有独立读数文案函数');
-  ok(ms.includes("KIND_BLOCK_NAME = { boiler: 'tide_boiler'"), '标题按 kind 取注册名（含 gauge）');
+  ok(ms.includes("boiler: 'tide_boiler'") && ms.includes("gauge: 'pressure_gauge'")
+    && ms.includes("press: 'rune_press'"), '标题按 kind 取注册名（含 gauge / press）');
   for (const k of ['在烧锅炉 {n} 台 · 在跑机器 {m} 台', '断路 {n} 处：{list}', '上游闸断开，下游拿不到潮压',
     '表针到底：上游没有在烧的锅炉', '压力空转：有压但没有机器在干活',
     '只读仪表：不耗压、不产压，读数跟着网络实时变']) {

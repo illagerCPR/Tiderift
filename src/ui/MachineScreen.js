@@ -12,7 +12,10 @@ import { getDisplayName } from './itemName.js';
 const REFRESH_SEC = 0.9; // 联机界面刷新节拍（第二，INDUSTRY_OPEN 定向回包）
 
 // 方块名（界面标题）：kind → 注册名（getDisplayName 不是 i18n 动态键路径，可放在表里）
-const KIND_BLOCK_NAME = { boiler: 'tide_boiler', crusher: 'crusher', cutter: 'tide_cutter', gauge: 'pressure_gauge' };
+const KIND_BLOCK_NAME = {
+  boiler: 'tide_boiler', crusher: 'crusher', cutter: 'tide_cutter', gauge: 'pressure_gauge',
+  press: 'rune_press', // B56 R1：刻纹压印机（双开联动）
+};
 
 // B53 R3：潮压表的读数文案——它只说"网络怎么样"，不复用加工机的"没有可推进的活"那套说法
 export function gaugeText(code) {
@@ -42,6 +45,7 @@ export function reasonText(code) {
     case 'disengaged': return t('离合闸已断开');
     case 'cut': return t('上游闸断开，下游拿不到潮压');
     case 'stalled': return t('停转（没有可推进的活）');
+    case 'no-shard': return t('缺少回响残片');
     default: return t('待机');
   }
 }
@@ -50,6 +54,7 @@ export function slotLabel(slot) {
   if (slot === 'fuel') return t('燃料');
   if (slot === 'water') return t('水');
   if (slot === 'input') return t('原料');
+  if (slot === 'shard') return t('残片');
   if (slot === 'output') return t('主产物');
   if (slot === 'bonus') return t('副产物');
   return slot;
@@ -170,9 +175,14 @@ export class MachineScreen {
       // 槽位区
       const slotsRow = document.createElement('div');
       slotsRow.style.cssText = 'display: flex; align-items: flex-end; gap: 10px; margin-bottom: 10px;';
-      const layout = this.kind === 'boiler'
-        ? [['fuel', 'water'], ['output']]
-        : [['input'], ['output', 'bonus']];
+      // B56 R1：槽位布局**派生自 MACHINE_SLOTS**（不再手写 per-kind 表）——
+      // 压印机是双料机器（input + shard → output），手写表会漏掉残片槽、还会多画一个不存在的副产槽。
+      const slotsAll = MACHINE_SLOTS[this.kind] || [];
+      const outSlots = new Set(['output', 'bonus']);
+      const layout = [
+        slotsAll.filter((s) => !outSlots.has(s)),
+        slotsAll.filter((s) => outSlots.has(s)),
+      ];
       const arrow = () => {
         const a = document.createElement('div');
         a.textContent = '→';
@@ -180,8 +190,10 @@ export class MachineScreen {
         return a;
       };
       slotsRow.appendChild(this.makeSlotGroup(layout[0]));
-      slotsRow.appendChild(arrow());
-      slotsRow.appendChild(this.makeSlotGroup(layout[1]));
+      if (layout[1].length) {
+        slotsRow.appendChild(arrow());
+        slotsRow.appendChild(this.makeSlotGroup(layout[1]));
+      }
       this.panel.appendChild(slotsRow);
     }
 
@@ -372,6 +384,18 @@ export class MachineScreen {
       this.recipeEl.appendChild(head);
       for (const r of recipesFor(this.kind)) {
         const row = document.createElement('div');
+        if (this.kind === 'press') {
+          // 压印机是双料机器：两种料各画一次，玩家一眼看出残片也要放
+          let pline = t('纹样压印：{input} + {shard} → {output}', {
+            input: getDisplayName(r.input),
+            shard: getDisplayName(r.shard),
+            output: getDisplayName(r.output),
+          });
+          pline += `  ${t('（{n} 秒）', { n: processorTime(this.kind) })}`;
+          row.textContent = pline;
+          this.recipeEl.appendChild(row);
+          continue;
+        }
         let line = t('{input} → {output} ×{count}', {
           input: getDisplayName(r.input), output: getDisplayName(r.output), count: r.count,
         });

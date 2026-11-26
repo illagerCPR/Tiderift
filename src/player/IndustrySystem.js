@@ -65,7 +65,8 @@ export class IndustrySystem {
     while (this._acc >= step && guard++ < 8) {
       this._acc -= step;
       const nets = this._networksFor(world);
-      const r = tickIndustry(world.industryBlocks, world.industry, step, nets);
+      // B56 R1：清单一并交给纯算法——联动机器（压印机）要求工业 + 魔法同时开
+      const r = tickIndustry(world.industryBlocks, world.industry, step, nets, world.extraContent);
       if (r.changed.size && this._warnedLimit) this._warnedLimit = false;
       this._noteOverLimit(r.networks);
     }

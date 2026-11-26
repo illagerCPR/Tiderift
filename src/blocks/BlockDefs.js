@@ -5,6 +5,7 @@
 import { BlockRegistry } from '../core/BlockRegistry.js';
 import { SVGTextures } from '../render/SVGTextures.js';
 import { doorClosedShape, doorOpenShape, trapdoorShape, BED_SHAPE, PATH_SHAPE } from '../core/blockShape.js';
+import { SYNERGY_REQUIRES } from '../content/industry/defs.js';
 
 const { pixelSvg, rng } = SVGTextures;
 
@@ -3250,6 +3251,91 @@ reg('pressure_gauge', {
 }, {
   pressure_gauge_side: gaugeSideTex(311),
   pressure_gauge_front: gaugeFrontTex(312),
+});
+
+// ── Build 56 R1 刻纹压印机（**文件末尾追加**，方块 ID 零漂移，取 239）────────────────
+// 联动方块：requiresExtras 要**两个模块同时开**（'industry' + 'magic'）——单开世界里它既不出现、也放不下、
+// 更不推进（服务端与 tick 各有一道闸）。它不解锁独占法术，只是把「焦点 + 残片 → 进阶焦点」
+// 这件手工活搬进机械网络：给压，就给刻。
+// 视觉：顶面是压头导轨，正面是四潮纹样的压印模面（一眼看出"这是刻纹的"），侧面带传动接口。
+function pressTopTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(IRON, 0.9 + hash2(x, y, seed) * 0.14);
+  }
+  // 顶面：两根导轨 + 中央压头座
+  fillRect(px, 0, 2, 15, 3, rgb(IRON_DARK, 0.94));
+  fillRect(px, 0, 12, 15, 13, rgb(IRON_DARK, 0.94));
+  fillRect(px, 4, 5, 11, 10, rgb(IRON_DARK, 1.06));
+  fillRect(px, 6, 6, 9, 9, rgb(COPPER, 0.96));
+  fillRect(px, 7, 7, 8, 8, rgb(TIDE_GLOW, 0.9));
+  rivetFrame(px, rgb(IRON_DARK, 0.82), 1);
+  return pixelSvg(px);
+}
+
+function pressSideTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let f = 0.9 + hash2(x, y, seed) * 0.14;
+      if (y < 2) f *= 1.1;
+      if (y > 13) f *= 0.8;
+      px[y * 16 + x] = rgb([150, 156, 166], f);
+    }
+  }
+  // 侧面：导槽 + 传动轴接口（右上）
+  fillRect(px, 2, 4, 13, 5, rgb(IRON_DARK, 0.96));
+  fillRect(px, 2, 10, 13, 11, rgb(IRON_DARK, 0.96));
+  fillRect(px, 11, 3, 14, 6, rgb(COPPER, 0.94));
+  setPx(px, 12, 4, rgb(COPPER, 1.18));
+  rivetFrame(px, rgb(IRON_DARK, 0.84), 1);
+  return pixelSvg(px);
+}
+
+function pressBottomTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb(IRON_DARK, 0.88 + hash2(x, y, seed) * 0.14);
+  }
+  fillRect(px, 4, 4, 11, 11, rgb(IRON_DARK, 0.72));
+  rivetFrame(px, rgb(IRON_DARK, 1.22), 2);
+  return pixelSvg(px);
+}
+
+// 正面：压印模面——四潮各一角的纹样 + 中间一道下压的刻刀
+function pressFrontTex(seed) {
+  const px = makeTex();
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) px[y * 16 + x] = rgb([150, 156, 166], 0.88 + hash2(x, y, seed) * 0.16);
+  }
+  // 模面浅底（中间一块亮面，纹样刻在上面）
+  fillRect(px, 3, 3, 12, 12, rgb([224, 228, 234], 0.98));
+  // 四角纹样：左上雨点、右上风线、左下火折、右下留白（无潮）
+  for (const [x, y] of [[5, 5], [6, 6], [5, 7]]) setPx(px, x, y, rgb(TIDE_GLOW, 0.95));
+  for (const x of [9, 10, 11]) setPx(px, x, 6, rgb([206, 220, 226], 0.9));
+  for (const [x, y] of [[5, 10], [6, 11], [7, 10]]) setPx(px, x, y, rgb([214, 118, 86], 0.96));
+  setPx(px, 10, 10, rgb([132, 120, 176], 0.98));
+  // 刻刀：自上而下的一道竖痕 + 刀口高光
+  fillRect(px, 7, 2, 8, 13, rgb([92, 98, 106], 0.98));
+  fillRect(px, 7, 12, 8, 13, rgb(COPPER, 1.06));
+  return pixelSvg(px);
+}
+
+reg('rune_press', {
+  displayName: '刻纹压印机', hardness: 3.5, tool: 'pickaxe', minTier: 1,
+  requiresExtras: SYNERGY_REQUIRES, industryKind: 'press',
+  icon: 'rune_press_front',
+  textures: {
+    top: 'rune_press_top', side: 'rune_press_side',
+    bottom: 'rune_press_bottom', front: 'rune_press_front',
+  },
+  facing: 'n',
+  lore: ['潮压替你的手：焦点压进纹样，残片化在纹里，出来就是另一支焦点。'],
+}, {
+  rune_press_top: pressTopTex(320),
+  rune_press_side: pressSideTex(321),
+  rune_press_bottom: pressBottomTex(322),
+  rune_press_front: pressFrontTex(323),
 });
 
 export const BlockSVGDefinitions = svgMap;

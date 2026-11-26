@@ -110,6 +110,7 @@ PURE_NODE_SUITES=(
     build55-echo-ruins          # B55 R1 四维回响遗迹（纯 node：四类独立盐与维度隔离·关魔法零生成·标志材质与碑位留空·四表残片 FORCED·确定性·旧结构随机流不变·残片 ID 钉值与十语 lore）
     build55-advanced-tides      # B55 R2 四潮进阶（纯 node：四支 handler 复用·费用冷却均高于基础·蓄力上限·残片+基础焦点配方·ID 147~150 钉值与十语·落点上限 22·冷却认进阶 ID·溅射真值表与唯一玩家伤害入口·缓降上限由法术给）
     build55-echo-narrative      # B55 R3 回响碑/游记/蓝图（纯 node：四章追加表尾且旧章不动·十语碑文与蓝图提示·四格碑三向一致·blueprintFromBlocks 合法性/确定性/体素对拍/非法输入·读碑记图接线与游记回响段）
+    extra-synergy-unit          # B56 R1 双开联动：刻纹压印机（纯 node：id 钉值 239·双模块归属与单开拒绝·槽位路由·1:1 守恒·缺残片/缺压/产物满·tick 清单门控不误伤工业·服务端两条写入路径·i18n 四键）
 )
 
 for t in "${PURE_NODE_SUITES[@]}"; do
@@ -150,7 +151,7 @@ if [ "$port_ready" -ne 1 ]; then
 fi
 
 failed=0
-for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12 test-extra-content test-industry test-magic; do
+for t in test-mp test-store test-admin test-stage5 test-stage6 test-stage10 test-stage11 test-idea2 test-profile test-idea4 test-t5 test-dim test-reconnect test-skinlog test-hardening-net test-hardening-edge test-hardening-store test-journal test-waymark test-race test-blueprint test-ruin test-flow test-furnace test-stage12 test-extra-content test-industry test-magic test-extra-synergy; do
     echo "=== $t ==="
     if node "server/$t.mjs"; then
         echo "$t: OK"
