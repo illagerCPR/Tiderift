@@ -451,3 +451,106 @@ start(mode, seed, loadData, slot, cheatsEnabled, networkMode, { biomeScale, extr
 
 手动闭环（浏览器实测）：`rain_focus` 施放 hp 9→15、回响 100→80、`resistance` I 6s；满血施放 hp/回响不变、
 冷却仍为 0；`tideless_focus` 平地折跃 8 格（回响 -25）、有墙时停在墙前 3 格；无立足点时原地不动且回响不扣。
+
+## 十三、B55 回响探索（四维遗迹 / 回响残片 / 四潮进阶 / 碑文与蓝图）
+
+### 13.1 R1：四维回响遗迹（`src/world/structures/echoRuins.js`）
+
+- **四类各占一维**（`dims` 与 `salt` 都在 def 里，互不共流）：
+
+| 类型 | 维度 | cell / chance | 环境语言 | 战利品表 |
+|---|---|---|---|---|
+| `echo_rain` 雨痕水龛 | overworld | 15 / 0.7 | 砖龛 + 3×3 水盆（恰好 9 格水）+ 黏土镶边 + 悬着的海晶灯 | `echo_rain` |
+| `echo_ember` 烬痕炉龛 | nether | 24 / 0.18 | 3×3 岩浆块炉心 + 灵魂沙灰坑 + 黑曜石柱顶荧石 | `echo_ember` |
+| `echo_gale` 风纹哨台 | aether | 14 / 0.75 | 7×7 白石台（四边缺口）+ 星髓芯 + 云絮 | `echo_gale` |
+| `echo_tideless` 无潮静台 | end | 16 / 0.5 | 末地砖外环 + 1 格空槽 + 紫珀内台 + 黑曜石矮柱 | `echo_tideless` |
+
+- 全部 `requiresExtras: ['magic']`：关闭魔法的世界一类都不激活，旧结构随机流逐字节不变。
+- **碑位与碑**：`meta.plinth` 是龛位，R3 起落四格碑；`meta.chests` 一条，表名即类型名。
+- **红线**：布局里没有任何可运行方块（工业/魔法方块 0 个）；只有雨痕水龛有流体且限定水盆 9 格
+  （水盆四面黏土/砖、上方留空 → 不扩散）；三类不放任何会流动的东西。
+- **回响残片**（`echo_shard`，ID 146，stack 16）：四张表各 `FORCED` 1 枚，且**没有任何合成配方**——
+  进阶材料只能靠探索，不设概率刷取。
+
+### 13.2 R2：四潮进阶（数据表 + handler 复用，`content/magic/defs.js`）
+
+- 进阶法术放**独立表** `ADVANCED_SPELLS`，`SPELLS` / `SPELL_IDS` 仍是四支基础——
+  既有断言（`SPELL_IDS.length === 4`）与 UI 迭代面零改动；`spellDef` / 冷却清洗 / 服务器形状校验走 `ALL_SPELLS`。
+- 每支进阶带 `handler: '基础法术'`，`MagicSystem._execute` 按 `switch (def.handler || spellId)` 分派：
+  **落点探针 / 治疗裁剪 / 折跃判定只有一份实现**，进阶只换数据。
+- 四支的差异：
+
+| 进阶 | 相对基础 | 安全口径 |
+|---|---|---|
+| 风渡 `gale_cross` | 10 格（满蓄 13）、缓降 8s、下落上限 −1.5（基础 −3） | 仍是短距冲刺，落点探针不变 |
+| 烬环 `ember_ring` | 直击 12（满蓄 15）、`splash{radius 3.2, damage 5, maxTargets 2}` | 溅射只走 `damageMobsNear`（怪物专用） |
+| 潮护 `tide_ward` | 治疗 10、抗性 II 10s、`cleanse:['wither']` | 只清负面白名单，不动 buff |
+| 长折 `void_dash` | 14 格（满蓄 18）、`standDepth 5`、`softLanding 1.5` | 仍不跨维/不穿墙/不落未加载区块 |
+
+- 费用/冷却都高于基础（22/20/30/35 vs 15/10/20/25；8/3/12/9 vs 3/1.2/8/6）——基础版不被取代。
+- **配方**：`addShapeless(进阶焦点, 1, ['echo_shard', 基础焦点], ['magic'])`；一枚残片只能刻一支。
+- **缓降上限**：`slowFallVy` 此前是死字段（Physics 一直用常量 −3），R2 改成 `entity.slowFallVy` 优先、
+  缺省回落 `SLOW_FALL_MAX`；死亡 / 换维 / 换存档都清零（`MAGIC_LIFECYCLE.clearSlowFall` 的实际落点）。
+- **广播**统一用 `def.id`（不再写死基础 ID），服务器 `sanitizeCast` 直接接受进阶 ID；
+  折步落点跨度上限 16 → **22**（满蓄长折 18 格），仍拒伪造的 40 格落点。
+- **音色**：`AudioEngine` 的 `SPELL_SOUND_FAMILY` 把四支进阶映射回本潮音色。
+
+### 13.3 R3：回响碑 / 游记 / 形制蓝图
+
+- 四章追加在 `STELE_CHAPTERS` **表尾**（键序不变、旧章一字不改、不触碰 `finaleDone`）：
+  `echo_rain` / `echo_ember` / `echo_gale` / `echo_tideless`，各 3 行，十语齐备。
+- 龛位落四格碑（`steleStack`，底座用该维度 `STELE_BASE_BY_DIM`）：`meta.steles ↔ 方块 ↔ sm.steles ↔ steleChapterAt`
+  四向一致；碑与箱子不同列（回归守着）。
+- **形制蓝图**：`core/Blueprints.blueprintFromBlocks({id, name, dim, blocks})` 把结构记录转成合法蓝图
+  （同坐标后写覆盖；包围盒只按非空气格取；体素顺序与 `captureBlueprint` 同款 y→z→x）。
+  读到回响碑时 `Game.grantEchoSteleBlueprint` 发一张个人蓝图（`ECHO_RUIN_BLUEPRINTS` 的 id：
+  `echorain01` / `echoember1` / `echogale01` / `echotidel1`），`addPersonalUnique` 按 id 去重；
+  只有站在**对应类型**遗迹的碑前才发图（`hit.name !== def.structure` 直接拒）。
+- **游记**：新增「回响遗迹」段（四潮各一处，已记录/未记录）；发现仍走既有 `structureRecordAt → recordDiscovery`，
+  **零新协议、零新存档字段**（`journal.discoveries` 里按 `type = echo_*` 过滤）。
+- 既有 6 处碑文章节计数断言同步（主世界 5 / 下界 5 / 天域 12 / 末地 3）。
+
+### 13.4 R4：四界实玩 / 经济复评 / 文档与发布
+
+**实玩（survival，真实路径）**
+- 主世界：读 `moss_stele` → 章节「回响碑·雨停在半空」+ 蓝图 `echorain01` 入库；真实 3×3 网格
+  `echo_shard + rain_focus → tide_ward_focus`（材料清零、产出进光标）；潮护 10 血 + 凋零 → 20 血、凋零消失、
+  抗性 II 10s、回响 100→70。
+- **风渡**：位移 10 格、`slowFall 8`、`slowFallVy −1.5`、回响 −22（与数据表一致）。
+- **长折**：自建 89 层石台后位移**精确 14 格**、回响 −35、`slowFall 1.5`；在自然地形上只走 5.5 格——
+  **停在最后一个可立足点**（安全口径正确，不是 bug）。
+- **烬环**：直击僵尸 12 点、2.5 格外的第二只 5 点、12 格外的不受影响、回响 −20。
+- 换维（`switchDimension`）到 下界/末地/天域 各读一次碑：`ember_stele` / `end_stele` / `wind_stele`，
+  章节与蓝图 id 全部正确；**个人蓝图与已读碑文随换维保留**（`_composeSwitchLoadData` 的 `blueprints`）。
+- 游记「回响遗迹」段在四维都能渲染出四个条目。
+
+**实玩抓到的真 bug（已修）**：烬环溅射把**直击目标**又打了一次——僵尸 20 → 3（应为 8）。
+根因：`damageMobsNear` 只按半径挑「活的」目标，直击那只没死就被也算进溅射。
+修法：`attackMob` 命中时记 `this.lastHitMob`（未命中清空），`_splashHit` 把它作为 `exclude` 传进去并即时清空。
+回归补四条源码绊线（记录 / 清空 / 读取 / 真的传参）。复测：20 → 8（直击）/ 15（溅射）/ 20（范围外）。
+
+**经济复评（实测密度 → 调参）**：16×16 个 cell 的建设窗口内计数（seed 5501/777）：
+
+| 类型 | 调参前 | 调参后 | 结论 |
+|---|---|---|---|
+| 雨痕水龛 | 2~4 | 20~21（cell 16→15、chance 0.45→0.7、探针 [7,11]→[6,10]、坡度 4→5） | 原先要走两三千格才撞见第一座 |
+| 烬痕炉龛 | **136~138** | 27（cell 18→24、chance 0.5→0.18、要求 4/5 列同层） | 原先每 400 格一座，明显过量 |
+| 风纹哨台 | 3~7 | 7~10（chance 0.5→0.75） | 天域浮岛本身稀疏，靠概率补 |
+| 无潮静台 | 19~25 | 19~25（未动） | 与其他三维同量级 |
+
+据此估算：每类约 **每 800~1600 格一处**，四座遗迹 = 四枚残片 = 四支进阶；费用 20~35 点回响
+≈ 1~1.4 级经验，一次性投入不会长期锁死资源。
+
+**文档**：README 魔法章节新增「回响遗迹与进阶」小节（四类遗迹、残片、四支进阶对照表、蓝图与游记），
+已知限制补进阶边界（溅射只打怪物、PvP 仍封顶、长折仍要立足面）；worldview §10.7 补 B55 交付与「回响纪」；
+`src/version.js` BUILD=55，发布 `beta-build-55`。
+
+### 13.5 回归
+
+| 套件 | 守什么 |
+|---|---|
+| `tests/build55-echo-ruins.mjs` | 四类 cell/salt/dims/requiresExtras、关魔法零生成、维度隔离、标志材质、水盆恰好 9 格、碑位四格、箱子三向一致、**记录真的写进真实区块**、四表确定性、残片 FORCED 且无配方、旧结构随机流不变、残片 ID 146 与十语 lore |
+| `tests/build55-advanced-tides.mjs` | 四支 handler 复用、费用冷却均高于基础、蓄力只插值 `charged`、ID 147~150、十语 lore 与潮护提示、落点上限 22、冷却清洗认进阶、溅射真值表（最近优先/越界剔除/dead 跳过/并列按 id）、**唯一玩家伤害入口**、溅射排除直击目标四条绊线 |
+| `tests/build55-echo-narrative.mjs` | 四章在表尾且旧章不动、十语 16 键（含 `{name}` 占位符）、四格碑四向一致、`blueprintFromBlocks` 合法/确定/体素对拍/非法输入、读碑记图接线、游记「回响遗迹」段 |
+| `server/test-magic.mjs` | 服务器接受进阶法术 ID、越界落点（500 格）仍被清洗、PvP 封顶仍按基础烬矢满蓄 |
+| 既有套件 | `magic-unit` / `build54-*` 的计数与字面量断言随「进阶独立表 + `def.id` 广播」同步；碑文计数四处同步 |

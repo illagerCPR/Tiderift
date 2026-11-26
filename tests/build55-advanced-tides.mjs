@@ -193,6 +193,13 @@ const PAIRS = [
   const mob = src('../src/entity/MobManager.js');
   ok(mob.includes('damageMobsNear(') && mob.includes('selectSplashTargets'),
     '怪物侧半径伤害复用唯一的目标选择函数');
+  // 实玩抓到过：直击目标又被自己的溅射打了一次（20 → 3 而不是 8）。两处绊线钉住修复。
+  ok(/this\.lastHitMob = closest;/.test(mob), 'attackMob 记下直击命中的怪物');
+  ok(/this\.lastHitMob = null;/.test(mob), '没打中时清掉直击记录（不误排无关目标）');
+  ok(/const exclude = mm\.lastHitMob \|\| null;/.test(ms) && /mm\.lastHitMob = null;/.test(ms),
+    '溅射排除直击目标并即时清空记录');
+  ok(/damageMobsNear\(x, y, z, splash\.radius, splash\.damage, splash\.maxTargets, exclude\)/.test(ms),
+    '排除项真的传进溅射（同一发弹道只结算一次）');
 
   const audioSrc = src('../src/audio/AudioEngine.js');
   for (const p of PAIRS) ok(audioSrc.includes(`${p.adv}: '${p.base}'`), `${p.name} 沿用 ${p.base} 音色`);

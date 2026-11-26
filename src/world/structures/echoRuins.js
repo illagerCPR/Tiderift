@@ -41,7 +41,7 @@ function placeEmber(gen, ax, az) {
     const members = floors.filter(f => f >= floors[i] && f <= floors[i] + 6);
     if (!best || members.length > best.length) best = members;
   }
-  if (!best || best.length < 3) return -1;
+  if (!best || best.length < 4) return -1; // 至少 4/5 列落在同一层台地（R4 起收紧）
   best.sort((a, b) => a - b);
   return best[best.length >> 1] + 1;
 }
@@ -75,14 +75,18 @@ function placeStill(gen, ax, az) {
 
 // ── 定义表 ─────────────────────────────────────────────────────────────
 export const ECHO_RAIN_DEF = {
-  cell: 16, attempts: 2, chance: 0.45,
-  radius: 10, probeR: [7, 11], maxSlope: 4, minTop: 64,
+  // B55 R4 经济复评：cell 16/0.45 + 探针 [7,11]/坡度 4 太挑地形（实测 16×16 格只有 2~4 处，
+  // 玩家要走两三千格才撞见第一座）。放宽到 cell 15 / 0.7 / 探针 [6,10] / 坡度 5，落到每千格量级。
+  cell: 15, attempts: 2, chance: 0.7,
+  radius: 10, probeR: [6, 10], maxSlope: 5, minTop: 64,
   salt: 8501, dims: ['overworld'], requiresExtras: ['magic'],
   solve: solveRain,
 };
 
 export const ECHO_EMBER_DEF = {
-  cell: 18, attempts: 2, chance: 0.5,
+  // B55 R4 经济复评：下界腔体太密，cell 18/0.5 实测 16×16 格 136 处（同类 2~25）；
+  // 收到 cell 24 / 0.3 并要求 5 列里至少 4 列同层，落到与其他三维同一量级。
+  cell: 24, attempts: 2, chance: 0.18,
   radius: 10,
   salt: 8502, dims: ['nether'], requiresExtras: ['magic'],
   place: placeEmber,
@@ -90,7 +94,8 @@ export const ECHO_EMBER_DEF = {
 };
 
 export const ECHO_GALE_DEF = {
-  cell: 14, attempts: 2, chance: 0.5,
+  // B55 R4：天域浮岛本就稀疏，选址靠 probeIsland 的岛存在门；提高概率补齐密度
+  cell: 14, attempts: 2, chance: 0.75,
   radius: 9,
   salt: 8503, dims: ['aether'], requiresExtras: ['magic'],
   place: (gen, ax, az) => probeIsland(gen, ax, az, ['verdant', 'autumn', 'frost', 'crystal'], 6, 4),

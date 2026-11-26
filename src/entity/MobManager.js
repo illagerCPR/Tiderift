@@ -1364,8 +1364,12 @@ export class MobManager {
       if (closest.netId != null && this.mobNet) {
         this.mobNet.sendMobAttack(closest.netId, damage, closest.position.x, closest.position.y, closest.position.z);
       }
+      // B55 R2：记下这一发直击命中的怪物，供同发弹道的溅射排除（否则直击目标会被算两次）
+      this.lastHitMob = closest;
       return true;
     }
+    // 没打中任何怪物：清掉上一条记录，避免下一次溅射误排到一个无关目标
+    this.lastHitMob = null;
     return false;
   }
 

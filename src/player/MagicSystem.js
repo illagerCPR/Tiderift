@@ -463,7 +463,10 @@ export class MagicSystem {
     const g = this.game;
     const mm = g.mobManager;
     if (mm && typeof mm.damageMobsNear === 'function') {
-      mm.damageMobsNear(x, y, z, splash.radius, splash.damage, splash.maxTargets);
+      // 排除刚才直击命中的那只：同一发弹道只结算一次（实测抓到过直击 + 溅射叠成 17 点）
+      const exclude = mm.lastHitMob || null;
+      mm.lastHitMob = null;
+      mm.damageMobsNear(x, y, z, splash.radius, splash.damage, splash.maxTargets, exclude);
     }
     const ps = g.particles;
     if (!ps || !ps.spawn) return;
